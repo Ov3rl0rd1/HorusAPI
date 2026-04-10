@@ -1,45 +1,59 @@
-using HorusAPI;
+using HorusAPI.Endpoints;
+using HorusAPI.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
-class Program
-{
-    public static string GenerateApiKey(int bytes = 32)
+var builder = WebApplication.CreateBuilder(args);
+
+// ── Services ─────────────────────────────────────────────────────────────────
+builder.Services.AddScoped<IUserService,      UserService>();
+builder.Services.AddScoped<IVpnServerService, VpnServerService>();
+builder.Services.AddSingleton<IJwtService,    JwtService>();
+
+// ── JWT Authentication ────────────────────────────────────────────────────────
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var secret     = jwtSection["Secret"]
+    ?? throw new InvalidOperationException("Jwt:Secret is not configured.");
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(opt =>
     {
-        var randomBytes = new byte[bytes];
-        using (var rng = RandomNumberGenerator.Create())
+        opt.TokenValidationParameters = new TokenValidationParameters
         {
-            rng.GetBytes(randomBytes);
-        }
+            ValidateIssuer           = true,
+            ValidateAudience         = true,
+            ValidateLifetime         = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer              = jwtSection["Issuer"],
+            ValidAudience            = jwtSection["Audience"],
+            IssuerSigningKey         = new SymmetricSecurityKey(
+                                           Encoding.UTF8.GetBytes(secret)),
+            ClockSkew                = TimeSpan.FromSeconds(30),
+        };
+    });
 
-        return Convert.ToBase64String(randomBytes);
-    }
+builder.Services.AddAuthorization();
 
-    public void GetConnectionString()
-    { 
-        
-    }
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-    public static void Main(string[] args)
-    {
-        var builder = WebApplication.CreateBuilder(args);
 
-        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-        builder.Services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString));
+// ── Build ─────────────────────────────────────────────────────────────────────
+var app = builder.Build();
 
-        var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
 
-        app.UseMiddleware<AuthMiddleware>();
+// ── Endpoints ─────────────────────────────────────────────────────────────────
+app.MapAuthEndpoints();
+app.MapServerEndpoints();
 
-        app.UseWhen(context => context.Request.Path.StartsWithSegments(ApiConsts.API_ROUTE), appBuilder =>
-        {
-            appBuilder.UseMiddleware<AuthMiddleware>();
-        });
+// Health-check (unauthenticated)
+app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }))
+   .AllowAnonymous()
+   .WithTags("Health");
 
-        app.MapGet(ApiConsts.API_ROUTE, async (AppDbContext db) => await db.Users.ToListAsync());
-        app.MapPost(ApiConsts.LOGIN_ROUTE, async (AppDbContext db) => await db.Users.ToListAsync());
-
-        app.Run();
-    }
-}
+app.Run();

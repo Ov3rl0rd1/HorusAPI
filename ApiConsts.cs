@@ -10,5 +10,35 @@
         public const string API_HEADER = "X-API-PASSWORD";
 
         public const string APP_DEFAULT_KEY = "VPlxhl1d8/kgxO1Nw8PsjMcMaCGpPI1CL3FUNILcY0";
+
+        public const string CONFIG_HOST = "host";
+        public const string CONFIG_AUTH = "auth";
+        public const string CONFIG_HOP_INTERVAL = "hop";
+        public const string CONFIG_OBFS_TYPE = "obfs_type";
+        public const string CONFIG_OBFS_PASSWORD = "obfs_password";
+
+        public const string CONFIG_TAMPLATE = $"""
+server: #{CONFIG_HOST}
+
+auth: #{CONFIG_AUTH}
+
+socks5:
+  listen: 127.0.0.1:1080
+
+quic:
+  maxIdleTimeout: 30s 
+  keepAlivePeriod: 20s
+
+transport:
+  udp:
+    hopInterval: #{CONFIG_HOP_INTERVAL}
+
+#???{CONFIG_OBFS_TYPE}
+obfs:
+  type: salamander
+  salamander:
+    password: #{CONFIG_OBFS_PASSWORD}
+#???
+""";
     }
 }
