@@ -6,19 +6,28 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       vpndb
-      POSTGRES_USER:     vpnuser
-      POSTGRES_PASSWORD: CHANGE_ME
-    ports:
-      - "5432:5432"
+      POSTGRES_DB:       ${POSTGRES_DB:-horus}
+      POSTGRES_USER:     ${POSTGRES_USER:-horus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vpnuser -d vpndb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-horus} -d ${POSTGRES_DB:-horus}"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  nginx:
+    image: nginx
+
+  hysteria:
+    image: tobyxdd/hysteria:latest
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "20000-50000:443"
+
 
   vpn-api:
     build: .
@@ -27,16 +36,20 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "443:443"
+    env_file: .env
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS:        http://+:8080
-      # Override connection string and JWT secret via env (never commit real secrets)
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=vpndb;Username=vpnuser;Password=CHANGE_ME"
-      Jwt__Secret:   "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARS_HERE_!!"
-      Jwt__Issuer:   "vpn-auth-api"
-      Jwt__Audience: "vpn-clients"
-      Jwt__ExpiryMinutes: "60"
+      # Connection string – assembled from .env variables
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-horus};Username=${POSTGRES_USER:-horus};Password=${POSTGRES_PASSWORD}"
+      # Certificate paths – mounted from the Hysteria2 server cert directory
+      # Set CERT_DIR in .env to the directory that contains fullchain.pem and privkey.pem
+      Kestrel__Certificates__Default__Path:    /certs/fullchain.pem
+      Kestrel__Certificates__Default__KeyPath: /certs/privkey.pem
+    volumes:
+      # Mount Hysteria2's Let's Encrypt cert directory read-only.
+      # Override CERT_DIR in .env (default: /etc/hysteria).
+      - ${CERT_DIR:-/etc/hysteria}:/certs:ro
 
 volumes:
   pgdata:

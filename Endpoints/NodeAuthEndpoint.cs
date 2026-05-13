@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using HorusAPI.Models;
 using HorusAPI.Services;
 using System.Security.Claims;
@@ -6,19 +6,19 @@ using System.Text.RegularExpressions;
 
 namespace HorusAPI.Endpoints;
 
-public static class AuthEndpoints
+public static class NodeAuthEndpoints
 {
     private static readonly Regex UsernameRegex = new(@"^[a-zA-Z0-9_]{3,32}$", RegexOptions.Compiled);
 
-    public static void MapAuthEndpoints(this WebApplication app)
+    public static void MapNodeAuthEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/auth").WithTags("Auth").RequireRateLimiting("auth");
+        var group = app.MapGroup("/node").WithTags("Auth").RequireRateLimiting("auth");
 
-        // ── Login ────────────────────────────────────────────────────────────────
-        group.MapPost("/login", async (
+        // ── Auth ────────────────────────────────────────────────────────────────
+        group.MapPost("/auth", async (
             [FromBody] LoginRequest req,
-            IUserService     userSvc,
-            IJwtService      jwtSvc,
+            IUserService userSvc,
+            IJwtService jwtSvc,
             ILogger<Program> log) =>
         {
             if (string.IsNullOrWhiteSpace(req.username) ||
@@ -32,7 +32,6 @@ public static class AuthEndpoints
             {
                 if (string.IsNullOrWhiteSpace(req.session))
                 {
-                    // Password login: authenticate, then create a fresh session
                     user = await userSvc.AuthenticateAsync(req.username, req.password);
                     if (user is null) return Results.Unauthorized();
 
@@ -61,7 +60,7 @@ public static class AuthEndpoints
         // ── Register ─────────────────────────────────────────────────────────────
         group.MapPost("/register", async (
             [FromBody] RegisterRequest req,
-            IUserService     userSvc,
+            IUserService userSvc,
             ILogger<Program> log) =>
         {
             string username = req.username ?? string.Empty;
@@ -93,9 +92,9 @@ public static class AuthEndpoints
         // ── Logout other devices ─────────────────────────────────────────────────
         group.MapPost("/logout-others", async (
             [FromBody] LogoutOthersRequest req,
-            HttpContext         ctx,
-            IUserService        userSvc,
-            ILogger<Program>    log) =>
+            HttpContext ctx,
+            IUserService userSvc,
+            ILogger<Program> log) =>
         {
             if (string.IsNullOrWhiteSpace(req.session))
                 return Results.BadRequest(new ApiError("Current session token is required."));
