@@ -1,6 +1,26 @@
 # HorusAPI — Deployment Guide
 
-HorusAPI is an ASP.NET Core 10 VPN authentication and server management API. It runs **HTTPS-only on port 443** and uses Let's Encrypt certificates managed by the co-located Hysteria2 server.
+HorusAPI is an ASP.NET Core 10 VPN authentication and server management API. It runs behind an Nginx reverse proxy that automatically obtains and renews Let's Encrypt TLS certificates.
+
+---
+
+## Architecture
+
+```
+Internet
+    │
+    ▼  :80 (ACME challenge + HTTP→HTTPS redirect)
+    ▼  :443 (HTTPS, TLS terminated here)
+  nginx  ←── Let's Encrypt (auto-obtained on first start, auto-renewed)
+    │
+    ├─ /auth/* /servers/* /admin/* /health
+    │       ↓  http://vpn-api:8080 (Docker-internal only)
+    │    vpn-api
+    │       ↓  postgres:5432 (Docker-internal only)
+    │    postgres
+    │
+    └─ /* → static placeholder page
+```
 
 ---
 
@@ -9,104 +29,84 @@ HorusAPI is an ASP.NET Core 10 VPN authentication and server management API. It 
 | Requirement | Notes |
 |---|---|
 | Docker + docker-compose | v20+ |
-| Hysteria2 server | Must have ACME (Let's Encrypt) configured and certs already issued |
-| A domain name | With an A record pointing to this server's IP |
+| A domain name | A record must point to this server's **public IP** |
+| Ports 80 and 443 open | Both are needed: 80 for ACME challenge, 443 for HTTPS |
 
 ---
 
-## 1. Locate Hysteria2 TLS certificates
-
-Hysteria2 stores ACME certificates in the directory defined by `acme.dir` in its config (default: `/etc/hysteria`). After Hysteria2 has successfully obtained a certificate, the directory contains:
-
-```
-/etc/hysteria/
-  ca.crt          ← CA certificate (not used by HorusAPI)
-  server.crt      ← server certificate (fullchain)
-  server.key      ← private key
-```
-
-Some setups use certbot instead, in which case certs are at:
-```
-/etc/letsencrypt/live/<your-domain>/
-  fullchain.pem
-  privkey.pem
-```
-
-Note the directory path — you will set it as `CERT_DIR` in the next step.
-
-> **Permission note:** The private key file must be readable by the Docker container process (UID 65534 in the `vpnapi` system account). Run `chmod o+r /etc/hysteria/server.key` on the host if needed, or adjust the file's group ownership.
-
----
-
-## 2. Configure environment variables
+## 1. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and fill in every value:
+Edit `.env` — the minimum required values:
 
 ```env
-# PostgreSQL
-POSTGRES_DB=horus
-POSTGRES_USER=horus
+# Your public domain (A record must already point here)
+DOMAIN=vpn.example.com
+
+# Email for Let's Encrypt alerts
+CERTBOT_EMAIL=admin@example.com
+
+# Leave 0 for real certs; set 1 to test without hitting LE rate limits
+CERTBOT_STAGING=0
+
 POSTGRES_PASSWORD=<strong-random-password>
-
-# JWT — minimum 64 characters
 Jwt__Secret=<run: openssl rand -base64 64>
-Jwt__Issuer=horus-auth-api
-Jwt__Audience=horus-clients
-Jwt__ExpiryMinutes=60
-
-# Socks5 proxy defaults embedded in rendered client configs
-Socks5__Port=1080
-Socks5__Username=<your-socks5-username>
-Socks5__Password=<your-socks5-password>
-
-# Directory on the HOST containing fullchain.pem (or server.crt) and privkey.pem (or server.key)
-CERT_DIR=/etc/hysteria
 ```
 
-Then update `docker-compose.yml` certificate path variables to match the actual filenames inside `CERT_DIR`:
-
-```yaml
-Kestrel__Certificates__Default__Path:    /certs/server.crt   # or fullchain.pem
-Kestrel__Certificates__Default__KeyPath: /certs/server.key   # or privkey.pem
-```
+> **Tip:** Test cert acquisition first with `CERTBOT_STAGING=1`. Staging issues an untrusted cert so your browser will warn, but it confirms the whole flow works without consuming real LE quota. Switch to `0` once confirmed.
 
 ---
 
-## 3. Start the stack
+## 2. Start the stack
 
 ```bash
 docker-compose up -d --build
 ```
 
-Docker will:
-1. Start PostgreSQL and run `init.sql` to create the schema
-2. Build and start HorusAPI, listening on `https://0.0.0.0:443`
+On first start, nginx automatically:
+1. Spins up a temporary HTTP server on port 80 to serve the ACME challenge
+2. Asks Let's Encrypt to issue a certificate for `${DOMAIN}`
+3. Shuts down the temporary server and starts the full nginx with HTTPS
 
-Check that both containers are running:
+This takes **20–60 seconds**. Watch progress with:
 
 ```bash
-docker-compose ps
-docker-compose logs vpn-api
+docker-compose logs -f nginx
+```
+
+You should see:
+```
+[certbot] No certificate found for vpn.example.com. Obtaining one from Let's Encrypt...
+[certbot] Certificate obtained. Restarting nginx with HTTPS...
+```
+
+---
+
+## 3. Verify the deployment
+
+```bash
+# Health check
+curl https://vpn.example.com/health
+# → {"status":"ok","time":"..."}
 ```
 
 ---
 
 ## 4. Create the first admin account
 
-Register a user via the API:
+Register a user:
 
 ```bash
-curl -k -X POST https://<your-domain>/auth/register \
+curl -X POST https://vpn.example.com/auth/register \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"<strong-password>","email":"admin@example.com"}'
 # → HTTP 201 Created
 ```
 
-Grant admin rights directly in the database:
+Grant admin rights:
 
 ```bash
 docker-compose exec postgres psql -U horus -d horus \
@@ -115,33 +115,22 @@ docker-compose exec postgres psql -U horus -d horus \
 
 ---
 
-## 5. Verify the deployment
+## 5. Add VPN servers
+
+Get a JWT first:
 
 ```bash
-# Health check
-curl https://<your-domain>/health
-# → {"status":"ok","time":"..."}
-
-# Login and obtain a JWT
-curl -X POST https://<your-domain>/auth/login \
+TOKEN=$(curl -sX POST https://vpn.example.com/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"<your-password>"}'
-# → {"token":"eyJ...","expires_at":"...","username":"admin","session":"..."}
-
-# List servers (requires JWT)
-curl https://<your-domain>/servers \
-  -H "Authorization: Bearer <token>"
+  -d '{"username":"admin","password":"<your-password>"}' \
+  | grep -o '"token":"[^"]*' | cut -d'"' -f4)
 ```
 
----
-
-## 6. Add VPN servers
-
-Use the admin API with the JWT obtained above:
+Add a server:
 
 ```bash
-curl -X POST https://<your-domain>/admin/servers \
-  -H "Authorization: Bearer <admin-token>" \
+curl -X POST https://vpn.example.com/admin/servers \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "EU-FI-01",
@@ -156,19 +145,18 @@ curl -X POST https://<your-domain>/admin/servers \
 
 ---
 
-## 7. Certificate renewal
+## Certificate renewal
 
-Hysteria2 renews Let's Encrypt certificates automatically. After renewal, HorusAPI must be restarted to load the new certificate:
+Renewal is fully automatic. The nginx container runs a background check every 12 hours. Certbot only acts when the certificate is within 30 days of expiry and reloads nginx immediately after renewal — no downtime.
+
+To check the cert expiry date:
 
 ```bash
-docker-compose restart vpn-api
+docker-compose exec nginx \
+  openssl x509 -enddate -noout -in /etc/letsencrypt/live/${DOMAIN}/fullchain.pem
 ```
 
-To automate this, add a cron job on the host (e.g., via `/etc/cron.d/horus-cert-reload`):
-
-```cron
-0 3 * * * root docker compose -f /path/to/HorusAPI/docker-compose.yml restart vpn-api
-```
+Certificates are stored in the `letsencrypt` Docker named volume and survive container restarts and rebuilds.
 
 ---
 
@@ -196,14 +184,17 @@ Rate limit on `/auth/*`: **10 requests per minute per IP**.
 
 ## Troubleshooting
 
-**Container fails to start with certificate error**
-- Verify `CERT_DIR` points to a directory containing the expected PEM files
-- Check file permissions: both files must be readable by the container (`chmod o+r`)
-- Confirm the filenames in `docker-compose.yml` match the actual files in `CERT_DIR`
+**`[certbot] No certificate found...` — hangs or fails**
+- Verify the A record for `${DOMAIN}` resolves to this server's public IP: `dig +short ${DOMAIN}`
+- Confirm ports 80 and 443 are open: `curl http://${DOMAIN}` from another machine
+- Check Let's Encrypt rate limits: you get 5 failed validations per domain per hour. Use `CERTBOT_STAGING=1` while debugging.
+
+**`DOMAIN and CERTBOT_EMAIL must be set`**
+- Make sure `.env` exists and both variables are set (not just in `.env.example`)
 
 **`Jwt:Secret is not configured`**
-- Make sure `.env` is present and `Jwt__Secret` is set (minimum 64 characters)
+- Check that `Jwt__Secret` is present in `.env` and is at least 64 characters
 
 **Database connection refused**
-- The API depends on the `postgres` healthcheck; wait a few seconds and check `docker-compose logs postgres`
-- Verify `POSTGRES_PASSWORD` matches in both the `postgres` and `vpn-api` service sections
+- Wait a few seconds after `docker-compose up` — vpn-api waits for the postgres healthcheck
+- Verify `POSTGRES_PASSWORD` is the same in both env and the postgres service

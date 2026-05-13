@@ -2,6 +2,7 @@ version: "3.9"
 
 services:
 
+  # ── Database ──────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -17,39 +18,42 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    # No ports — postgres is accessible only within the Docker network
 
-  nginx:
-    image: nginx
-
-  hysteria:
-    image: tobyxdd/hysteria:latest
-    restart: unless-stopped
-    ports:
-      - "443:443"
-      - "20000-50000:443"
-
-
+  # ── API (HTTP, internal only) ─────────────────────────────────────────────────
   vpn-api:
     build: .
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "443:443"
     env_file: .env
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      # Connection string – assembled from .env variables
+      ASPNETCORE_URLS:        http://+:8080
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-horus};Username=${POSTGRES_USER:-horus};Password=${POSTGRES_PASSWORD}"
-      # Certificate paths – mounted from the Hysteria2 server cert directory
-      # Set CERT_DIR in .env to the directory that contains fullchain.pem and privkey.pem
-      Kestrel__Certificates__Default__Path:    /certs/fullchain.pem
-      Kestrel__Certificates__Default__KeyPath: /certs/privkey.pem
+    # No external ports — traffic reaches the API only through nginx
+
+  # ── Reverse proxy + automatic TLS ────────────────────────────────────────────
+  # On first start nginx obtains a Let's Encrypt cert for ${DOMAIN}.
+  # Renewal runs automatically every 12 h inside the container.
+  nginx:
+    build: ./nginx
+    restart: unless-stopped
+    depends_on:
+      - vpn-api
+    env_file: .env
+    environment:
+      DOMAIN:          ${DOMAIN}
+      CERTBOT_EMAIL:   ${CERTBOT_EMAIL}
+      CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
-      # Mount Hysteria2's Let's Encrypt cert directory read-only.
-      # Override CERT_DIR in .env (default: /etc/hysteria).
-      - ${CERT_DIR:-/etc/hysteria}:/certs:ro
+      # Persist Let's Encrypt certs across container restarts / rebuilds
+      - letsencrypt:/etc/letsencrypt
 
 volumes:
   pgdata:
+  letsencrypt:

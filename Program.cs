@@ -1,6 +1,7 @@
 using HorusAPI.Endpoints;
 using HorusAPI.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -9,12 +10,14 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Kestrel: HTTPS only on port 443 ──────────────────────────────────────────
-// Certificate is configured via Kestrel:Certificates:Default in appsettings.json
-// (override with env vars: Kestrel__Certificates__Default__Path, KeyPath)
-builder.WebHost.ConfigureKestrel((ctx, opts) =>
+// ── Trusted proxy headers (Nginx → app) ───────────────────────────────────────
+// Required so rate limiting and logging see the real client IP, not Nginx's.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    opts.ListenAnyIP(443, lo => lo.UseHttps());
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    // Trust all Docker-internal proxies; Nginx is the only entry point.
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
 });
 
 // ── Services ──────────────────────────────────────────────────────────────────
@@ -75,7 +78,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // ── Build ──────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
-app.UseHsts();
+app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
