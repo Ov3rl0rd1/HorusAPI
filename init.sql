@@ -1,6 +1,4 @@
--- ============================================================
 --  VPN Auth API – PostgreSQL schema
--- ============================================================
 
 CREATE TABLE IF NOT EXISTS users (
     id            SERIAL PRIMARY KEY,
@@ -20,18 +18,14 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
     country        VARCHAR(64)  NOT NULL,
     city           VARCHAR(64)  NOT NULL,
     host           VARCHAR(256) NOT NULL,
-    protocol       VARCHAR(32)  NOT NULL DEFAULT 'Hysteria2',
     current_load   INTEGER      NOT NULL DEFAULT 0,
     max_clients    INTEGER      NOT NULL DEFAULT 5,
-    is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
-    obfs_type      VARCHAR(32)  NOT NULL DEFAULT 'salamander',
-    obfs_password  VARCHAR(64)  NOT NULL DEFAULT '',
-    hop            VARCHAR(16)  NOT NULL DEFAULT '30s',
-    masquerade_url VARCHAR(512)
+    is_active      BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_username    ON users(username);
-CREATE INDEX IF NOT EXISTS idx_servers_is_active ON vpn_servers(is_active);
+CREATE INDEX IF NOT EXISTS idx_users_username       ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_sessions       ON users USING gin (sessions);
+CREATE INDEX IF NOT EXISTS idx_servers_is_active    ON vpn_servers(is_active);
 
 -- ============================================================
 --  First-run instructions
@@ -46,6 +40,6 @@ CREATE INDEX IF NOT EXISTS idx_servers_is_active ON vpn_servers(is_active);
 --  Optional: seed a VPN server (example below, remove before production)
 -- ============================================================
 
--- INSERT INTO vpn_servers (name, country, city, host, protocol, current_load, max_clients, obfs_password, masquerade_url)
--- VALUES ('MY-SRV-01', 'Finland', 'Helsinki', 'srv1.example.com', 'Hysteria2', 0, 50, 'change-me-obfs-pass', 'https://srv1.example.com')
+-- INSERT INTO vpn_servers (name, country, city, host, current_load, max_clients)
+-- VALUES ('MY-SRV-01', 'Finland', 'Helsinki', 'srv1.example.com', 0, 50)
 -- ON CONFLICT DO NOTHING;

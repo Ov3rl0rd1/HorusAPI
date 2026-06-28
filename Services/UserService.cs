@@ -8,7 +8,6 @@ namespace HorusAPI.Services;
 public interface IUserService
 {
     Task<User?> AuthenticateAsync(string username, string password);
-    Task<User?> AuthenticateSessionAsync(string username, string session);
     Task<string?> CreateSession(string username);
     Task<bool> CreateUserAsync(string username, string password, string email);
     Task ClearOtherSessionsAsync(string username, string currentSession);
@@ -52,38 +51,6 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
         catch (Exception ex)
         {
             log.LogError(ex, "DB error during authentication for {Username}", username);
-            throw;
-        }
-    }
-
-    public async Task<User?> AuthenticateSessionAsync(string username, string session)
-    {
-        const string sql = """
-            SELECT * FROM users WHERE username = @Username LIMIT 1
-            """;
-        try
-        {
-            await using var conn = Connect();
-            var user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { Username = username });
-
-            if (user is null)
-            {
-                log.LogWarning("Auth failed – user not found: {Username}", username);
-                return null;
-            }
-
-            // Bug fix: inverted – return null when session is NOT found
-            if (user.sessions is null || !user.sessions.Contains(session))
-            {
-                log.LogWarning("Auth failed – session not valid: {Username}", username);
-                return null;
-            }
-
-            return user;
-        }
-        catch (Exception ex)
-        {
-            log.LogError(ex, "DB error during session auth for {Username}", username);
             throw;
         }
     }

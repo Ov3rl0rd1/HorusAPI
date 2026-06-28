@@ -18,6 +18,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    command: >
+      postgres 
+      -c shared_buffers=48MB 
+      -c work_mem=4MB 
+      -c maintenance_work_mem=16MB 
+      -c max_connections=20
+    deploy:
+      resources:
+        limits:
+          memory: 250M
     # No ports — postgres is accessible only within the Docker network
 
   # ── API (HTTP, internal only) ─────────────────────────────────────────────────
@@ -30,8 +40,14 @@ services:
     env_file: .env
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_GCHeapHardLimit: 250000000
+      DOTNET_ServerGarbageCollection: 0
       ASPNETCORE_URLS:        http://+:8080
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-horus};Username=${POSTGRES_USER:-horus};Password=${POSTGRES_PASSWORD}"
+    deploy:
+      resources:
+        limits:
+          memory: 350M
     # No external ports — traffic reaches the API only through nginx
 
   # ── Reverse proxy + automatic TLS ────────────────────────────────────────────
@@ -46,6 +62,7 @@ services:
     environment:
       DOMAIN:          ${DOMAIN}
       CERTBOT_EMAIL:   ${CERTBOT_EMAIL}
+      USE_SSL:         ${USE_SSL:-1}
       CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
     ports:
       - "80:80"
@@ -53,6 +70,10 @@ services:
     volumes:
       # Persist Let's Encrypt certs across container restarts / rebuilds
       - letsencrypt:/etc/letsencrypt
+    deploy:
+      resources:
+        limits:
+          memory: 30M
 
 volumes:
   pgdata:

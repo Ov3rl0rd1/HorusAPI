@@ -1,30 +1,22 @@
-# See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
-
-# This stage is used when running from VS in fast mode (Default for Debug configuration)
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS base
-USER $APP_UID
-WORKDIR /app
-EXPOSE 8080
-EXPOSE 8081
-
-
-# This stage is used to build the service project
+# ── Build stage ──────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
-ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["HorusAPI.csproj", "."]
-RUN dotnet restore "./HorusAPI.csproj"
+
+COPY HorusAPI.csproj .
+RUN dotnet restore
+
 COPY . .
-WORKDIR "/src/."
-RUN dotnet build "./HorusAPI.csproj" -c $BUILD_CONFIGURATION -o /app/build
+RUN dotnet publish -c Release -o /app/publish --no-restore
 
-# This stage is used to publish the service project to be copied to the final stage
-FROM build AS publish
-ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./HorusAPI.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
-
-# This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
-FROM base AS final
+# ── Runtime stage ─────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 WORKDIR /app
-COPY --from=publish /app/publish .
+
+# Non-root user for security
+RUN addgroup --system vpnapi && adduser --system --ingroup vpnapi vpnapi
+USER vpnapi
+
+COPY --from=build /app/publish .
+
+EXPOSE 443
 ENTRYPOINT ["dotnet", "HorusAPI.dll"]

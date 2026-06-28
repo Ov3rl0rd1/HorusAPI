@@ -14,44 +14,31 @@ public static class AuthEndpoints
     {
         var group = app.MapGroup("/auth").WithTags("Auth").RequireRateLimiting("auth");
 
-        // ── Login ────────────────────────────────────────────────────────────────
         group.MapPost("/login", async (
             [FromBody] LoginRequest req,
             IUserService     userSvc,
-            IJwtService      jwtSvc,
             ILogger<Program> log) =>
         {
             if (string.IsNullOrWhiteSpace(req.username) ||
-                (string.IsNullOrWhiteSpace(req.password) && string.IsNullOrWhiteSpace(req.session)))
-                return Results.BadRequest(new ApiError("Username and password (or session) are required."));
+                string.IsNullOrWhiteSpace(req.password))
+                return Results.BadRequest(new ApiError("Username and password are required."));
 
             User? user;
             string? session;
 
             try
             {
-                if (string.IsNullOrWhiteSpace(req.session))
-                {
-                    // Password login: authenticate, then create a fresh session
-                    user = await userSvc.AuthenticateAsync(req.username, req.password);
-                    if (user is null) return Results.Unauthorized();
+                // Password login: authenticate, then create a fresh session
+                user = await userSvc.AuthenticateAsync(req.username, req.password);
+                if (user is null) return Results.Unauthorized();
 
-                    session = await userSvc.CreateSession(req.username);
-                    if (session is null) return Results.Problem("Session creation failed.", statusCode: 500);
-                }
-                else
-                {
-                    // Session login: validate existing session, reuse it
-                    user = await userSvc.AuthenticateSessionAsync(req.username, req.session);
-                    if (user is null) return Results.Unauthorized();
-                    session = req.session;
-                }
+                session = await userSvc.CreateSession(req.username);
+                if (session is null) return Results.Problem("Session creation failed.", statusCode: 500);
             }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
-            var (token, expires) = jwtSvc.Generate(user, session);
             log.LogInformation("User {Username} authenticated", user.username);
-            return Results.Ok(new LoginResponse(token, expires, user.username, session));
+            return Results.Ok(new LoginResponse(session, user.expires_at, user.username));
         })
         .AllowAnonymous()
         .Produces<LoginResponse>(200)

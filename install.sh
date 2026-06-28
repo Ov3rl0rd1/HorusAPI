@@ -105,26 +105,6 @@ read -r _pg_input
 POSTGRES_PASSWORD="${_pg_input:-$_pg_gen}"
 
 echo ""
-echo -e "${BOLD}── JWT ─────────────────────────────────────────────${NC}"
-JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-info "JWT secret auto-generated (64 random bytes)."
-
-ask "JWT expiry in minutes [60]:"
-read -r JWT_EXPIRY; JWT_EXPIRY="${JWT_EXPIRY:-60}"
-
-echo ""
-echo -e "${BOLD}── Socks5 proxy ────────────────────────────────────${NC}"
-
-ask "Socks5 port [1080]:"
-read -r SOCKS5_PORT; SOCKS5_PORT="${SOCKS5_PORT:-1080}"
-
-ask "Socks5 username:"
-read -r SOCKS5_USER
-
-ask "Socks5 password:"
-read -rs SOCKS5_PASS; echo ""
-
-echo ""
 echo -e "${BOLD}── Server ──────────────────────────────────────────${NC}"
 
 ask "SSH port [22]:"
