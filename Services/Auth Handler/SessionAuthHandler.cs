@@ -29,7 +29,7 @@ namespace HorusAPI.Services.Auth_Handler
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             if (!Request.Headers.TryGetValue("X-Session-Key", out var headerValues))
-                return AuthenticateResult.Fail("Missing X-Session-Key header.");
+                return AuthenticateResult.NoResult();
 
             var sessionKey = headerValues.FirstOrDefault();
             if (string.IsNullOrEmpty(sessionKey))
@@ -38,12 +38,15 @@ namespace HorusAPI.Services.Auth_Handler
             var user = await GetSessionAsync(sessionKey);
 
             if (user == null)
-                return AuthenticateResult.Fail("Can not find X-Session-Key.");
+                return AuthenticateResult.Fail("Can not find relevant session key for passed X-Session-Key value.");
+
+            Context.Items["User"] = user;
 
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
                 new Claim(ClaimTypes.Name, user.username),
+                new Claim(ApiConsts.SessionKeyClaimType, sessionKey),
                 new Claim(ClaimTypes.Role, user.is_admin ? "Admin" : "User")
             };
 
@@ -83,15 +86,25 @@ namespace HorusAPI.Services.Auth_Handler
 
         private async Task<User?> GetUserFromPostgresAsync(string sessionKey)
         {
+            string[] parts = sessionKey.Split('.');
+            if (parts.Length != 2)
+                return null;
+
+            int uuid = 0;
+            if (int.TryParse(parts[0], out uuid) == false)
+                return null;
+
+            string key = parts[1];
+
             await using var conn = new NpgsqlConnection(_connectionString);
             await conn.OpenAsync();
 
             var sql = @"
                 SELECT * 
                 FROM users 
-                WHERE sessions @> ARRAY[@SessionKey]";
+                WHERE id = @UserId AND sessions @> ARRAY[@SessionKey]";
 
-            var user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { SessionKey = sessionKey });
+            var user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { UserId = uuid, SessionKey = sessionKey });
 
             return user;
         }

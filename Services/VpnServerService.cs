@@ -8,7 +8,7 @@ public interface IVpnServerService
 {
     Task<IEnumerable<ServerListItem>> GetAvailableServersAsync();
     Task<IEnumerable<BestServerItem>> GetBestServersAsync();
-    Task<ConnectData?>                GetConnectDataAsync(int serverId);
+    Task<ConnectData?>                GetConnectDataAsync(BestServerItem server);
 }
 
 public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log) : IVpnServerService
@@ -67,10 +67,10 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
             max_clients:  (int)r.max_clients));
     }
 
-    public async Task<ConnectData?> GetConnectDataAsync(int serverId)
+    public async Task<ConnectData?> GetConnectDataAsync(BestServerItem server)
     {
         const string sql = """
-            SELECT id, host, protocol, obfs_type, obfs_password, hop
+            SELECT obfs_type, obfs_password, hop
             FROM vpn_servers
             WHERE id = @ServerId AND is_active = true
             LIMIT 1
@@ -79,18 +79,18 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
         try
         {
             await using var conn = Connect();
-            var row = await conn.QuerySingleOrDefaultAsync(sql, new { ServerId = serverId });
+            var row = await conn.QuerySingleOrDefaultAsync(sql, new { ServerId = server.id });
 
             if (row is null)
             {
-                log.LogWarning("Server {ServerId} not found or inactive", serverId);
+                log.LogWarning("Server {ServerId} not found or inactive", server.id);
                 return null;
             }
 
             return new ConnectData(
-                serverId:      (int)row.id,
-                host:          (string)row.host,
-                protocol:      (string)row.protocol,
+                serverId:      server.id,
+                host:          server.host,
+                protocol:      server.protocol,
                 obfs_type:     (string)row.obfs_type,
                 obfs_password: (string)row.obfs_password,
                 hop:           (string)row.hop,
@@ -98,7 +98,7 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
         }
         catch (Exception ex)
         {
-            log.LogError(ex, "DB error fetching connect data for server {ServerId}", serverId);
+            log.LogError(ex, "DB error fetching connect data for server {ServerId}", server.id);
             throw;
         }
     }

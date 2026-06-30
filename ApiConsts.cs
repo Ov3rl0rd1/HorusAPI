@@ -11,8 +11,8 @@
 
         public const string APP_DEFAULT_KEY = "VPlxhl1d8/kgxO1Nw8PsjMcMaCGpPI1CL3FUNILcY0";
 
-        public const string SUBSCRIPTION_EXPIRES_AT = "subscription_expires_at";
-        public const string SESSION_ID = "session_id";
+        public const string SessionKeyClaimType = "SessionKey";
+        public const string UserHttpContext = "User";
 
         public const string CONFIG_HOST = "host";
         public const string CONFIG_AUTH = "auth";

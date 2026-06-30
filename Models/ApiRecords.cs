@@ -1,9 +1,9 @@
 namespace HorusAPI.Models;
 
-public record LoginRequest(string username, string password, string session);
-public record LoginResponse(string session, DateTime? expiresAt, string username);
+public record LoginRequest(string username, string password);
+public record LoginResponse(string session, DateTime? expiresAt);
 public record RegisterRequest(string username, string password, string email);
-public record LogoutOthersRequest(string session);
+public record LogoutOthersRequest();
 public record ConnectResponse(string config);
 
 public record SetSubscriptionRequest(DateTime expires_at);

@@ -3,6 +3,7 @@ using HorusAPI.Models;
 using HorusAPI.Services;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
+using HorusAPI.Services.Auth_Handler;
 
 namespace HorusAPI.Endpoints;
 
@@ -28,24 +29,23 @@ public static class AuthEndpoints
 
             try
             {
-                // Password login: authenticate, then create a fresh session
                 user = await userSvc.AuthenticateAsync(req.username, req.password);
                 if (user is null) return Results.Unauthorized();
 
-                session = await userSvc.CreateSession(req.username);
+                session = await userSvc.CreateSession(user.id);
                 if (session is null) return Results.Problem("Session creation failed.", statusCode: 500);
             }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
             log.LogInformation("User {Username} authenticated", user.username);
-            return Results.Ok(new LoginResponse(session, user.expires_at, user.username));
+            return Results.Ok(new LoginResponse(session, user.expires_at));
         })
         .AllowAnonymous()
         .Produces<LoginResponse>(200)
         .Produces<ApiError>(400)
         .Produces(401);
 
-        // ── Register ─────────────────────────────────────────────────────────────
+
         group.MapPost("/register", async (
             [FromBody] RegisterRequest req,
             IUserService     userSvc,
@@ -77,24 +77,23 @@ public static class AuthEndpoints
         .Produces<ApiError>(400)
         .Produces<ApiError>(409);
 
-        // ── Logout other devices ─────────────────────────────────────────────────
+
         group.MapPost("/logout-others", async (
             [FromBody] LogoutOthersRequest req,
             HttpContext         ctx,
             IUserService        userSvc,
             ILogger<Program>    log) =>
         {
-            if (string.IsNullOrWhiteSpace(req.session))
-                return Results.BadRequest(new ApiError("Current session token is required."));
+            User? user = ctx.Items[ApiConsts.UserHttpContext] as User;
 
-            // Extract username from JWT unique_name claim
-            string? username = ctx.User.FindFirstValue(ClaimTypes.Name)
-                ?? ctx.User.FindFirstValue("unique_name");
+            string? username = user?.username;
 
-            if (string.IsNullOrWhiteSpace(username))
+            string? session = ctx.User.GetSessionKey();
+
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(session))
                 return Results.Unauthorized();
 
-            try { await userSvc.ClearOtherSessionsAsync(username, req.session); }
+            try { await userSvc.ClearOtherSessionsAsync(username, session); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
             log.LogInformation("User {Username} cleared other sessions", username);

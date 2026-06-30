@@ -8,18 +8,18 @@ namespace HorusAPI.Services;
 public interface IUserService
 {
     Task<User?> AuthenticateAsync(string username, string password);
-    Task<string?> CreateSession(string username);
+    Task<string?> CreateSession(int userId);
     Task<bool> CreateUserAsync(string username, string password, string email);
     Task ClearOtherSessionsAsync(string username, string currentSession);
 }
 
 public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserService
 {
-    private static string GenerateSession()
+    private static string GenerateSession(int userId)
     {
-        var bytes = new byte[48];
+        var bytes = new byte[32];
         RandomNumberGenerator.Fill(bytes);
-        return Convert.ToBase64String(bytes);
+        return $"{userId}.{Convert.ToBase64String(bytes)}";
     }
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
@@ -55,7 +55,7 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
         }
     }
 
-    public async Task<string?> CreateSession(string username)
+    public async Task<string?> CreateSession(int userId)
     {
         // Keep sessions array bounded at 10: trim oldest when at cap before appending.
         const string sql = """
@@ -66,17 +66,17 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
                      ELSE sessions
                 END,
                 @Session)
-            WHERE username = @Username
+            WHERE id = @uuid
             """;
         try
         {
-            string session = GenerateSession();
+            string session = GenerateSession(userId);
             await using var conn = Connect();
-            int rows = await conn.ExecuteAsync(sql, new { Username = username, Session = session });
+            int rows = await conn.ExecuteAsync(sql, new { uuid = userId, Session = session });
 
             if (rows == 0)
             {
-                log.LogWarning("CreateSession: user not found: {Username}", username);
+                log.LogWarning("CreateSession: user not found: {UserId}", userId);
                 return null;
             }
 
@@ -84,7 +84,7 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
         }
         catch (Exception ex)
         {
-            log.LogError(ex, "DB error during CreateSession for {Username}", username);
+            log.LogError(ex, "DB error during CreateSession for {UserId}", userId);
             throw;
         }
     }

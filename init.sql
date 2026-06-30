@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_username       ON users(username);
-CREATE INDEX IF NOT EXISTS idx_users_sessions       ON users USING gin (sessions);
 CREATE INDEX IF NOT EXISTS idx_servers_is_active    ON vpn_servers(is_active);
 
 -- ============================================================
