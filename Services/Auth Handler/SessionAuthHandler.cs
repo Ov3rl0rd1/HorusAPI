@@ -28,17 +28,17 @@ namespace HorusAPI.Services.Auth_Handler
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            if (!Request.Headers.TryGetValue("X-Session-Key", out var headerValues))
+            if (!Request.Headers.TryGetValue(ApiConsts.SESSION_HEADER, out var headerValues))
                 return AuthenticateResult.NoResult();
 
             var sessionKey = headerValues.FirstOrDefault();
             if (string.IsNullOrEmpty(sessionKey))
-                return AuthenticateResult.Fail("Empty X-Session-Key header.");
+                return AuthenticateResult.Fail($"Empty {ApiConsts.SESSION_HEADER} header.");
 
             var user = await GetSessionAsync(sessionKey);
 
             if (user == null)
-                return AuthenticateResult.Fail("Can not find relevant session key for passed X-Session-Key value.");
+                return AuthenticateResult.Fail($"Can not find relevant session key for passed {ApiConsts.SESSION_HEADER} value.");
 
             Context.Items["User"] = user;
 

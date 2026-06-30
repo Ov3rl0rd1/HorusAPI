@@ -8,6 +8,7 @@
 
         public const string APP_HEADER = "X-APP-DATA";
         public const string API_HEADER = "X-API-PASSWORD";
+        public const string SESSION_HEADER = "X-Session-Key";
 
         public const string APP_DEFAULT_KEY = "VPlxhl1d8/kgxO1Nw8PsjMcMaCGpPI1CL3FUNILcY0";
 
