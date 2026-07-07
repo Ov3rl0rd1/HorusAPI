@@ -78,12 +78,23 @@ class Program
         {
             options.AddFixedWindowLimiter("auth", o =>
             {
-                o.PermitLimit = 10;
+                o.PermitLimit = 30;
                 o.Window = TimeSpan.FromMinutes(1);
                 o.QueueLimit = 0;
                 o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
             });
-            options.RejectionStatusCode = 429;
+
+
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 10,
+                        Window = TimeSpan.FromSeconds(10),
+                        QueueLimit = 5
+                    }));
         });
     }
 

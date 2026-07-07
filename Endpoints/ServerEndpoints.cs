@@ -40,7 +40,7 @@ public static class ServerEndpoints
                 IEnumerable<BestServerItem> bestServers = await svc.GetBestServersAsync();
                 BestServerItem? bestServer = bestServers.FirstOrDefault();
 
-                if (bestServers.FirstOrDefault() is null)
+                if (bestServer is null)
                     return Results.NotFound(new ApiError("No available servers."));
 
                 data = await svc.GetConnectDataAsync(bestServer);
@@ -64,18 +64,11 @@ public static class ServerEndpoints
             {
                 [ApiConsts.CONFIG_HOST]          = data.host,
                 [ApiConsts.CONFIG_AUTH]          = $"{session}",
-                [ApiConsts.CONFIG_HOP_INTERVAL]  = data.hop,
-                [ApiConsts.CONFIG_OBFS_TYPE]     = data.obfs_type,
-                [ApiConsts.CONFIG_OBFS_PASSWORD] = data.obfs_password,
-                [ApiConsts.CONFIG_SOCKS_PORT]    = cfg["Socks5:Port"]     ?? "1080",
-                [ApiConsts.CONFIG_SOCKS_USERNAME]= cfg["Socks5:Username"] ?? "user",
-                [ApiConsts.CONFIG_SOCKS_PASSWORD]= cfg["Socks5:Password"] ?? "pass",
             };
 
-            string rendered = ConfigRenderer.Render(ApiConsts.CONFIG_TEMPLATE, vars);
-            return Results.Ok(new ConnectResponse(rendered));
+            return Results.Json(vars);
         })
-        .Produces<ConnectResponse>(200)
+        .Produces<JsonContent>(200)
         .Produces<ApiError>(400)
         .Produces<ApiError>(403)
         .Produces<ApiError>(404)

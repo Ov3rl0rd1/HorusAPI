@@ -4,7 +4,6 @@ public record LoginRequest(string username, string password);
 public record LoginResponse(string session, DateTime? expiresAt);
 public record RegisterRequest(string username, string password, string email);
 public record LogoutOthersRequest();
-public record ConnectResponse(string config);
 
 public record SetSubscriptionRequest(DateTime expires_at);
 

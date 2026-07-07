@@ -1,5 +1,7 @@
 using Dapper;
 using HorusAPI.Models;
+using HorusAPI.Services.Auth_Handler;
+using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 
 namespace HorusAPI.Services;
@@ -10,13 +12,14 @@ public interface IAdminServerService
     Task<int> AddServerAsync(AddServerRequest req);
     Task<bool> RemoveServerAsync(int id);
     Task<IEnumerable<PingResult>> PingAllServersAsync();
-    Task<bool> SetSubscriptionAsync(int userId, DateTime expiresAt);
-    Task<bool> ClearSubscriptionAsync(int userId);
+    Task<bool> SetSubscriptionAsync(string username, DateTime expiresAt);
+    Task<bool> ClearSubscriptionAsync(string username);
 }
 
 public class AdminServerService(
     IConfiguration cfg,
     IHttpClientFactory httpClientFactory,
+    IMemoryCache cache,
     ILogger<AdminServerService> log) : IAdminServerService
 {
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
@@ -99,17 +102,55 @@ public class AdminServerService(
         return await Task.WhenAll(tasks);
     }
 
-    public async Task<bool> SetSubscriptionAsync(int userId, DateTime expiresAt)
+    public async Task<bool> SetSubscriptionAsync(string username, DateTime expiresAt)
     {
-        const string sql = "UPDATE users SET expires_at = @ExpiresAt WHERE id = @UserId";
+        const string sql = "UPDATE users SET expires_at = @ExpiresAt WHERE id = @Username RETURNING *";
         await using var conn = Connect();
-        return await conn.ExecuteAsync(sql, new { ExpiresAt = expiresAt, UserId = userId }) > 0;
+
+        try
+        {
+            User? user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { ExpiresAt = expiresAt, Username = username });
+
+            if (user == null)
+                return false;
+            else
+                UpdateUserCache(user);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.LogError("SetSubscription failed for user {Username} : {Message}", username, ex.Message);
+            return false;
+        }
     }
 
-    public async Task<bool> ClearSubscriptionAsync(int userId)
+    public async Task<bool> ClearSubscriptionAsync(string username)
     {
-        const string sql = "UPDATE users SET expires_at = NULL WHERE id = @UserId";
+        const string sql = "UPDATE users SET expires_at = NULL WHERE id = @Username";
         await using var conn = Connect();
-        return await conn.ExecuteAsync(sql, new { UserId = userId }) > 0;
+
+        try
+        {
+            User? user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { Username = username });
+
+            if (user == null)
+                return false;
+            else
+                UpdateUserCache(user);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.LogError("ClearSubscription failed for user {Username} : {Message}", username, ex.Message);
+            return false;
+        }
+    }
+
+    private void UpdateUserCache(User user)
+    {
+        foreach (var e in user.sessions)
+            cache.Set(SessionAuthHandler.SESSION_CACHE_PREFIX + e, user);
     }
 }

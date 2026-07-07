@@ -11,6 +11,8 @@ namespace HorusAPI.Services.Auth_Handler
 {
     public class SessionAuthHandler : AuthenticationHandler<SessionAuthOptions>
     {
+        public const string SESSION_CACHE_PREFIX = "session_";
+
         private readonly string? _connectionString;
         private readonly IMemoryCache _cache;
 
@@ -59,7 +61,7 @@ namespace HorusAPI.Services.Auth_Handler
                 
         private async Task<User?> GetSessionAsync(string sessionKey)
         {
-            string cacheKey = $"session_{sessionKey}";
+            string cacheKey = SESSION_CACHE_PREFIX + sessionKey;
             
             if (_cache.TryGetValue(cacheKey, out User? cachedSession))
             {
@@ -68,15 +70,32 @@ namespace HorusAPI.Services.Auth_Handler
             
             var user = await GetUserFromPostgresAsync(sessionKey);
             
-            if (user != null && user.expires_at > DateTime.UtcNow && user.sessions.Contains(sessionKey))
+            if (user != null)
             {
-                var cacheEntryOptions = new MemoryCacheEntryOptions
+                if (user.sessions.Contains(sessionKey) == false)
+                    return null;
+
+                MemoryCacheEntryOptions? cacheEntryOptions = null;
+
+                if (user.expires_at.HasValue && user.expires_at > DateTime.UtcNow)
                 {
-                    Size = 1,
-                    AbsoluteExpiration = user.expires_at,
-                    SlidingExpiration = TimeSpan.FromHours(12),
-                    Priority = CacheItemPriority.Normal
-                };
+                    cacheEntryOptions = new MemoryCacheEntryOptions
+                    {
+                        Size = 1,
+                        AbsoluteExpiration = user.expires_at,
+                        SlidingExpiration = TimeSpan.FromHours(12),
+                        Priority = CacheItemPriority.Normal
+                    };
+                }
+                else
+                {
+                    cacheEntryOptions = new MemoryCacheEntryOptions
+                    {
+                        Size = 1,
+                        AbsoluteExpiration = DateTime.Now+TimeSpan.FromHours(1),
+                        Priority = CacheItemPriority.Low
+                    };
+                }
             
                 _cache.Set(cacheKey, user, cacheEntryOptions);
             }

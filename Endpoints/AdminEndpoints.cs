@@ -12,7 +12,7 @@ public static class AdminEndpoints
             .WithTags("Admin")
             .RequireAuthorization("AdminOnly");
 
-        // ── Ping all servers ──────────────────────────────────────────────────────
+        // Ping all servers
         group.MapPost("/servers/ping", async (IAdminServerService svc) =>
         {
             IEnumerable<PingResult> results;
@@ -23,7 +23,7 @@ public static class AdminEndpoints
         .Produces<IEnumerable<PingResult>>(200)
         .WithSummary("Ping all VPN servers to check masquerade site availability");
 
-        // ── List all servers (including inactive) ─────────────────────────────────
+        // List all servers (including inactive)
         group.MapGet("/servers", async (IAdminServerService svc) =>
         {
             IEnumerable<ServerAdminItem> servers;
@@ -34,7 +34,7 @@ public static class AdminEndpoints
         .Produces<IEnumerable<ServerAdminItem>>(200)
         .WithSummary("List all VPN servers including inactive ones");
 
-        // ── Add new server ────────────────────────────────────────────────────────
+        // Add new server 
         group.MapPost("/servers", async (
             [FromBody] AddServerRequest req,
             IAdminServerService svc) =>
@@ -65,7 +65,7 @@ public static class AdminEndpoints
         .Produces<ApiError>(400)
         .WithSummary("Add a new VPN server");
 
-        // ── Remove server ─────────────────────────────────────────────────────────
+        // Remove server
         group.MapDelete("/servers/{id:int}", async (
             [FromRoute] int id,
             IAdminServerService svc) =>
@@ -82,36 +82,36 @@ public static class AdminEndpoints
         .Produces<ApiError>(404)
         .WithSummary("Remove a VPN server");
 
-        // ── Set user subscription ─────────────────────────────────────────────────
-        group.MapPut("/users/{id:int}/subscription", async (
-            [FromRoute] int              id,
+        // Set user subscription
+        group.MapPut("/users/{username:string}/subscription", async (
+            [FromRoute] string username,
             [FromBody]  SetSubscriptionRequest req,
             IAdminServerService svc) =>
         {
             bool updated;
-            try { updated = await svc.SetSubscriptionAsync(id, req.expires_at.ToUniversalTime()); }
+            try { updated = await svc.SetSubscriptionAsync(username, req.expires_at.ToUniversalTime()); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
             return updated
                 ? Results.NoContent()
-                : Results.NotFound(new ApiError($"User {id} not found."));
+                : Results.NotFound(new ApiError($"User {username} not found."));
         })
         .Produces(204)
         .Produces<ApiError>(404)
         .WithSummary("Set or extend a user's subscription expiry");
 
-        // ── Cancel user subscription ──────────────────────────────────────────────
-        group.MapDelete("/users/{id:int}/subscription", async (
-            [FromRoute] int id,
+        // Cancel user subscription
+        group.MapDelete("/users/{username:string}/subscription", async (
+            [FromRoute] string username,
             IAdminServerService svc) =>
         {
             bool updated;
-            try { updated = await svc.ClearSubscriptionAsync(id); }
+            try { updated = await svc.ClearSubscriptionAsync(username); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
             return updated
                 ? Results.NoContent()
-                : Results.NotFound(new ApiError($"User {id} not found."));
+                : Results.NotFound(new ApiError($"User {username} not found."));
         })
         .Produces(204)
         .Produces<ApiError>(404)
