@@ -27,9 +27,10 @@ public class AdminServerService(
     public async Task<IEnumerable<ServerAdminItem>> GetAllServersAsync()
     {
         const string sql = """
-            SELECT id, name, country, city, host, protocol,
+            SELECT id, name, country, city, host,
                    current_load, max_clients, is_active,
-                   obfs_type, obfs_password, auth_password, hop, masquerade_url
+                   auth_password, masquerade_url,
+                   reality_public_key, agent_version, last_registered_at
             FROM vpn_servers
             ORDER BY id
             """;
@@ -38,33 +39,31 @@ public class AdminServerService(
         var rows = await conn.QueryAsync(sql);
 
         return rows.Select(r => new ServerAdminItem(
-            id:             (int)r.id,
-            name:           (string)r.name,
-            country:        (string)r.country,
-            city:           (string)r.city,
-            host:           (string)r.host,
-            protocol:       (string)r.protocol,
-            current_load:   (int)r.current_load,
-            max_clients:    (int)r.max_clients,
-            is_active:      (bool)r.is_active,
-            obfs_type:      (string)r.obfs_type,
-            obfs_password:  (string)r.obfs_password,
-            hop:            (string)r.hop,
-            masquerade_url: (string?)r.masquerade_url));
+            id:                 (int)r.id,
+            name:               (string)r.name,
+            country:            (string)r.country,
+            city:               (string)r.city,
+            host:               (string)r.host,
+            current_load:       (int)r.current_load,
+            max_clients:        (int)r.max_clients,
+            is_active:          (bool)r.is_active,
+            auth_password:      (string)r.auth_password,
+            masquerade_url:     (string?)r.masquerade_url,
+            reality_public_key: (string)r.reality_public_key,
+            agent_version:      (string)r.agent_version,
+            last_registered_at: (DateTime?)r.last_registered_at));
     }
 
     public async Task<int> AddServerAsync(AddServerRequest req)
     {
-        // COALESCE the NOT NULL text columns so an omitted field falls back to the
-        // column default instead of failing on a null bind.
+        // Only identity + capacity + the shared secret. The node fills in
+        // reality_*/olcrtc_*/ports itself via POST /node/register; the rest default.
         const string sql = """
             INSERT INTO vpn_servers
-                (name, country, city, host, protocol, max_clients,
-                 obfs_type, obfs_password, auth_password, hop, masquerade_url)
+                (name, country, city, host, max_clients, auth_password, masquerade_url)
             VALUES
-                (@name, @country, @city, @host, COALESCE(@protocol,'vless'), @max_clients,
-                 COALESCE(@obfs_type,''), COALESCE(@obfs_password,''),
-                 COALESCE(@auth_password,''), COALESCE(@hop,''), @masquerade_url)
+                (@name, @country, @city, @host, @max_clients,
+                 COALESCE(@auth_password, ''), @masquerade_url)
             RETURNING id
             """;
 
@@ -107,7 +106,7 @@ public class AdminServerService(
 
     public async Task<bool> SetSubscriptionAsync(string username, DateTime expiresAt)
     {
-        const string sql = "UPDATE users SET expires_at = @ExpiresAt WHERE id = @Username RETURNING *";
+        const string sql = "UPDATE users SET expires_at = @ExpiresAt WHERE username = @Username RETURNING *";
         await using var conn = Connect();
 
         try
@@ -130,7 +129,7 @@ public class AdminServerService(
 
     public async Task<bool> ClearSubscriptionAsync(string username)
     {
-        const string sql = "UPDATE users SET expires_at = NULL WHERE id = @Username";
+        const string sql = "UPDATE users SET expires_at = NULL WHERE username = @Username";
         await using var conn = Connect();
 
         try

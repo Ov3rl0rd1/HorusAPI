@@ -17,11 +17,10 @@ CREATE TABLE IF NOT EXISTS users (
     is_admin            BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     expires_at          TIMESTAMPTZ,                 -- NULL = never expires
-    current_server_id   INT,
-    last_connect_at     TIMESTAMPTZ,
-    last_disconnect_at  TIMESTAMPTZ,
-
-
+    current_server_id      INT,
+    last_connect_at        TIMESTAMPTZ,
+    last_disconnect_at     TIMESTAMPTZ,
+    last_disconnect_reason VARCHAR(16)
 );
 
 -- ============================================================================
