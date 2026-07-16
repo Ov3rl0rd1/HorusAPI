@@ -83,35 +83,44 @@ public static class AdminEndpoints
         .WithSummary("Remove a VPN server");
 
         // Set user subscription
-        group.MapPut("/users/{username:string}/subscription", async (
+        group.MapPut("/users/{username}/subscription", async (
             [FromRoute] string username,
             [FromBody]  SetSubscriptionRequest req,
-            IAdminServerService svc) =>
+            IAdminServerService svc,
+            INodeNotifier notifier) =>
         {
             bool updated;
             try { updated = await svc.SetSubscriptionAsync(username, req.expires_at.ToUniversalTime()); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
-            return updated
-                ? Results.NoContent()
-                : Results.NotFound(new ApiError($"User {username} not found."));
+            if (!updated)
+                return Results.NotFound(new ApiError($"User {username} not found."));
+
+            return Results.NoContent();
         })
         .Produces(204)
         .Produces<ApiError>(404)
         .WithSummary("Set or extend a user's subscription expiry");
 
         // Cancel user subscription
-        group.MapDelete("/users/{username:string}/subscription", async (
+        group.MapDelete("/users/{username}/subscription", async (
             [FromRoute] string username,
-            IAdminServerService svc) =>
+            IAdminServerService svc,
+            INodeNotifier notifier) =>
         {
             bool updated;
             try { updated = await svc.ClearSubscriptionAsync(username); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
-            return updated
-                ? Results.NoContent()
-                : Results.NotFound(new ApiError($"User {username} not found."));
+            if (!updated)
+                return Results.NotFound(new ApiError($"User {username} not found."));
+            else
+            {
+                // TODO
+                //notifier.RemoveUserAsync();
+            }
+
+            return Results.NoContent();
         })
         .Produces(204)
         .Produces<ApiError>(404)

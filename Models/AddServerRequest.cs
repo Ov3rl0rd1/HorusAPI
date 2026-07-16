@@ -10,4 +10,5 @@ public record AddServerRequest(
     string  obfs_type,
     string  obfs_password,
     string  hop,
-    string? masquerade_url);
+    string? masquerade_url,
+    string? auth_password = null);   // node shared secret (X-API-PASSWORD); '' if omitted

@@ -6,6 +6,5 @@ public record BestServerItem(
     string country,
     string city,
     string host,
-    string protocol,
     int    current_load,
     int    max_clients);

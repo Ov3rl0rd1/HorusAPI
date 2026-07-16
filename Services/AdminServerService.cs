@@ -55,13 +55,16 @@ public class AdminServerService(
 
     public async Task<int> AddServerAsync(AddServerRequest req)
     {
+        // COALESCE the NOT NULL text columns so an omitted field falls back to the
+        // column default instead of failing on a null bind.
         const string sql = """
             INSERT INTO vpn_servers
                 (name, country, city, host, protocol, max_clients,
                  obfs_type, obfs_password, auth_password, hop, masquerade_url)
             VALUES
-                (@name, @country, @city, @host, @protocol, @max_clients,
-                 @obfs_type, @obfs_password, @auth_password, @hop, @masquerade_url)
+                (@name, @country, @city, @host, COALESCE(@protocol,'vless'), @max_clients,
+                 COALESCE(@obfs_type,''), COALESCE(@obfs_password,''),
+                 COALESCE(@auth_password,''), COALESCE(@hop,''), @masquerade_url)
             RETURNING id
             """;
 

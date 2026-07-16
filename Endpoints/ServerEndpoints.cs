@@ -34,21 +34,17 @@ public static class ServerEndpoints
             if (subExp != null && subExp <= DateTime.UtcNow)
                 return Results.Json(new ApiError("Subscription expired."), statusCode: 403);
 
-            ConnectData? data;
+            ServerRow? server;
             try 
             {
-                IEnumerable<BestServerItem> bestServers = await svc.GetBestServersAsync();
-                BestServerItem? bestServer = bestServers.FirstOrDefault();
+                server = await svc.ChooseServerAsync(user);
 
-                if (bestServer is null)
+                if (server is null)
                     return Results.NotFound(new ApiError("No available servers."));
 
-                data = await svc.GetConnectDataAsync(bestServer);
+                await svc.BindUserAsync(user.id, server.serverId);
             }
             catch { return Results.Problem("Database error.", statusCode: 503); }
-
-            if (data is null)
-                return Results.NotFound(new ApiError($"Server not found or unavailable."));
 
             string? username = user?.username;
 
@@ -60,10 +56,13 @@ public static class ServerEndpoints
             if (string.IsNullOrWhiteSpace(session))
                 return Results.Unauthorized();
 
+            string mainVless = ClientConfigBuilder.MainVless(server, user.vpn_uuid);
+            string mainHystria = ClientConfigBuilder.MainHysteria(server, user.vpn_uuid);
+
             var vars = new Dictionary<string, string?>
             {
-                [ApiConsts.CONFIG_HOST]          = data.host,
-                [ApiConsts.CONFIG_AUTH]          = $"{session}",
+                [ApiConsts.VLESS_LINK]          = mainVless,
+                [ApiConsts.HYSTERIA_LINK]       = mainHystria,
             };
 
             return Results.Json(vars);

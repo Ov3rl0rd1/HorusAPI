@@ -21,8 +21,15 @@ class Program
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<IVpnServerService, VpnServerService>();
         builder.Services.AddScoped<IAdminServerService, AdminServerService>();
+        builder.Services.AddScoped<INodeService, NodeService>();
+        builder.Services.AddScoped<INodeNotifier, NodeNotifier>();
 
         AddPingClient(builder);
+
+        builder.Services.AddHttpClient("node", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(5);
+        });
 
         AddRateLimiting(builder);
 
@@ -49,6 +56,7 @@ class Program
         app.MapAuthEndpoints();
         app.MapServerEndpoints();
         app.MapAdminEndpoints();
+        app.MapNodeAuthEndpoints();
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }))
            .AllowAnonymous()
