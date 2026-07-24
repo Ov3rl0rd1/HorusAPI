@@ -9,4 +9,4 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Pull and redeploy
-        run: ${APP_DIR}/deploy.sh"
+        run: "/opt/HorusAPI/deploy.sh"
