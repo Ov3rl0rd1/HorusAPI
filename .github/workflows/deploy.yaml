@@ -9,4 +9,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Pull and redeploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: "/opt/HorusAPI/deploy.sh"
