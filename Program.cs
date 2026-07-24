@@ -9,6 +9,19 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Threading.RateLimiting;
 
+// Recommended Limits by LayerPer-IP Limit (Short Term): Max 3 requests per minute.Why: Stops automated bots from 
+// spamming your server from a single machine.
+
+// Per-IP Limit (Long Term): Max 15 requests per hour.Why: Prevents slow-drip brute force attacks that try to avoid 
+// detection by waiting a few seconds between requests.
+
+// Per-Account Limit (Target User): Max 3 requests per hour per email address.Why: Crucial for preventing targeted harassment. 
+// If a hacker targets victim@example.com, this stops them from sending hundreds of annoying emails to that specific user, 
+// even if the hacker switches IPs.
+
+// Global Server Limit (Fallback): Max 500 total requests per hour across your whole site.Why: Protects your outbound email queue from 
+// being overwhelmed (which could get your server IP blacklisted for spam) if a major botnet attacks you using thousands of different IPs.
+
 class Program
 {
 

@@ -62,8 +62,12 @@ echo -e "${BOLD}── GitHub ────────────────�
 ask "GitHub username:"
 read -r GH_USER
 
+[[ -z "$GH_USER" ]] && error "GitHub username is required."
+
 ask "Repository name (e.g. HorusAPI):"
 read -r REPO_NAME
+
+[[ -z "$REPO_NAME" ]] && error "Repository name is required."
 
 echo ""
 echo "  Create a Personal Access Token at:"
@@ -73,6 +77,7 @@ echo "  You can delete the token after this script finishes."
 ask "GitHub PAT:"
 read -rs GH_PAT
 echo ""
+[[ -z "$GH_PAT" ]] && error "GitHub Personal Access Token is required."
 
 echo ""
 echo -e "${BOLD}── Application ─────────────────────────────────────${NC}"
@@ -128,8 +133,8 @@ apt-get update -y
 apt-get upgrade -y
 apt-get install -y \
     curl wget git openssl ca-certificates gnupg \
-    lsb-release software-properties-common apt-transport-https \
-    ufw iptables-persistent fail2ban unattended-upgrades \
+    lsb-release apt-transport-https \
+    ufw fail2ban unattended-upgrades \
     jq tmux htop net-tools
 
 success "Base packages installed"
@@ -163,12 +168,15 @@ fi
 
 # Limit container log size — prevents disk exhaustion on busy servers
 mkdir -p /etc/docker
-cat > /etc/docker/daemon.json << 'EOF'
+_tmp_daemon=$(mktemp /tmp/daemon.json.XXXX)
+cat > "${_tmp_daemon}" << 'EOF'
 {
-  "log-driver": "json-file",
-  "log-opts": { "max-size": "10m", "max-file": "3" }
+    "log-driver": "json-file",
+    "log-opts": { "max-size": "10m", "max-file": "3" }
 }
 EOF
+install -m 0644 "${_tmp_daemon}" /etc/docker/daemon.json
+rm -f "${_tmp_daemon}"
 systemctl reload docker 2>/dev/null || systemctl restart docker
 success "Docker log rotation configured (10 MB × 3 files)"
 
@@ -194,7 +202,7 @@ else
     warn "GitHub CLI already installed — skipping."
 fi
 
-echo "$GH_PAT" | gh auth login --with-token
+echo "$GH_PAT" | gh auth login --with-token || error "gh login failed — check GH_PAT and network"
 success "Authenticated with GitHub"
 
 # ==============================================================================
@@ -213,25 +221,9 @@ ufw --force enable
 success "UFW enabled — open ports: SSH:${SSH_PORT}, HTTP:80, HTTPS:443"
 
 # ==============================================================================
-#  STEP 5 — BLOCK ICMP PINGS (iptables-persistent)
-# ==============================================================================
-section "Step 5/11 — Block ICMP pings"
-
-# Drop inbound echo-requests (ping) for both IPv4 and IPv6.
-# Rules are appended only if not already present.
-iptables  -C INPUT -p icmp    --icmp-type   echo-request -j DROP 2>/dev/null \
-    || iptables  -A INPUT -p icmp    --icmp-type   echo-request -j DROP
-ip6tables -C INPUT -p icmpv6 --icmpv6-type echo-request -j DROP 2>/dev/null \
-    || ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j DROP
-
-# Persist rules across reboots
-netfilter-persistent save
-success "ICMP echo-requests blocked (IPv4 + IPv6, persistent)"
-
-# ==============================================================================
 #  STEP 6 — SECURITY HARDENING
 # ==============================================================================
-section "Step 6/11 — Security hardening"
+section "Step 5/11 — Security hardening"
 
 # fail2ban — bans IPs with repeated SSH failures
 cat > /etc/fail2ban/jail.d/sshd-custom.conf << EOF
@@ -276,7 +268,7 @@ success "Kernel hardening applied (sysctl)"
 # ==============================================================================
 #  STEP 7 — SWAP FILE (create if absent — useful for 1-2 GB VPS)
 # ==============================================================================
-section "Step 7/11 — Swap"
+section "Step 6/11 — Swap"
 
 if swapon --show | grep -q .; then
     warn "Swap already exists — skipping."
@@ -296,7 +288,7 @@ fi
 # ==============================================================================
 #  STEP 8 — APP USER & DEPLOY SSH KEY
 # ==============================================================================
-section "Step 8/11 — App user & deploy SSH key"
+section "Step 7/11 — App user & deploy SSH key"
 
 # Dedicated unprivileged user for the runner and app
 if ! id "$RUNNER_USER" &>/dev/null; then
@@ -319,7 +311,9 @@ if [[ ! -f "$DEPLOY_KEY" ]]; then
 fi
 
 # Trust GitHub's host key (no StrictHostKeyChecking prompts)
-ssh-keyscan -t ed25519 github.com >> "/home/${RUNNER_USER}/.ssh/known_hosts" 2>/dev/null
+if ! grep -q "github.com" "/home/${RUNNER_USER}/.ssh/known_hosts" 2>/dev/null; then
+    ssh-keyscan -t ed25519 github.com >> "/home/${RUNNER_USER}/.ssh/known_hosts" 2>/dev/null || true
+fi
 
 # SSH client config for the runner user
 cat > "/home/${RUNNER_USER}/.ssh/config" << EOF
@@ -346,7 +340,7 @@ gh api "repos/${GH_USER}/${REPO_NAME}/keys" \
 # ==============================================================================
 #  STEP 9 — CLONE REPOSITORY
 # ==============================================================================
-section "Step 9/11 — Clone repository"
+section "Step 8/11 — Clone repository"
 
 # Allow git to trust the app directory when run as RUNNER_USER
 run_as "$RUNNER_USER" git config --global --add safe.directory "$APP_DIR"
@@ -356,9 +350,28 @@ if [[ -d "${APP_DIR}/.git" ]]; then
     run_as "$RUNNER_USER" git -C "$APP_DIR" pull origin main || true
 else
     info "Cloning ${GH_USER}/${REPO_NAME} → ${APP_DIR}"
+    # Ensure the target directory exists and is writable by the runner user.
+    if [[ -d "${APP_DIR}" ]]; then
+        if [[ -n "$(ls -A "${APP_DIR}")" ]]; then
+            error "Target directory ${APP_DIR} exists and is not empty — cannot clone."
+        fi
+        chown "${RUNNER_USER}:${RUNNER_USER}" "${APP_DIR}" || true
+    else
+        mkdir -p "${APP_DIR}"
+        chown "${RUNNER_USER}:${RUNNER_USER}" "${APP_DIR}"
+    fi
+
+    # Try SSH clone as the runner user (uses deploy key). If it fails (deploy key
+    # may not be registered), fall back to HTTPS clone via `gh` (uses the PAT).
     run_as "$RUNNER_USER" bash -c \
         "GIT_SSH_COMMAND='ssh -i ${DEPLOY_KEY} -o StrictHostKeyChecking=yes' \
-         git clone 'git@github.com:${GH_USER}/${REPO_NAME}.git' '${APP_DIR}'"
+         git clone 'git@github.com:${GH_USER}/${REPO_NAME}.git' '${APP_DIR}'" || {
+        warn "SSH clone failed — attempting HTTPS clone using 'gh' (will use authenticated CLI)."
+        rm -rf "${APP_DIR}" || true
+        gh repo clone "${GH_USER}/${REPO_NAME}" "${APP_DIR}" || \
+            error "HTTPS clone with 'gh' failed. Ensure the PAT has 'repo' scope or register the deploy key manually."
+        chown -R "${RUNNER_USER}:${RUNNER_USER}" "${APP_DIR}"
+    }
     success "Repository cloned"
 fi
 
@@ -367,7 +380,7 @@ chown -R "${RUNNER_USER}:${RUNNER_USER}" "$APP_DIR"
 # ==============================================================================
 #  STEP 10 — WRITE .env FILE
 # ==============================================================================
-section "Step 10/11 — Application .env"
+section "Step 9/11 — Application .env"
 
 ENV_FILE="${APP_DIR}/.env"
 
@@ -384,17 +397,6 @@ CERTBOT_STAGING=${CERTBOT_STAGING}
 POSTGRES_DB=${POSTGRES_DB}
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-
-# ── JWT ───────────────────────────────────────────────────────
-Jwt__Secret=${JWT_SECRET}
-Jwt__Issuer=horus-auth-api
-Jwt__Audience=horus-clients
-Jwt__ExpiryMinutes=${JWT_EXPIRY}
-
-# ── Socks5 ────────────────────────────────────────────────────
-Socks5__Port=${SOCKS5_PORT}
-Socks5__Username=${SOCKS5_USER}
-Socks5__Password=${SOCKS5_PASS}
 EOF
 
 chmod 600 "$ENV_FILE"
@@ -404,16 +406,39 @@ success ".env written to ${ENV_FILE}"
 # ==============================================================================
 #  STEP 11 — GITHUB ACTIONS SELF-HOSTED RUNNER
 # ==============================================================================
-section "Step 11/11 — GitHub Actions self-hosted runner"
+section "Step 10/11 — GitHub Actions self-hosted runner"
 
 # Get registration token automatically (requires 'repo' scope PAT)
 info "Requesting runner registration token..."
-RUNNER_TOKEN=$(gh api \
-    "repos/${GH_USER}/${REPO_NAME}/actions/runners/registration-token" \
-    --method POST --jq .token)
-[[ -z "$RUNNER_TOKEN" ]] && \
-    error "Could not get runner token. Make sure the PAT has 'repo' scope."
-success "Runner token obtained"
+_gh_out=$(mktemp)
+_gh_err=$(mktemp)
+if gh api "repos/${GH_USER}/${REPO_NAME}/actions/runners/registration-token" --method POST >"${_gh_out}" 2>"${_gh_err}"; then
+        RUNNER_TOKEN=$(jq -r .token <"${_gh_out}" 2>/dev/null || true)
+        if [[ -z "${RUNNER_TOKEN}" || "${RUNNER_TOKEN}" == "null" ]]; then
+                echo "" >&2
+                echo "$(cat ${_gh_err})" >&2
+                error "Failed to parse runner token from GitHub response. See output above."
+        fi
+        success "Runner token obtained"
+else
+        echo "" >&2
+        cat "${_gh_err}" >&2
+        echo "" >&2
+        error "Could not obtain runner registration token.
+Common causes:
+    - The Personal Access Token (PAT) used to authenticate 'gh' does not have the required permissions.
+        For repository-level runners, a classic PAT with the 'repo' scope (full repo access) is required.
+    - You're using a fine-grained token that does not include the repository 'Actions' permission for this repo.
+    - The authenticated user does not have admin access to the repository.
+
+How to fix:
+    1) Create a classic PAT with the 'repo' scope: https://github.com/settings/tokens/new?scopes=repo
+    2) Or ensure your fine-grained token grants the repository 'Actions' permission and admin access.
+    3) Re-run this script after updating the PAT or authenticating `gh` with the correct token.
+
+Docs: https://docs.github.com/en/rest/actions/self-hosted-runners#create-a-registration-token-for-a-repository"
+fi
+rm -f "${_gh_out}" "${_gh_err}"
 
 # Fetch latest stable runner release
 info "Fetching latest runner version..."
@@ -426,12 +451,16 @@ info "Runner version: ${RUNNER_VERSION}"
 # Download and extract
 RUNNER_ARCHIVE="actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 mkdir -p "$RUNNER_DIR"
-curl -fsSL \
-    "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${RUNNER_ARCHIVE}" \
-    -o "/tmp/${RUNNER_ARCHIVE}"
-tar xzf "/tmp/${RUNNER_ARCHIVE}" -C "$RUNNER_DIR"
-rm -f "/tmp/${RUNNER_ARCHIVE}"
-chown -R "${RUNNER_USER}:${RUNNER_USER}" "$RUNNER_DIR"
+if [[ ! -f "${RUNNER_DIR}/.runner" ]]; then
+    curl -fsSL \
+        "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${RUNNER_ARCHIVE}" \
+        -o "/tmp/${RUNNER_ARCHIVE}"
+    tar xzf "/tmp/${RUNNER_ARCHIVE}" -C "$RUNNER_DIR"
+    rm -f "/tmp/${RUNNER_ARCHIVE}"
+    chown -R "${RUNNER_USER}:${RUNNER_USER}" "$RUNNER_DIR"
+else
+    warn "Runner directory already contains an installed runner; skipping download/extract."
+fi
 
 # Configure (runs as the runner user)
 run_as "$RUNNER_USER" bash -c "
@@ -447,14 +476,15 @@ run_as "$RUNNER_USER" bash -c "
 "
 
 # Install and start as a systemd service (must run as root)
-"$RUNNER_DIR/svc.sh" install "$RUNNER_USER"
-"$RUNNER_DIR/svc.sh" start
+# svc.sh MUST run from the runner root, or it aborts with
+# "Must run from runner root or install is corrupt".
+( cd "$RUNNER_DIR" && ./svc.sh install "$RUNNER_USER" && ./svc.sh start )
 success "Runner installed as a systemd service and started"
 
 # ==============================================================================
 #  DEPLOY SCRIPT  (called by CI/CD on every push)
 # ==============================================================================
-section "Deploy script"
+section "Step 11/11 — Deploy script"
 
 cat > "${APP_DIR}/deploy.sh" << DEPLOY_SCRIPT
 #!/usr/bin/env bash
@@ -541,6 +571,7 @@ echo ""
 echo -e "${BOLD}Saved credentials (keep these safe):${NC}"
 echo -e "  PostgreSQL password:  ${POSTGRES_PASSWORD}"
 echo -e "  Full .env:            ${ENV_FILE}"
+echo -e "  Deploy key (pub):     ${DEPLOY_KEY}.pub"
 echo ""
 echo -e "${BOLD}CI/CD workflow (.github/workflows/deploy.yml):${NC}"
 echo "  Every push to main → runner pulls code → docker compose up"

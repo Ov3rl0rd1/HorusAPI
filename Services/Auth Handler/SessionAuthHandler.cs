@@ -121,7 +121,7 @@ namespace HorusAPI.Services.Auth_Handler
             var sql = @"
                 SELECT * 
                 FROM users 
-                WHERE id = @UserId AND sessions @> ARRAY[@SessionKey]";
+                WHERE id = @UserId AND sessions @> ARRAY[@SessionKey]::varchar(64)[]";
 
             var user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { UserId = uuid, SessionKey = sessionKey });
 
