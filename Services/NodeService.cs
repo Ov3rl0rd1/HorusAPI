@@ -52,7 +52,6 @@ public class NodeService(IConfiguration cfg, ILogger<NodeService> log) : INodeSe
         const string sql = """
             UPDATE vpn_servers SET
                 host                    = @host,
-                protocol                = @protocol,
                 reality_public_key      = @reality_public_key,
                 reality_short_ids       = @reality_short_ids,
                 reality_server_name     = @reality_server_name,
