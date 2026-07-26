@@ -1,67 +1,401 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HorusVPN</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #0a0a0f;
-      color: #e2e8f0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    .card {
-      text-align: center;
-      padding: 3rem 2.5rem;
-      max-width: 420px;
-    }
-
-    .logo {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-      filter: drop-shadow(0 0 24px #6366f1aa);
-    }
-
-    h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: #f8fafc;
-      margin-bottom: 0.5rem;
-    }
-
-    .tagline {
-      font-size: 1rem;
-      color: #94a3b8;
-      margin-bottom: 2rem;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 0.35rem 1rem;
-      border-radius: 9999px;
-      background: #1e1e2e;
-      border: 1px solid #6366f133;
-      color: #818cf8;
-      font-size: 0.8rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
 </head>
 <body>
-  <div class="card">
-    <div class="logo">🔒</div>
-    <h1>HorusVPN</h1>
-    <p class="tagline">Secure. Fast. Private.</p>
-    <span class="badge">Coming soon</span>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="logo-gold.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+html{scroll-behavior:smooth}
+body{margin:0;background:#0B0512;color:#EFEAF6;-webkit-font-smoothing:antialiased}
+a{color:#F0C46A}
+a:hover{color:#F7DA9B}
+::selection{background:#F0C46A;color:#1A0C26}
+input[type="range"]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer}
+input[type="range"]::-webkit-slider-runnable-track{height:6px;border-radius:99px;background:linear-gradient(90deg,var(--accent,#F0C46A) var(--fill,0%),rgba(255,255,255,.13) var(--fill,0%))}
+input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;border-radius:50%;background:var(--accent,#F0C46A);border:5px solid #160A22;margin-top:-11px;box-shadow:0 2px 14px rgba(0,0,0,.5)}
+input[type="range"]::-moz-range-track{height:6px;border-radius:99px;background:rgba(255,255,255,.13)}
+input[type="range"]::-moz-range-progress{height:6px;border-radius:99px;background:var(--accent,#F0C46A)}
+input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent,#F0C46A);border:5px solid #160A22;box-shadow:0 2px 14px rgba(0,0,0,.5)}
+@keyframes hpb-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+@keyframes hpb-pulse{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.9;transform:scale(1.07)}}
+@media (max-width:680px){
+  #hpb-nav{padding:8px 12px;gap:8px}
+  #hpb-links a{display:none}
+  #hpb-links a#hpb-cta{display:inline-block;margin-left:0;padding:10px 16px;font-size:13.5px}
+}
+</style>
+</helmet>
+<!-- ══════════ КАК ЗАМЕНИТЬ ПЛЕЙСХОЛДЕРЫ ══════════
+1) СКРИНШОТЫ: найдите два блока с надписью «скриншот приложения» (ноутбук и телефон).
+   Перетащите свой скриншот в чат (он попадёт в uploads/) и замените div-плейсхолдер на:
+   <img src="uploads/screenshot.png" style="width:100%;height:100%;object-fit:cover;display:block">
+2) ССЫЛКИ НА СКАЧИВАНИЕ: в JS-классе найдите «ЗАМЕНИТЕ-ССЫЛКУ» — Windows .exe, APK, Google Play, App Store, оплата.
+3) КОНТАКТЫ: найдите horus_vpn и support@ — подставьте свои Telegram / email / VK.
+4) ЦЕНЫ и АКЦЕНТНЫЙ ЦВЕТ меняются в панели Tweaks (иконка настроек).
+════════════════════════════════════════════════ -->
+<div id="top" data-screen-label="Horus Ping Booster — лендинг" style="min-height:100vh;position:relative;overflow-x:clip;font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-size:16.5px;line-height:1.6;color:#EFEAF6;background:radial-gradient(900px 620px at 88% -6%, rgba(92,42,120,.30), rgba(11,5,18,0) 62%), radial-gradient(760px 540px at -12% 26%, rgba(61,24,80,.34), rgba(11,5,18,0) 62%), #0B0512">
+<div style="display:contents;--accent:{{ accent }}">
+<div aria-hidden="true" style="position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0">
+  <div ref="{{ orbARef }}" style="position:absolute;top:-140px;right:-100px;width:540px;height:540px;border-radius:50%;background:radial-gradient(circle at 35% 35%, rgba(126,60,165,.5), rgba(11,5,18,0) 70%);filter:blur(70px);animation:hpb-pulse 9s ease-in-out infinite"></div>
+  <div ref="{{ orbBRef }}" style="position:absolute;top:920px;left:-160px;width:640px;height:640px;border-radius:50%;background:radial-gradient(circle at 60% 40%, rgba(240,196,106,.13), rgba(11,5,18,0) 70%);filter:blur(80px)"></div>
+  <div ref="{{ orbCRef }}" style="position:absolute;top:2100px;right:-120px;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle at 40% 40%, rgba(96,44,126,.42), rgba(11,5,18,0) 70%);filter:blur(80px)"></div>
+</div>
+<nav id="hpb-nav" style="position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:13px clamp(16px,4vw,40px);background:rgba(11,5,18,.72);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.07)">
+  <a href="#top" style="display:flex;align-items:center;gap:11px;text-decoration:none;color:#EFEAF6">
+    <img src="./logo.svg" alt="Horus" style="height:38px;width:auto;display:block;filter:drop-shadow(0 2px 10px rgba(240,196,106,.35))">
+    <span style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:15.5px;letter-spacing:.05em">HORUS</span>
+  </a>
+  <div id="hpb-links" style="display:flex;gap:2px;flex-wrap:nowrap;margin-left:auto;align-items:center">
+    <a href="#features" style="color:rgba(239,234,246,.75);text-decoration:none;font-size:14.5px;font-weight:600;padding:9px 12px;border-radius:9px" style-hover="color:#FFFFFF;background:rgba(255,255,255,.06)">Возможности</a>
+    <a href="#pricing" style="color:rgba(239,234,246,.75);text-decoration:none;font-size:14.5px;font-weight:600;padding:9px 12px;border-radius:9px" style-hover="color:#FFFFFF;background:rgba(255,255,255,.06)">Цена</a>
+    <a href="#contacts" style="color:rgba(239,234,246,.75);text-decoration:none;font-size:14.5px;font-weight:600;padding:9px 12px;border-radius:9px" style-hover="color:#FFFFFF;background:rgba(255,255,255,.06)">Контакты</a>
+    <a id="hpb-cta" href="#top" style="margin-left:10px;background:var(--accent,#F0C46A);color:#1A0C26;font-weight:800;font-size:14.5px;padding:11px 18px;border-radius:11px;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.45);transition:transform .2s ease" style-hover="transform:translateY(-1px);color:#1A0C26">Скачать</a>
   </div>
+</nav>
+<header data-screen-label="Главный экран" style="position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:clamp(36px,6vh,70px) clamp(18px,4vw,40px) clamp(70px,11vh,120px);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));gap:clamp(28px,5vw,56px);align-items:center;min-height:86vh">
+  <div>
+    <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(240,196,106,.08);border:1px solid rgba(240,196,106,.28);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:700;color:#F3D48E">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--accent,#F0C46A);animation:hpb-pulse 2.4s ease-in-out infinite"></span>
+      Работает в России · обходит «белые списки»
+    </div>
+    <h1 style="font-family:'Unbounded',sans-serif;font-weight:800;font-size:clamp(33px,5.1vw,60px);line-height:1.08;letter-spacing:-.01em;margin:22px 0 18px">Весь интернет.<br><span style="background:linear-gradient(100deg,var(--accent,#F0C46A) 20%,#C7A6F5 90%);-webkit-background-clip:text;background-clip:text;color:transparent">Без блокировок.</span></h1>
+    <p style="color:rgba(239,234,246,.72);font-size:clamp(16px,1.35vw,18.5px);max-width:54ch;margin:0 0 30px;text-wrap:pretty">Horus Ping Booster возвращает доступ к любимым сайтам и сервисам: обходит блокировки, замедления и «белые списки». Одна кнопка — и через 10 секунд всё снова работает.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+      <sc-for list="{{ primaryButtons }}" as="btn" hint-placeholder-count="1">
+        <a href="{{ btn.href }}" style="display:flex;flex-direction:column;justify-content:center;min-height:58px;padding:10px 26px;border-radius:14px;background:var(--accent,#F0C46A);text-decoration:none;box-shadow:0 14px 40px rgba(240,196,106,.22), inset 0 1px 0 rgba(255,255,255,.5);transition:transform .25s ease,box-shadow .25s ease" style-hover="transform:translateY(-3px);box-shadow:0 20px 50px rgba(240,196,106,.32), inset 0 1px 0 rgba(255,255,255,.5)">
+          <span style="font-weight:800;font-size:15.5px;color:#1A0C26">{{ btn.label }}</span>
+          <span style="font-size:12px;font-weight:700;color:rgba(26,12,38,.62)">{{ btn.sub }}</span>
+        </a>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <span style="font-size:13px;color:rgba(239,234,246,.5);font-weight:600">Другие платформы:</span>
+      <sc-for list="{{ otherLinks }}" as="lnk" hint-placeholder-count="3">
+        <a href="{{ lnk.href }}" style="font-size:13px;font-weight:700;color:rgba(239,234,246,.8);text-decoration:none;border:1px solid rgba(255,255,255,.14);border-radius:99px;padding:7px 13px;transition:border-color .2s ease" style-hover="border-color:rgba(240,196,106,.6);color:#F3D48E">{{ lnk.label }}</a>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:28px;color:rgba(239,234,246,.55);font-size:13.5px;font-weight:600">
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Без логов</span>
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Kill Switch</span>
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Windows · Android · iOS</span>
+    </div>
+  </div>
+  <div style="position:relative;perspective:1400px;min-height:clamp(420px,52vh,560px);display:grid;place-items:center">
+    <div aria-hidden="true" style="position:absolute;width:72%;height:58%;border-radius:50%;background:radial-gradient(circle, rgba(126,60,165,.45), rgba(11,5,18,0) 70%);filter:blur(55px);animation:hpb-pulse 7s ease-in-out infinite"></div>
+    <div aria-hidden="true" style="position:absolute;width:min(500px,88%);aspect-ratio:1/1;border:1px dashed rgba(240,196,106,.2);border-radius:50%"></div>
+    <div aria-hidden="true" style="position:absolute;width:min(380px,66%);aspect-ratio:1/1;border:1px solid rgba(255,255,255,.06);border-radius:50%"></div>
+    <div ref="{{ deviceRef }}" style="position:relative;transform-style:preserve-3d;transform:rotateY(-22deg) rotateX(7deg);will-change:transform">
+      <div style="animation:hpb-float 7s ease-in-out infinite;transform-style:preserve-3d">
+        <sc-if value="{{ showLaptop }}" hint-placeholder-val="{{ true }}">
+          <div style="width:clamp(320px,36vw,540px);position:relative;transform-style:preserve-3d">
+            <div style="background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.14);border-radius:18px 18px 5px 5px;padding:12px 12px 14px;box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 70px rgba(122,58,160,.25)">
+              <div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.25);margin:0 auto 9px"></div>
+              <div style="aspect-ratio:16/10;border-radius:9px;overflow:hidden;background:#160B24;position:relative">
+                <!-- ЗАМЕНИТЕ этот div-плейсхолдер на: <img src="uploads/screenshot-pc.png" style="width:100%;height:100%;object-fit:cover;display:block"> -->
+                <div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.035) 0 10px,rgba(255,255,255,0) 10px 20px),linear-gradient(160deg,#1D0F30,#120821);display:grid;place-items:center">
+                  <div style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:rgba(239,234,246,.55);text-align:center;line-height:1.8;padding:0 20px">[ скриншот приложения ]<br>Windows · 16:10</div>
+                </div>
+                <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.08),rgba(255,255,255,0) 42%);pointer-events:none"></div>
+              </div>
+            </div>
+            <div style="position:absolute;left:0;right:0;top:100%;aspect-ratio:488/171;transform-origin:50% 0;transform:rotateX(78deg);background:linear-gradient(180deg,#160A24 0%,#2E1745 40%,#1C0E2E 100%);border:1px solid rgba(255,255,255,.12);border-top:none;border-radius:3px 3px 18px 18px;box-shadow:0 10px 30px rgba(0,0,0,.45)"></div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ showHeroPhone }}" hint-placeholder-val="{{ false }}">
+          <div style="width:clamp(220px,56vw,268px);aspect-ratio:9/19;background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.16);border-radius:44px;padding:10px;box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 70px rgba(122,58,160,.3)">
+            <div style="height:100%;border-radius:34px;overflow:hidden;background:#160B24;position:relative">
+              <!-- ЗАМЕНИТЕ этот div-плейсхолдер на: <img src="uploads/screenshot-phone.png" style="width:100%;height:100%;object-fit:cover;display:block"> -->
+              <div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.035) 0 10px,rgba(255,255,255,0) 10px 20px),linear-gradient(160deg,#1D0F30,#120821);display:grid;place-items:center">
+                <div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:rgba(239,234,246,.55);text-align:center;line-height:1.8">[ скриншот приложения ]<br>9:19</div>
+              </div>
+              <div style="position:absolute;top:10px;left:50%;transform:translateX(-50%);width:84px;height:22px;border-radius:99px;background:#0B0512"></div>
+              <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.07),rgba(255,255,255,0) 45%);pointer-events:none"></div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+    <sc-if value="{{ showLaptop }}" hint-placeholder-val="{{ true }}">
+      <div ref="{{ sidePhoneRef }}" style="position:absolute;right:clamp(-8px,1vw,24px);bottom:-14px;opacity:0;transform:translate3d(90px,50px,0) rotate(8deg);will-change:transform,opacity">
+        <div style="width:148px;aspect-ratio:9/19;background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.16);border-radius:28px;padding:7px;box-shadow:0 30px 60px rgba(0,0,0,.6), 0 0 40px rgba(122,58,160,.3)">
+          <div style="height:100%;border-radius:22px;overflow:hidden;background:#160B24;position:relative">
+            <div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.04) 0 8px,rgba(255,255,255,0) 8px 16px),linear-gradient(160deg,#1D0F30,#120821);display:grid;place-items:center">
+              <div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:rgba(239,234,246,.5);text-align:center;line-height:1.7">[ скриншот ]<br>9:19</div>
+            </div>
+            <div style="position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 52px; height: 14px; border-radius: 99px; background-color: #190B2A"></div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+    
+  </div>
+</header>
+<section id="features" data-screen-label="Возможности" style="position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px)">
+  <div data-reveal="0" style="max-width:640px">
+    <div style="font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#F3D48E;margin-bottom:14px">ВОЗМОЖНОСТИ</div>
+    <h2 style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(26px,3.6vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.01em">Не просто VPN — умный туннель</h2>
+    <p style="margin:0;color:rgba(239,234,246,.66);font-size:clamp(15.5px,1.3vw,17.5px);text-wrap:pretty">Шесть причин, почему Хорус приживается на каждом устройстве.</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;margin-top:40px">
+    <div data-reveal="0" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
+      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="width:15px;height:15px;border:2px solid var(--accent,#F0C46A);transform:rotate(45deg)"></div></div>
+      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Обход «белых списков»</h3>
+      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Работает даже там, где разрешён только «белый список» сайтов: трафик маскируется под обычный HTTPS и не выделяется из потока.</p>
+    </div>
+    <div data-reveal="1" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
+      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="display:flex;gap:5px"><div style="width:5px;height:18px;border-radius:3px;background:var(--accent,#F0C46A)"></div><div style="width:5px;height:18px;border-radius:3px;background:rgba(240,196,106,.35)"></div></div></div>
+      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Split tunneling</h3>
+      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Сами выбираете, какие приложения идут через VPN, а какие — напрямую. Банк — напрямую, YouTube — через Хорус.</p>
+    </div>
+    <div data-reveal="2" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
+      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="position:relative;width:18px;height:18px"><div style="position:absolute;inset:0;border:2px solid var(--accent,#F0C46A);border-radius:50%"></div><div style="position:absolute;left:-3px;top:8px;width:24px;height:2px;background:var(--accent,#F0C46A);transform:rotate(-45deg)"></div></div></div>
+      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Без логов</h3>
+      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Мы не записываем, куда вы ходите и что делаете. Нечего хранить — нечего и передавать.</p>
+    </div>
+    <div data-reveal="0" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
+      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="width:14px;height:14px;border-radius:3px;background:var(--accent,#F0C46A)"></div></div>
+      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Kill Switch</h3>
+      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Если соединение оборвётся, интернет замрёт вместе с ним. Ни один пакет не уйдёт наружу без защиты.</p>
+    </div>
+    <div data-reveal="1" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
+      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="display:flex;gap:4px;align-items:center"><div style="width:6px;height:6px;border-radius:50%;background:rgba(240,196,106,.4)"></div><div style="width:9px;height:9px;border-radius:50%;background:var(--accent,#F0C46A)"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(240,196,106,.4)"></div></div></div>
+      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">До 5 устройств</h3>
+      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Одна подписка — телефон, ноутбук и планшет одновременно. Хватит на всю семью.</p>
+    </div>
+    <div data-reveal="2" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
+      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="position:relative;width:18px;height:18px;border:2px solid var(--accent,#F0C46A);border-radius:50%;display:grid;place-items:center"><div style="width:6px;height:6px;border-radius:50%;background:var(--accent,#F0C46A)"></div></div></div>
+      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Серверы в разных странах</h3>
+      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Выбирайте локацию вручную или доверьтесь автовыбору — Хорус сам найдёт самый быстрый сервер.</p>
+    </div>
+  </div>
+</section>
+<section id="pricing" data-screen-label="Цена" style="position:relative;z-index:1;max-width:820px;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px)">
+  <div data-reveal="0" style="text-align:center">
+    <div style="font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#F3D48E;margin-bottom:14px">ЦЕНА</div>
+    <h2 style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(26px,3.6vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.01em">Один тариф. Всё включено.</h2>
+    <p style="margin:0 auto;max-width:46ch;color:rgba(239,234,246,.66);font-size:clamp(15.5px,1.3vw,17.5px);text-wrap:pretty">Все функции и все платформы в любом варианте — выбирайте только срок.</p>
+  </div>
+  <div data-reveal="1" style="margin-top:38px;background:linear-gradient(170deg,rgba(74,32,96,.32),rgba(26,12,38,.6));border:1px solid rgba(240,196,106,.22);border-radius:26px;padding:clamp(26px,4.5vw,46px);box-shadow:0 30px 80px rgba(0,0,0,.45)">
+    <input type="range" min="1" max="3" step="1" value="{{ months }}" onChange="{{ onSlider }}" aria-label="Срок подписки в месяцах" style="width:100%;height:30px;display:block;--fill:{{ fillPct }}">
+    <div style="display:flex;justify-content:space-between;margin-top:6px">
+      <sc-for list="{{ monthOptions }}" as="opt" hint-placeholder-count="3">
+        <button onClick="{{ opt.onPick }}" style="background:none;border:none;cursor:pointer;font-family:'Manrope',sans-serif;font-weight:800;font-size:14px;padding:10px 6px;min-height:44px;color:{{ opt.color }};transition:color .2s ease">{{ opt.label }}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-top:22px">
+      <div style="font-family:'Unbounded',sans-serif;font-weight:800;font-size:clamp(42px,7vw,62px);line-height:1;color:#FFFFFF">{{ total }} ₽</div>
+      <div style="padding-bottom:5px">
+        <div style="font-weight:800;font-size:15px;color:rgba(239,234,246,.85)">за {{ monthsWord }}</div>
+        <div style="font-size:13.5px;color:rgba(239,234,246,.55)">{{ perMonthLabel }}</div>
+      </div>
+      <sc-if value="{{ hasSavings }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-left:auto;align-self:center;background:rgba(240,196,106,.12);border:1px solid rgba(240,196,106,.4);color:#F3D48E;border-radius:99px;padding:9px 16px;font-weight:800;font-size:13.5px;white-space:nowrap">Выгода {{ savePct }}% · −{{ saveAmt }} ₽</div>
+      </sc-if>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:22px;font-size:13.5px;font-weight:600;color:rgba(239,234,246,.6)">
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Все платформы</span>
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>До 5 устройств</span>
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Без логов</span>
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Отмена в любой момент</span>
+    </div>
+    <a href="#top" style="display:flex;align-items:center;justify-content:center;min-height:58px;margin-top:26px;border-radius:16px;background:var(--accent,#F0C46A);color:#1A0C26;font-weight:800;font-size:17px;text-decoration:none;box-shadow:0 14px 40px rgba(240,196,106,.25), inset 0 1px 0 rgba(255,255,255,.5);transition:transform .25s ease,box-shadow .25s ease" style-hover="transform:translateY(-2px);color:#1A0C26;box-shadow:0 20px 55px rgba(240,196,106,.35), inset 0 1px 0 rgba(255,255,255,.5)">Скачать приложение</a>
+    <div style="text-align:center;margin-top:14px;font-size:12.5px;color:rgba(239,234,246,.45)">Оплата — внутри приложения · активация сразу после оплаты</div>
+  </div>
+</section>
+<section id="contacts" data-screen-label="Контакты" style="position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px) clamp(60px,10vh,90px)">
+  <div data-reveal="0" style="text-align:center">
+    <div style="font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#F3D48E;margin-bottom:14px">КОНТАКТЫ</div>
+    <h2 style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(26px,3.6vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.01em">Мы на связи</h2>
+    <p style="margin:0 auto;max-width:46ch;color:rgba(239,234,246,.66);font-size:clamp(15.5px,1.3vw,17.5px);text-wrap:pretty">Остались вопросы или нужна помощь? Напишите, поможем.</p>
+  </div>
+  <!-- ЗАМЕНИТЕ ссылки и адреса на свои -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;margin-top:38px">
+    <a data-reveal="0" href="https://t.me/horus_vpn" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">TELEGRAM</div>
+      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">@horus_vpn</div>
+      <div style="font-size:14px;color:rgba(239,234,246,.6)">Отвечаем быстрее всего — обычно в течение часа.</div>
+    </a>
+    <a data-reveal="1" href="mailto:support@horusping.app" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">EMAIL</div>
+      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px;word-break:break-all">support@horusping.app</div>
+      <div style="font-size:14px;color:rgba(239,234,246,.6)">Для официальных запросов и партнёрств.</div>
+    </a>
+    <a data-reveal="2" href="https://vk.com/horus_vpn" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">VK</div>
+      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">vk.com/horus_vpn</div>
+      <div style="font-size:14px;color:rgba(239,234,246,.6)">Новости, обновления и статус серверов.</div>
+    </a>
+  </div>
+</section>
+<footer style="position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.07);padding:26px clamp(18px,4vw,40px);display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;color:rgba(239,234,246,.45);font-size:13px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <img src="./logo.svg" alt="" style="height:28px;width:auto;display:block;opacity:.85">
+    © 2026 Horus Ping Booster
+  </div>
+  <div>Сделано для свободного интернета</div>
+</footer>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accentColor&quot;: {&quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#F0C46A&quot;, &quot;options&quot;: [&quot;#F0C46A&quot;, &quot;#8FD9E8&quot;, &quot;#C7A6F5&quot;, &quot;#F2A6A0&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Оформление&quot;}, &quot;priceMonthly&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 199, &quot;min&quot;: 10, &quot;max&quot;: 5000, &quot;unit&quot;: &quot;₽&quot;, &quot;section&quot;: &quot;Цены&quot;}, &quot;price3m&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 499, &quot;min&quot;: 10, &quot;max&quot;: 9999, &quot;unit&quot;: &quot;₽&quot;, &quot;section&quot;: &quot;Цены&quot;}}">
+class Component extends DCLogic {
+  static detectOS() {
+    try {
+      const ua = navigator.userAgent || '';
+      if (/android/i.test(ua)) return 'android';
+      if (/iphone|ipad|ipod/i.test(ua)) return 'ios';
+      if (/macintosh|mac os/i.test(ua)) return 'mac';
+      if (/win/i.test(ua)) return 'windows';
+    } catch (e) {}
+    return 'other';
+  }
+  state = { months: 1, os: Component.detectOS() };
+  deviceRef = React.createRef();
+  sidePhoneRef = React.createRef();
+  orbARef = React.createRef();
+  orbBRef = React.createRef();
+  orbCRef = React.createRef();
+  // ЗАМЕНИТЕ-ССЫЛКУ: подставьте реальные ссылки на скачивание и оплату
+  links = {
+    windows: '#windows-exe',      // прямая ссылка на .exe
+    apk: '#android-apk',          // прямая ссылка на .apk
+    gplay: '#google-play',        // страница в Google Play
+    appstore: '#app-store'        // страница в App Store
+  };
+  componentDidMount() {
+    this.reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    this.cur = 0; this.tgt = window.scrollY || 0;
+    this.onScroll = () => { this.tgt = window.scrollY || 0; };
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+    if (!this.reduced) {
+      const loop = () => {
+        this.cur += (this.tgt - this.cur) * 0.09;
+        if (Math.abs(this.tgt - this.cur) < 0.05) this.cur = this.tgt;
+        this.applyScroll();
+        this.raf = requestAnimationFrame(loop);
+      };
+      this.raf = requestAnimationFrame(loop);
+    } else {
+      const s = this.sidePhoneRef.current;
+      if (s) { s.style.opacity = '1'; s.style.transform = 'none'; }
+      const d = this.deviceRef.current;
+      if (d) d.style.transform = 'none';
+    }
+    this.setupReveals();
+  }
+  applyScroll() {
+    const vh = window.innerHeight || 800;
+    const p = Math.max(0, Math.min(1, this.cur / (vh * 0.85)));
+    const d = this.deviceRef.current;
+    if (d) d.style.transform = 'rotateY(' + (-22 + p * 26).toFixed(2) + 'deg) rotateX(' + (7 - p * 9).toFixed(2) + 'deg) translateY(' + (p * 46).toFixed(1) + 'px) scale(' + (1 + p * 0.05).toFixed(3) + ')';
+    const s = this.sidePhoneRef.current;
+    if (s) {
+      s.style.opacity = String(Math.min(1, p * 1.7));
+      s.style.transform = 'translate3d(' + ((1 - p) * 90).toFixed(1) + 'px, ' + ((1 - p) * 50).toFixed(1) + 'px, 0) rotate(' + (8 - p * 4).toFixed(2) + 'deg)';
+    }
+    if (this.orbARef.current) this.orbARef.current.style.translate = '0 ' + (this.cur * -0.06).toFixed(1) + 'px';
+    if (this.orbBRef.current) this.orbBRef.current.style.translate = '0 ' + (this.cur * 0.08).toFixed(1) + 'px';
+    if (this.orbCRef.current) this.orbCRef.current.style.translate = '0 ' + (this.cur * -0.04).toFixed(1) + 'px';
+  }
+  setupReveals() {
+    if (this.reduced) return;
+    const vh = window.innerHeight || 800;
+    const els = Array.from(document.querySelectorAll('[data-reveal]'));
+    const hidden = [];
+    els.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.top > vh * 0.92) {
+        const n = parseInt(el.getAttribute('data-reveal'), 10) || 0;
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(30px)';
+        el.style.transition = 'opacity .7s ease ' + (n * 90) + 'ms, transform .8s cubic-bezier(.22,.61,.36,1) ' + (n * 90) + 'ms';
+        hidden.push(el);
+      }
+    });
+    if (hidden.length) {
+      this.io = new IntersectionObserver((ents) => {
+        ents.forEach((en) => {
+          if (en.isIntersecting) {
+            en.target.style.opacity = '1';
+            en.target.style.transform = 'translateY(0)';
+            this.io.unobserve(en.target);
+          }
+        });
+      }, { threshold: 0.12 });
+      hidden.forEach((el) => this.io.observe(el));
+    }
+  }
+  componentWillUnmount() {
+    if (this.raf) cancelAnimationFrame(this.raf);
+    if (this.onScroll) window.removeEventListener('scroll', this.onScroll);
+    if (this.io) this.io.disconnect();
+  }
+  priceFor(m) {
+    const pm = this.props.priceMonthly ?? 199;
+    const p3 = this.props.price3m ?? 499;
+    if (m <= 1) return pm;
+    if (m >= 3) return p3;
+    return Math.round(pm * 2 * 0.95);
+  }
+  renderVals() {
+    const m = this.state.months;
+    const pm = this.props.priceMonthly ?? 199;
+    const total = this.priceFor(m);
+    const full = pm * m;
+    const saveAmt = full - total;
+    const savePct = full > 0 ? Math.round((saveAmt / full) * 100) : 0;
+    const words = ['1 месяц', '2 месяца', '3 месяца'];
+    const os = this.state.os;
+    const L = this.links;
+    const B = {
+      windows: { label: 'Скачать для Windows', sub: 'Прямая загрузка · .exe', href: L.windows },
+      gplay: { label: 'Google Play', sub: 'Android', href: L.gplay },
+      apk: { label: 'Скачать APK', sub: 'Прямая загрузка · Android', href: L.apk },
+      appstore: { label: 'App Store', sub: 'iPhone и iPad', href: L.appstore }
+    };
+    let primary, others;
+    if (os === 'android') { primary = [B.apk]; others = [B.gplay, B.windows, B.appstore]; }
+    else if (os === 'ios') { primary = [B.appstore]; others = [B.windows, B.gplay]; }
+    else if (os === 'windows') { primary = [B.windows]; others = [B.gplay, B.apk, B.appstore]; }
+    else { primary = [B.windows, B.gplay, B.appstore]; others = [B.apk]; }
+    const monthOptions = [1, 2, 3].map((n) => ({
+      label: n + ' мес',
+      color: n === m ? '#F3D48E' : 'rgba(239,234,246,.45)',
+      onPick: () => this.setState({ months: n })
+    }));
+    return {
+      accent: this.props.accentColor ?? '#F0C46A',
+      months: m,
+      fillPct: (((m - 1) / 2) * 100) + '%',
+      total: total,
+      monthsWord: words[m - 1],
+      perMonthLabel: m > 1 ? ('≈ ' + Math.round(total / m) + ' ₽ в месяц') : 'все функции включены',
+      hasSavings: m > 1 && saveAmt > 0,
+      savePct: savePct,
+      saveAmt: saveAmt,
+      onSlider: (e) => this.setState({ months: Number(e.target.value) }),
+      monthOptions: monthOptions,
+      showLaptop: os === 'windows' || os === 'mac' || os === 'other',
+      showHeroPhone: os === 'android' || os === 'ios',
+      primaryButtons: primary,
+      otherLinks: others,
+      deviceRef: this.deviceRef,
+      sidePhoneRef: this.sidePhoneRef,
+      orbARef: this.orbARef,
+      orbBRef: this.orbBRef,
+      orbCRef: this.orbCRef
+    };
+  }
+}
+</script>
 </body>
 </html>
