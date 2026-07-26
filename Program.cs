@@ -1,12 +1,8 @@
 using HorusAPI.Endpoints;
 using HorusAPI.Services;
 using HorusAPI.Services.Auth_Handler;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using System.Threading.RateLimiting;
 
 // Recommended Limits by LayerPer-IP Limit (Short Term): Max 3 requests per minute.Why: Stops automated bots from 
@@ -53,9 +49,6 @@ class Program
         });
 
         AddSessionAuthentication(builder);
-
-        builder.Services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
         // Build
         var app = builder.Build();

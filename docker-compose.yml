@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ── Database ──────────────────────────────────────────────────────────────────
@@ -43,7 +41,7 @@ services:
       DOTNET_GCHeapHardLimit: 250000000
       DOTNET_ServerGarbageCollection: 0
       ASPNETCORE_URLS:        http://+:8080
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-horus};Username=${POSTGRES_USER:-horus};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-horus};Username=${POSTGRES_USER:-horus};Password=${POSTGRES_PASSWORD};Gss Encryption Mode=Disable;"
     deploy:
       resources:
         limits:
