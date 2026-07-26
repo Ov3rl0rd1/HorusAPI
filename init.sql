@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
     auth_password  VARCHAR(128) NOT NULL DEFAULT '',
 
     -- Legacy / Hysteria obfs fields (still read by the services).
-    obfs_type      VARCHAR(32)  NOT NULL DEFAULT '',
     obfs_password  VARCHAR(128) NOT NULL DEFAULT '',
     hop            VARCHAR(64)  NOT NULL DEFAULT '',
     masquerade_url VARCHAR(256),
@@ -73,7 +72,6 @@ CREATE INDEX IF NOT EXISTS idx_users_current_server ON users(current_server_id);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS vpn_uuid UUID;
 
 ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS auth_password       VARCHAR(128) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS obfs_type           VARCHAR(32)  NOT NULL DEFAULT '';
 ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS obfs_password       VARCHAR(128) NOT NULL DEFAULT '';
 ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS hop                 VARCHAR(64)  NOT NULL DEFAULT '';
 ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS masquerade_url      VARCHAR(256);

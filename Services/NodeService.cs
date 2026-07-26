@@ -51,39 +51,43 @@ public class NodeService(IConfiguration cfg, ILogger<NodeService> log) : INodeSe
     {
         const string sql = """
             UPDATE vpn_servers SET
-                host                = @host,
-                protocol            = @protocol,
-                reality_public_key  = @reality_public_key,
-                reality_short_ids   = @reality_short_ids,
-                reality_server_name = @reality_server_name,
-                reality_dest        = @reality_dest,
-                vless_port          = @vless_port,
-                hysteria_port       = @hysteria_port,
-                olcrtc_provider     = @olcrtc_provider,
-                olcrtc_transport    = @olcrtc_transport,
-                olcrtc_room_id      = @olcrtc_room_id,
-                olcrtc_room_key     = @olcrtc_room_key,
-                agent_version       = @agent_version,
-                last_registered_at  = NOW()
+                host                    = @host,
+                protocol                = @protocol,
+                reality_public_key      = @reality_public_key,
+                reality_short_ids       = @reality_short_ids,
+                reality_server_name     = @reality_server_name,
+                reality_dest            = @reality_dest,
+                vless_port              = @vless_port,
+                hysteria_port           = @hysteria_port,
+                hop                     = @hysteria_hop,
+                obfs_password           = @hysteria_obfs_password,
+                olcrtc_provider         = @olcrtc_provider,
+                olcrtc_transport        = @olcrtc_transport,
+                olcrtc_room_id          = @olcrtc_room_id,
+                olcrtc_room_key         = @olcrtc_room_key,
+                agent_version           = @agent_version,
+                last_registered_at      = NOW()
             WHERE id = @Id
             """;
 
         await using var conn = Connect();
         await conn.ExecuteAsync(sql, new
         {
-            Id                  = serverId,
-            host                = Trunc(req.host, 256),
-            reality_public_key  = Trunc(req.reality_public_key, 128),
-            reality_short_ids   = req.reality_short_ids ?? [],
-            reality_server_name = Trunc(req.reality_server_name, 256),
-            reality_dest        = Trunc(req.reality_dest, 256),
-            vless_port          = req.vless_port,
-            hysteria_port       = req.hysteria_port,
-            olcrtc_provider     = Trunc(req.olcrtc_provider, 32),
-            olcrtc_transport    = Trunc(req.olcrtc_transport, 32),
-            olcrtc_room_id      = Trunc(req.olcrtc_room_id, 256),
-            olcrtc_room_key     = Trunc(req.olcrtc_room_key, 128),
-            agent_version       = Trunc(req.agent_version, 32),
+            Id                      = serverId,
+            host                    = Trunc(req.host, 256),
+            reality_public_key      = Trunc(req.reality_public_key, 128),
+            reality_short_ids       = req.reality_short_ids ?? [],
+            reality_server_name     = Trunc(req.reality_server_name, 256),
+            reality_dest            = Trunc(req.reality_dest, 256),
+            vless_port              = req.vless_port,
+            hysteria_port           = req.hysteria_port,
+            hysteria_obfs_password  = req.hysteria_obfs,
+            hysteria_hop            = req.hysteria_port_range,
+            olcrtc_provider         = Trunc(req.olcrtc_provider, 32),
+            olcrtc_transport        = Trunc(req.olcrtc_transport, 32),
+            olcrtc_room_id          = Trunc(req.olcrtc_room_id, 256),
+            olcrtc_room_key         = Trunc(req.olcrtc_room_key, 128),
+            agent_version           = Trunc(req.agent_version, 32),
         });
 
         log.LogInformation("Node {ServerId} registered ({Host})",
