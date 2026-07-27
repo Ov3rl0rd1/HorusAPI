@@ -71,7 +71,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 30M
+          memory: 128M
 
 volumes:
   pgdata:
