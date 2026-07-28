@@ -28,6 +28,29 @@ services:
           memory: 250M
     # No ports — postgres is accessible only within the Docker network
 
+  # ── Outbound mail (Postfix, internal only) ───────────────────────────────────
+  # Relays verification emails directly — no SendGrid/SES/etc. Needs SPF/DKIM/
+  # DMARC/PTR records for ${DOMAIN} to actually land in inboxes (see chat above).
+  mailserver:
+    image: boky/postfix:latest-alpine   # pin a version — check releases page for current
+    restart: unless-stopped
+    environment:
+      HOSTNAME: mail.${DOMAIN}
+      ALLOWED_SENDER_DOMAINS: ${DOMAIN}
+      DKIM_AUTOGENERATE: "true"
+      POSTFIX_mynetworks: "127.0.0.0/8 172.16.0.0/12"
+    volumes:
+      - dkim-keys:/etc/opendkim/keys
+    healthcheck:
+      test: ["CMD", "postfix", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   # ── API (HTTP, internal only) ─────────────────────────────────────────────────
   vpn-api:
     build: .
@@ -76,3 +99,4 @@ services:
 volumes:
   pgdata:
   letsencrypt:
+  dkim-keys:
