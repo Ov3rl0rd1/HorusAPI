@@ -5,11 +5,16 @@ using System.Security.Cryptography;
 
 namespace HorusAPI.Services;
 
+public enum CreateUserStatus { Created, UsernameTaken, EmailTaken }
+
+/// <summary><c>userId</c> is only meaningful when <c>status</c> is <see cref="CreateUserStatus.Created"/>.</summary>
+public record CreateUserResult(CreateUserStatus status, int userId);
+
 public interface IUserService
 {
     Task<User?> AuthenticateAsync(string username, string password);
     Task<string?> CreateSession(int userId);
-    Task<bool> CreateUserAsync(string username, string password, string email);
+    Task<CreateUserResult> CreateUserAsync(string username, string password, string email);
     Task ClearOtherSessionsAsync(string username, string currentSession);
 }
 
@@ -89,23 +94,30 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
         }
     }
 
-    public async Task<bool> CreateUserAsync(string username, string password, string email)
+    /// <summary>
+    /// Creates an account in the unverified state: it cannot log in until
+    /// POST /auth/verify accepts the 6-digit code mailed to <paramref name="email"/>.
+    /// </summary>
+    public async Task<CreateUserResult> CreateUserAsync(string username, string password, string email)
     {
         const string sql = """
-            INSERT INTO users (username, password_hash, email, is_active)
-            VALUES (@Username, @PasswordHash, @Email, TRUE)
+            INSERT INTO users (username, password_hash, email, is_active, email_verified)
+            VALUES (@Username, @PasswordHash, @Email, TRUE, FALSE)
+            RETURNING id
             """;
         try
         {
             string hash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
             await using var conn = Connect();
-            await conn.ExecuteAsync(sql, new { Username = username, PasswordHash = hash, Email = email });
-            return true;
+            int id = await conn.ExecuteScalarAsync<int>(sql, new { Username = username, PasswordHash = hash, Email = email.Trim() });
+            return new CreateUserResult(CreateUserStatus.Created, id);
         }
         catch (PostgresException ex) when (ex.SqlState == "23505")
         {
-            // Unique constraint violation – username already taken
-            return false;
+            // Unique violation — either users_username_key or users_email_lower_key.
+            bool email_taken = ex.ConstraintName?.Contains("email", StringComparison.OrdinalIgnoreCase) == true;
+            return new CreateUserResult(
+                email_taken ? CreateUserStatus.EmailTaken : CreateUserStatus.UsernameTaken, 0);
         }
         catch (Exception ex)
         {

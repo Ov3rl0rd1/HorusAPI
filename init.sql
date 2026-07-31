@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash       VARCHAR(256) NOT NULL,
     sessions            VARCHAR(64)[],
     email               VARCHAR(128),
+    email_verified      BOOLEAN      NOT NULL DEFAULT FALSE,   -- set by POST /auth/verify (6-digit code)
     vpn_uuid            UUID         NOT NULL DEFAULT gen_random_uuid(),      -- per-user VLESS identity (assigned on first node pull)
     is_active           BOOLEAN      NOT NULL DEFAULT TRUE,
     is_admin            BOOLEAN      NOT NULL DEFAULT FALSE,
@@ -60,16 +61,53 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
     last_registered_at  TIMESTAMPTZ
 );
 
+-- ============================================================================
+--  email_verifications  (at most one pending 6-digit code per user)
+--  The code itself is never stored — only sha256("{user_id}:{code}") as hex.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS email_verifications (
+    user_id    INT         PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    code_hash  VARCHAR(64) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    attempts   SMALLINT    NOT NULL DEFAULT 0,   -- wrong guesses; the row dies at 5
+    sent_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+--  password_resets  (one row per emailed reset link)
+--  Only sha256(token) is stored, so a DB leak cannot be replayed as a link.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash VARCHAR(64) PRIMARY KEY,
+    user_id    INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at    TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_username    ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_sessions    ON users USING GIN (sessions);
 CREATE INDEX IF NOT EXISTS idx_servers_is_active ON vpn_servers(is_active);
 CREATE INDEX IF NOT EXISTS idx_servers_auth_pw   ON vpn_servers(auth_password);
 CREATE INDEX IF NOT EXISTS idx_users_current_server ON users(current_server_id);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user  ON password_resets(user_id);
+
+-- One account per address: /auth/verify and /auth/reset-request look users up by
+-- email, so duplicates would make those routes ambiguous. Partial index so the
+-- legacy rows with a NULL/empty email stay valid.
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key
+    ON users (lower(email)) WHERE email IS NOT NULL AND email <> '';
 
 -- ============================================================================
 --  Idempotent upgrades for pre-existing databases (safe to re-run)
 -- ============================================================================
 ALTER TABLE users ADD COLUMN IF NOT EXISTS vpn_uuid UUID;
+
+-- Accounts that already existed predate email confirmation, so they are
+-- grandfathered in as verified (DEFAULT TRUE backfills them); every account
+-- created from now on starts unverified.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE;
 
 ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS auth_password       VARCHAR(128) NOT NULL DEFAULT '';
 ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS obfs_password       VARCHAR(128) NOT NULL DEFAULT '';

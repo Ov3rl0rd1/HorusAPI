@@ -10,7 +10,8 @@ public static class ServerEndpoints
     {
         var group = app.MapGroup("/servers")
             .WithTags("Servers")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .RequireRateLimiting(RateLimitPolicies.Session);
 
 
         group.MapGet("/best", async (IVpnServerService svc) =>

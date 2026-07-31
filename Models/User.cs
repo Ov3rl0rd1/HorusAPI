@@ -7,6 +7,7 @@ public class User
     public string password_hash = string.Empty;
     public string[]? sessions;
     public string email = string.Empty;
+    public bool email_verified;
     public Guid vpn_uuid = Guid.Empty;
     public bool is_active;
     public bool is_admin;

@@ -15,11 +15,12 @@ public static class NodeAuthEndpoints
 
     public static void MapNodeAuthEndpoints(this WebApplication app)
     {
-        // No "auth" rate limiter here: node sync (reconcile + events polling) is trusted,
-        // X-API-PASSWORD-authenticated traffic and must not compete with the login limiter.
-        // The global per-IP limiter still applies as a backstop.
+        // Node sync (reconcile + events polling) is trusted, X-API-PASSWORD-authenticated
+        // traffic: it gets its own generous per-node budget instead of competing with the
+        // user-facing policies. The global per-IP baseline still applies as a backstop.
         var group = app.MapGroup("/node")
             .WithTags("Node")
+            .RequireRateLimiting(RateLimitPolicies.Node)
             .AddEndpointFilter(NodeAuthFilter);
 
         // Node reports its public parameters on startup / refresh.

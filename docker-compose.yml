@@ -36,7 +36,9 @@ services:
     restart: unless-stopped
     environment:
       HOSTNAME: mail.${DOMAIN}
-      ALLOWED_SENDER_DOMAINS: ${DOMAIN}
+      # Codes and reset links are sent from no-reply@mail.${DOMAIN}, so the mail
+      # subdomain has to be allowed as a sender too — postfix matches the exact domain.
+      ALLOWED_SENDER_DOMAINS: "${DOMAIN} mail.${DOMAIN}"
       DKIM_AUTOGENERATE: "true"
       POSTFIX_mynetworks: "127.0.0.0/8 172.16.0.0/12"
     volumes:
@@ -58,6 +60,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mailserver:
+        condition: service_started
     env_file: .env
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -65,6 +69,17 @@ services:
       DOTNET_ServerGarbageCollection: 0
       ASPNETCORE_URLS:        http://+:8080
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-horus};Username=${POSTGRES_USER:-horus};Password=${POSTGRES_PASSWORD};Gss Encryption Mode=Disable;"
+      # Outbound mail (confirmation codes + password-reset links). The hop to
+      # postfix never leaves the compose network, hence no auth and no TLS.
+      # Set MAIL_ENABLED=false to log codes instead of sending them.
+      Mail__Enabled:  ${MAIL_ENABLED:-true}
+      Mail__Host:     mailserver
+      Mail__Port:     "587"
+      Mail__From:     no-reply@mail.${DOMAIN}
+      Mail__FromName: "Horus Ping Booster"
+      # Origin used to build reset links. Empty falls back to https://${DOMAIN};
+      # set PUBLIC_URL in .env for HTTP-only deploys (USE_SSL=0).
+      App__PublicUrl: ${PUBLIC_URL:-}
     deploy:
       resources:
         limits:

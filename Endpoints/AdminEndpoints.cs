@@ -10,7 +10,8 @@ public static class AdminEndpoints
     {
         var group = app.MapGroup("/admin")
             .WithTags("Admin")
-            .RequireAuthorization("AdminOnly");
+            .RequireAuthorization("AdminOnly")
+            .RequireRateLimiting(RateLimitPolicies.Admin);
 
         // Ping all servers
         group.MapPost("/servers/ping", async (IAdminServerService svc) =>

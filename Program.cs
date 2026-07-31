@@ -2,21 +2,18 @@ using HorusAPI.Endpoints;
 using HorusAPI.Services;
 using HorusAPI.Services.Auth_Handler;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.RateLimiting;
-using System.Threading.RateLimiting;
 
-// Recommended Limits by LayerPer-IP Limit (Short Term): Max 3 requests per minute.Why: Stops automated bots from 
-// spamming your server from a single machine.
-
-// Per-IP Limit (Long Term): Max 15 requests per hour.Why: Prevents slow-drip brute force attacks that try to avoid 
-// detection by waiting a few seconds between requests.
-
-// Per-Account Limit (Target User): Max 3 requests per hour per email address.Why: Crucial for preventing targeted harassment. 
-// If a hacker targets victim@example.com, this stops them from sending hundreds of annoying emails to that specific user, 
-// even if the hacker switches IPs.
-
-// Global Server Limit (Fallback): Max 500 total requests per hour across your whole site.Why: Protects your outbound email queue from 
-// being overwhelmed (which could get your server IP blacklisted for spam) if a major botnet attacks you using thousands of different IPs.
+// Rate limiting is layered — see Services/RateLimiting/RateLimitPolicies.cs:
+//
+//   Per-IP (short term)   3 req/min on mail routes  — stops a bot spamming from one machine.
+//   Per-IP (long term)   15 req/hour on mail routes — stops slow-drip attempts that pace themselves.
+//   Per-account           3 req/hour per e-mail     — stops targeted harassment across rotating IPs
+//                                                     (IAccountRateLimiter, applied in the handlers).
+//   Global fallback     500 req/hour on mail routes — protects the outbound queue, and with it our
+//                                                     sending reputation, against a botnet.
+//
+// Everything else gets a per-IP baseline plus a per-endpoint policy (login, verify,
+// session, admin, node).
 
 class Program
 {
@@ -32,6 +29,8 @@ class Program
         builder.Services.AddScoped<IAdminServerService, AdminServerService>();
         builder.Services.AddScoped<INodeService, NodeService>();
         builder.Services.AddScoped<INodeNotifier, NodeNotifier>();
+        builder.Services.AddScoped<IAccountService, AccountService>();
+        builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
         AddPingClient(builder);
 
@@ -40,7 +39,7 @@ class Program
             client.Timeout = TimeSpan.FromSeconds(5);
         });
 
-        AddRateLimiting(builder);
+        builder.Services.AddHorusRateLimiting();
 
         builder.Services.AddMemoryCache(options =>
         {
@@ -53,6 +52,8 @@ class Program
         // Build
         var app = builder.Build();
 
+        // Order matters: forwarded headers first so the limiter partitions on the
+        // real client IP and not on nginx's address.
         app.UseForwardedHeaders();
         app.UseRateLimiter();
         app.UseAuthentication();
@@ -63,6 +64,7 @@ class Program
         app.MapServerEndpoints();
         app.MapAdminEndpoints();
         app.MapNodeAuthEndpoints();
+        app.MapWhoAmIEndpoints();
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }))
            .AllowAnonymous()
@@ -83,32 +85,6 @@ class Program
                 policy.AddAuthenticationSchemes(SessionAuthOptions.SchemeName);
                 policy.RequireRole("Admin");
             });
-        });
-    }
-
-    private static void AddRateLimiting(WebApplicationBuilder? builder)
-    {
-        builder.Services.AddRateLimiter(options =>
-        {
-            options.AddFixedWindowLimiter("auth", o =>
-            {
-                o.PermitLimit = 30;
-                o.Window = TimeSpan.FromMinutes(1);
-                o.QueueLimit = 0;
-                o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-            });
-
-
-            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = 10,
-                        Window = TimeSpan.FromSeconds(10),
-                        QueueLimit = 5
-                    }));
         });
     }
 
