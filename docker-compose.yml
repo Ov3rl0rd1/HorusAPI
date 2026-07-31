@@ -44,7 +44,7 @@ services:
     volumes:
       - dkim-keys:/etc/opendkim/keys
     healthcheck:
-      test: ["CMD", "postfix", "status"]
+      test: ["CMD-SHELL", "postfix status > /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5
