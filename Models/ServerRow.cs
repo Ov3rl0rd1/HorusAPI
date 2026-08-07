@@ -1,7 +1,7 @@
 namespace HorusAPI.Models;
 
 public record ServerRow(
-    int    serverId,
+    int    server_id,
     string host,
     string reality_public_key,
     string[] reality_short_ids,

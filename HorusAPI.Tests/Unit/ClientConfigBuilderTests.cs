@@ -6,7 +6,7 @@ namespace HorusAPI.Tests.Unit;
 public class ClientConfigBuilderTests
 {
     private static ServerRow Server() => new(
-        serverId:            1,
+        server_id:            1,
         host:                "node1.example.com",
         reality_public_key:  "PUBKEY123",
         reality_short_ids:   ["aa", "bb"],

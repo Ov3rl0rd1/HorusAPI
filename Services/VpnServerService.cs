@@ -68,7 +68,7 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
     public async Task<ServerRow?> GetConnectDataAsync(int serverId)
     {
         const string sql = """
-            SELECT id AS serverId, host, reality_public_key, reality_short_ids, reality_server_name, reality_dest, vless_port,
+            SELECT id AS server_id, host, reality_public_key, reality_short_ids, reality_server_name, reality_dest, vless_port,
                 hysteria_port, obfs_password, hop,
                 olcrtc_provider, olcrtc_transport, olcrtc_room_id, olcrtc_room_key, agent_version
             FROM vpn_servers

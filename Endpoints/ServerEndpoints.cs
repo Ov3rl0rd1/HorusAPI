@@ -43,7 +43,7 @@ public static class ServerEndpoints
                 if (server is null)
                     return Results.NotFound(new ApiError("No available servers."));
 
-                await svc.BindUserAsync(user.id, server.serverId);
+                await svc.BindUserAsync(user.id, server.server_id);
             }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
