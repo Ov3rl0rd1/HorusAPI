@@ -1,11 +1,70 @@
-name: Deploy
+name: CI/CD
 
 on:
   push:
     branches: [main]
+  pull_request:
 
 jobs:
+  # ── Build + test on a GitHub-hosted runner, with a real PostgreSQL service ────
+  test:
+    name: Build & test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # The integration fixture only starts creating its throwaway DB once this
+        # is healthy.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore HorusAPI.sln
+
+      - name: Build
+        run: dotnet build HorusAPI.sln --configuration Release --no-restore
+
+      - name: Test
+        env:
+          # The PostgresFixture reads this to reach the service container and spin
+          # up an isolated database per run.
+          ConnectionStrings__Postgres: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres;Gss Encryption Mode=Disable;"
+        run: >-
+          dotnet test HorusAPI.sln --configuration Release --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          if-no-files-found: ignore
+
+  # ── Deploy (self-hosted) — only on a push to main, and only if tests passed ──
   deploy:
+    name: Deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: self-hosted
     steps:
       - name: Pull and redeploy

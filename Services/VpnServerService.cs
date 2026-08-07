@@ -69,7 +69,7 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
     {
         const string sql = """
             SELECT host, reality_public_key, reality_short_ids, reality_server_name, reality_dest, vless_port,
-                hysteria_port, hysteria_auth, hysteria_obfs, hysteria_port_range,
+                hysteria_port, obfs_password, hop,
                 olcrtc_provider, olcrtc_transport, olcrtc_room_id, olcrtc_room_key, agent_version
             FROM vpn_servers
             WHERE id = @ServerId AND is_active = true

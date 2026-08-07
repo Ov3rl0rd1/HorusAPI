@@ -57,3 +57,6 @@ nunit-*.xml
 # Secrets – never commit
 .env
 
+# Locally generated OpenAPI spec (produced on build; not for publishing)
+/openapi/
+

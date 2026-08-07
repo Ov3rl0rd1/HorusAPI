@@ -8,9 +8,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 dotnet build          # build
 dotnet run            # run locally (http://localhost:5102 or https://localhost:7083)
 docker-compose up     # run full stack (API + PostgreSQL)
+dotnet test           # run the test suite (see below)
 ```
 
-No test project exists. Swagger UI is available at `/swagger` in development.
+### Tests ([HorusAPI.Tests](HorusAPI.Tests/))
+
+xUnit project (in the solution). Two tiers:
+
+- **Unit** ([HorusAPI.Tests/Unit](HorusAPI.Tests/Unit)) — no DB: `ClientConfigBuilder` link building, `AccountRateLimiter` (3/hour per address). Always run.
+- **Integration** ([HorusAPI.Tests/Integration](HorusAPI.Tests/Integration)) — boot the real app in-memory via `WebApplicationFactory<Program>` ([HorusAPI.Tests/Infrastructure](HorusAPI.Tests/Infrastructure)) against a throwaway PostgreSQL database, exercising the full auth flow (register→verify→login, reset, session revocation), `/whoami`, authorization (session/admin), and all the rate-limit layers. `IEmailSender` is replaced with `RecordingEmailSender` so tests can read the code/link that would have been mailed; each test isolates its rate-limit partition with a unique `X-Forwarded-For` IP and a unique e-mail. `Program` is `public partial` so the factory can use it as the entry point.
+
+`PostgresFixture` reads `ConnectionStrings__Postgres` (falls back to `localhost:5432`, user/pw `postgres`), creates an isolated `horus_test_*` DB, applies [init.sql](init.sql), and drops it after. **When no server is reachable the integration tests `Skip` (via `Xunit.SkippableFact`) rather than fail**, so unit tests still pass on a bare checkout. Run the full suite locally with a DB up:
+
+```bash
+ConnectionStrings__Postgres="Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres" dotnet test
+```
+
+### CI/CD ([.github/workflows/deploy.yaml](.github/workflows/deploy.yaml))
+
+`test` job (GitHub-hosted) runs on every push to `main` and every PR: builds Release and runs `dotnet test` against a `postgres:16` service container. The `deploy` job (self-hosted, `deploy.sh`) `needs: test` and only runs on a push to `main` — so a red test blocks the deploy. The Docker image builds `HorusAPI.csproj` explicitly, so the test project never enters the image.
+
+### OpenAPI / API docs (local only)
+
+The spec is generated with the **built-in** `Microsoft.AspNetCore.OpenApi` (not Swashbuckle — its build-time tool version-matches the SDK; Swashbuckle's `SwaggerGen` pins an incompatible `Microsoft.OpenApi` and its `dotnet-getdocument` throws `MissingMethodException`). Wiring is in [Services/OpenApi/OpenApiSetup.cs](Services/OpenApi/OpenApiSetup.cs).
+
+`Microsoft.OpenApi` is pinned to `2.11.0` in the csproj: the generator drags in `2.0.0`, which has a high-severity advisory (GHSA-v5pm-xwqc-g5wc) and is deprecated. **Keep it on the 2.x line** — 3.x makes `IOpenApiMediaType.Example` read-only, which breaks the built-in generator's XML-comment source generator. `dotnet list package --vulnerable --include-transitive` should stay clean.
+
+- **Build-time file**: every `dotnet build` writes `openapi/HorusAPI.json` (via `Microsoft.Extensions.ApiDescription.Server`; `OpenApiDocumentsDirectory` in the csproj). Git-ignored, skipped inside the Docker build (`DOTNET_RUNNING_IN_CONTAINER`). Nothing is published.
+- **Development only**: `MapOpenApi` serves `/openapi/v1.json` and `Swashbuckle.AspNetCore.SwaggerUI` (UI-only package, no `Microsoft.OpenApi` dep) renders it at `/swagger`. Both are behind `app.Environment.IsDevelopment()`, so a Production container returns 404 and nginx never routes them.
+- A document transformer sets the two `ApiKey` security schemes (`SessionKey` = `X-Session-Key`, `NodePassword` = `X-API-PASSWORD`); an operation transformer attaches the right one per endpoint from its authorization metadata (`IAllowAnonymous`/`IAuthorizeData`), linking the reference to `context.Document` so it serializes.
 
 ## Architecture
 

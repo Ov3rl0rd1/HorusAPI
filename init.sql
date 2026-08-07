@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
     -- Shared secret with this node's agent (sent/received as X-API-PASSWORD).
     auth_password  VARCHAR(128) NOT NULL DEFAULT '',
 
-    -- Legacy / Hysteria obfs fields (still read by the services).
     obfs_password  VARCHAR(128) NOT NULL DEFAULT '',
     hop            VARCHAR(64)  NOT NULL DEFAULT '',
     masquerade_url VARCHAR(256),

@@ -15,7 +15,8 @@ using Microsoft.AspNetCore.HttpOverrides;
 // Everything else gets a per-IP baseline plus a per-endpoint policy (login, verify,
 // session, admin, node).
 
-class Program
+// Public so the test project's WebApplicationFactory<Program> can use it as the entry point.
+public partial class Program
 {
 
     public static void Main(params string[] args)
@@ -41,6 +42,10 @@ class Program
 
         builder.Services.AddHorusRateLimiting();
 
+        // OpenAPI: generates a spec file on disk at build time and (Development only)
+        // a local Swagger UI. Never served in Production — see OpenApiSetup.
+        builder.Services.AddHorusOpenApi();
+
         builder.Services.AddMemoryCache(options =>
         {
             options.SizeLimit = 1000;
@@ -58,6 +63,19 @@ class Program
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
+
+        // Local-only API docs. Guarded by the environment so a Production container
+        // never exposes them; nginx also does not proxy these paths. Grab the raw
+        // spec at /openapi/v1.json, or browse the UI at /swagger.
+        if (app.Environment.IsDevelopment())
+        {
+            app.MapOpenApi("/openapi/{documentName}.json");
+            app.UseSwaggerUI(o =>
+            {
+                o.SwaggerEndpoint($"/openapi/{OpenApiSetup.DocumentName}.json", "HorusAPI v1");
+                o.DocumentTitle = "HorusAPI — local docs";
+            });
+        }
 
         // Endpoints
         app.MapAuthEndpoints();
