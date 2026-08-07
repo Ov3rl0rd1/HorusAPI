@@ -79,7 +79,7 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
         try
         {
             await using var conn = Connect();
-            ServerRow? row = await conn.QuerySingleOrDefaultAsync(sql, new { ServerId = serverId });
+            ServerRow? row = await conn.QuerySingleOrDefaultAsync<ServerRow>(sql, new { ServerId = serverId });
 
             if (row is null)
             {
