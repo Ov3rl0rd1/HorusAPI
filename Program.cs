@@ -1,3 +1,4 @@
+using Dapper;
 using HorusAPI.Endpoints;
 using HorusAPI.Services;
 using HorusAPI.Services.Auth_Handler;
@@ -21,6 +22,10 @@ public partial class Program
 
     public static void Main(params string[] args)
     {
+        // Map snake_case columns to C# members ignoring underscores/case, so query
+        // targets don't need per-column aliases or snake_case member names.
+        DefaultTypeMap.MatchNamesWithUnderscores = true;
+
         var builder = WebApplication.CreateBuilder(args);
 
         ConfigureForwarding(builder);

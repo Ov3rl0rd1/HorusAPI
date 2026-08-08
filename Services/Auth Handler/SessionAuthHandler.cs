@@ -9,6 +9,7 @@ using System.Text.Encodings.Web;
 
 namespace HorusAPI.Services.Auth_Handler
 {
+    [DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
     public class SessionAuthHandler : AuthenticationHandler<SessionAuthOptions>
     {
         public const string SESSION_CACHE_PREFIX = "session_";

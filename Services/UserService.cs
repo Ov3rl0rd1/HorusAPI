@@ -18,6 +18,7 @@ public interface IUserService
     Task ClearOtherSessionsAsync(string username, string currentSession);
 }
 
+[DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
 public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserService
 {
     private static string GenerateSession(int userId)

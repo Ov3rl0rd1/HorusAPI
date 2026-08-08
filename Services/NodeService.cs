@@ -25,6 +25,8 @@ public sealed record NodeTarget(string Host, string AuthPassword);
 /// (X-API-PASSWORD), report public parameters, pull the authorized-user list, and
 /// report online telemetry.
 /// </summary>
+// Deliberately NOT [DapperAot]: contains a dynamic-tuple query (and pre-existing
+// malformed SQL) the generator cannot handle; keeps using classic Dapper.
 public class NodeService(IConfiguration cfg, ILogger<NodeService> log) : INodeService
 {
     public const string XRAY_USER_IDENTITY = "@horus";

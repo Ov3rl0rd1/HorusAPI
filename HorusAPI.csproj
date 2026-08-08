@@ -13,6 +13,9 @@
          sources out of this project's default **/*.cs globs. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);HorusAPI.Tests/**</DefaultItemExcludes>
 
+    <!-- Dapper.AOT emits its interceptors into this namespace; enable the feature. -->
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Dapper.AOT</InterceptorsNamespaces>
+
     <!-- Local OpenAPI spec: written to ./openapi/HorusAPI.json on every build.
          Purely a local artifact — nothing is served publicly (see OpenApiSetup).
          Skipped inside the Docker build so the container image stays lean. -->
@@ -23,6 +26,13 @@
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
     <PackageReference Include="Dapper" Version="2.1.72" />
+    <!-- Source generator: builds Dapper command/materializer code at compile time and
+         emits build-time diagnostics for column↔member mismatches. Opted in via
+         [module: DapperAot] in Services/DapperAotConfig.cs. PrivateAssets=all keeps
+         the analyzer from flowing into the test project (which stays classic Dapper). -->
+    <PackageReference Include="Dapper.AOT" Version="1.0.52">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
     <!-- Pin above the transitive 2.0.0 that Microsoft.AspNetCore.OpenApi pulls in:
@@ -30,16 +40,14 @@
          Stay on the 2.x line — 3.x breaks the built-in generator's source generator
          (read-only IOpenApiMediaType.Example). 2.11.0 is the latest patched 2.x. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.5">
       <IncludeAssets>build; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
+    <!-- ADO.NET driver used directly with Dapper (was previously pulled in only
+         transitively via the now-removed EF Core PostgreSQL provider). -->
+    <PackageReference Include="Npgsql" Version="10.0.2" />
     <!-- UI only. The built-in Microsoft.AspNetCore.OpenApi generates the document;
          this package (no Microsoft.OpenApi dependency of its own) just renders it
          locally. The full Swashbuckle metapackage would drag in a SwaggerGen that

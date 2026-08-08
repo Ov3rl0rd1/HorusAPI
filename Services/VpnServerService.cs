@@ -1,6 +1,5 @@
 using Dapper;
 using HorusAPI.Models;
-using Microsoft.AspNetCore.Hosting.Server;
 using Npgsql;
 
 namespace HorusAPI.Services;
@@ -14,8 +13,15 @@ public interface IVpnServerService
     Task BindUserAsync(int userId, int serverId);
 }
 
+[DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
 public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log) : IVpnServerService
 {
+    // Column list backing a ServerRow — `id` is aliased to the record's `server_id`.
+    private const string ConnectColumns =
+        "id AS server_id, host, reality_public_key, reality_short_ids, reality_server_name, " +
+        "reality_dest, vless_port, hysteria_port, obfs_password, hop, " +
+        "olcrtc_provider, olcrtc_transport, olcrtc_room_id, olcrtc_room_key, agent_version";
+
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
     public async Task<IEnumerable<ServerListItem>> GetAvailableServersAsync()
@@ -29,17 +35,7 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
             """;
 
         await using var conn = Connect();
-        var rows = await conn.QueryAsync(sql);
-
-        return rows.Select(r => new ServerListItem(
-            id: (int)r.id,
-            name: (string)r.name,
-            country: (string)r.country,
-            city: (string)r.city,
-            host: (string)r.host,
-            current_load: (int)r.current_load,
-            max_clients: (int)r.max_clients,
-            is_active: (bool)r.is_active));
+        return await conn.QueryAsync<ServerListItem>(sql);
     }
 
     public async Task<IEnumerable<BestServerItem>> GetBestServersAsync()
@@ -53,24 +49,13 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
             """;
 
         await using var conn = Connect();
-        var rows = await conn.QueryAsync(sql);
-
-        return rows.Select(r => new BestServerItem(
-            id:           (int)r.id,
-            name:         (string)r.name,
-            country:      (string)r.country,
-            city:         (string)r.city,
-            host:         (string)r.host,
-            current_load: (int)r.current_load,
-            max_clients:  (int)r.max_clients));
+        return await conn.QueryAsync<BestServerItem>(sql);
     }
 
     public async Task<ServerRow?> GetConnectDataAsync(int serverId)
     {
-        const string sql = """
-            SELECT id AS server_id, host, reality_public_key, reality_short_ids, reality_server_name, reality_dest, vless_port,
-                hysteria_port, obfs_password, hop,
-                olcrtc_provider, olcrtc_transport, olcrtc_room_id, olcrtc_room_key, agent_version
+        const string sql = $"""
+            SELECT {ConnectColumns}
             FROM vpn_servers
             WHERE id = @ServerId AND is_active = true
             LIMIT 1

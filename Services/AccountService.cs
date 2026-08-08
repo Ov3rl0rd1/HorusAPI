@@ -38,6 +38,9 @@ public interface IAccountService
     Task<ResetStatus> ResetPasswordAsync(string token, string newPassword);
 }
 
+// Deliberately NOT [DapperAot]: reads the sessions VARCHAR(64)[] as a scalar
+// string[] (unsupported by the AOT materializer) and its reset flow behaved
+// differently under the generated interceptors — stays on classic Dapper.
 public class AccountService(
     IConfiguration cfg,
     IMemoryCache cache,
@@ -184,8 +187,10 @@ public class AccountService(
         if (userId is null) return ResetStatus.InvalidOrExpired;
 
         // Read the live sessions before wiping them — they are the cache keys.
-        string[]? sessions = await conn.ExecuteScalarAsync<string[]>(
-            "SELECT sessions FROM users WHERE id = @UserId", new { UserId = userId });
+        // Via the User type (a plain scalar string[] read trips the project-wide
+        // Dapper.AOT analyzer, DAP037); classic-mapped since this class isn't [DapperAot].
+        string[]? sessions = (await conn.QuerySingleOrDefaultAsync<User>(
+            "SELECT * FROM users WHERE id = @UserId", new { UserId = userId }))?.sessions;
 
         // A completed reset proves the address belongs to the user, so it also
         // confirms the e-mail, and every existing session is logged out.

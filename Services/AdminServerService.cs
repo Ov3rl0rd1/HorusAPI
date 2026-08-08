@@ -16,42 +16,26 @@ public interface IAdminServerService
     Task<bool> ClearSubscriptionAsync(string username);
 }
 
+[DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
 public class AdminServerService(
     IConfiguration cfg,
     IHttpClientFactory httpClientFactory,
     IMemoryCache cache,
     ILogger<AdminServerService> log) : IAdminServerService
 {
+    // Column list backing a ServerAdminItem (names match the record parameters).
+    private const string AdminColumns =
+        "id, name, country, city, host, current_load, max_clients, is_active, " +
+        "auth_password, masquerade_url, reality_public_key, agent_version, last_registered_at";
+
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
     public async Task<IEnumerable<ServerAdminItem>> GetAllServersAsync()
     {
-        const string sql = """
-            SELECT id, name, country, city, host,
-                   current_load, max_clients, is_active,
-                   auth_password, masquerade_url,
-                   reality_public_key, agent_version, last_registered_at
-            FROM vpn_servers
-            ORDER BY id
-            """;
+        const string sql = $"SELECT {AdminColumns} FROM vpn_servers ORDER BY id";
 
         await using var conn = Connect();
-        var rows = await conn.QueryAsync(sql);
-
-        return rows.Select(r => new ServerAdminItem(
-            id:                 (int)r.id,
-            name:               (string)r.name,
-            country:            (string)r.country,
-            city:               (string)r.city,
-            host:               (string)r.host,
-            current_load:       (int)r.current_load,
-            max_clients:        (int)r.max_clients,
-            is_active:          (bool)r.is_active,
-            auth_password:      (string)r.auth_password,
-            masquerade_url:     (string?)r.masquerade_url,
-            reality_public_key: (string)r.reality_public_key,
-            agent_version:      (string)r.agent_version,
-            last_registered_at: (DateTime?)r.last_registered_at));
+        return await conn.QueryAsync<ServerAdminItem>(sql);
     }
 
     public async Task<int> AddServerAsync(AddServerRequest req)
