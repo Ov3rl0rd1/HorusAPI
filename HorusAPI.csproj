@@ -26,13 +26,14 @@
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
     <PackageReference Include="Dapper" Version="2.1.72" />
-    <!-- Source generator: builds Dapper command/materializer code at compile time and
-         emits build-time diagnostics for column↔member mismatches. Opted in via
-         [module: DapperAot] in Services/DapperAotConfig.cs. PrivateAssets=all keeps
-         the analyzer from flowing into the test project (which stays classic Dapper). -->
-    <PackageReference Include="Dapper.AOT" Version="1.0.52">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    <!-- Compile-time Dapper command/materializer generation + column↔member diagnostics.
+         Opted in per-class with [DapperAot] on the AOT-friendly services. NOTE: this
+         package has a REQUIRED runtime assembly (Dapper.AOT.dll) that the generated
+         interceptors call into — do NOT set PrivateAssets=all / mark it dev-only, or
+         `dotnet publish` drops the DLL and every intercepted query throws
+         FileNotFoundException at runtime. The DAP005 notice this analyzer raises in
+         the test project is silenced there via <NoWarn> instead. -->
+    <PackageReference Include="Dapper.AOT" Version="1.0.52" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
     <!-- Pin above the transitive 2.0.0 that Microsoft.AspNetCore.OpenApi pulls in:

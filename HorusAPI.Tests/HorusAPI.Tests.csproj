@@ -7,6 +7,9 @@
     <IsPackable>false</IsPackable>
     <!-- This project only consumes HorusAPI; it never emits its own OpenAPI file. -->
     <OpenApiGenerateDocuments>false</OpenApiGenerateDocuments>
+    <!-- Dapper.AOT's analyzer flows in transitively and notes that our test-only
+         Dapper calls aren't AOT-enabled (DAP005). Intentional — tests stay classic. -->
+    <NoWarn>$(NoWarn);DAP005</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
