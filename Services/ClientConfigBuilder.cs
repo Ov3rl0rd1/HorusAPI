@@ -9,7 +9,7 @@ namespace HorusAPI.Services
 
         public static string MainVless(ServerRow server, Guid uuid)
         {
-            return $"vless://{uuid}@{server.host}:{server.vless_port}?encryption={VLESS_ENCRYPTION}&flow=xtls-rprx-vision&security=reality&sni={server.reality_server_name}&fp={VLESS_FP}&pbk={server.reality_public_key}&sid={server.reality_short_ids}&type=tcp#MainVLESS";
+            return $"vless://{uuid}@{server.host}:{server.vless_port}?encryption={VLESS_ENCRYPTION}&flow=xtls-rprx-vision&security=reality&sni={server.reality_server_name}&fp={VLESS_FP}&pbk={server.reality_public_key}&sid={server.reality_short_ids[0]}&type=tcp#MainVLESS";
         }
 
         public static string MainHysteria(ServerRow server, Guid uuid)
