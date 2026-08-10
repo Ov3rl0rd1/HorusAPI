@@ -27,7 +27,8 @@ public static class ServerEndpoints
         group.MapGet("/connect", async (
             HttpContext        ctx,
             IVpnServerService  svc,
-            IConfiguration     cfg) =>
+            IConfiguration     cfg,
+            INodeNotifier notifier) =>
         {
             User? user = ctx.Items[ApiConsts.UserHttpContext] as User;
 
@@ -38,12 +39,16 @@ public static class ServerEndpoints
             ServerRow? server;
             try 
             {
-                server = await svc.ChooseServerAsync(user);
+                server = await svc.ChooseServerAsync(user!);
 
                 if (server is null)
                     return Results.NotFound(new ApiError("No available servers."));
 
-                await svc.BindUserAsync(user.id, server.server_id);
+                await svc.BindUserAsync(user!.id, server.server_id);
+
+                string? email = user?.email;
+                
+                await notifier.AddUserAsync(new NodeTarget(server.host, server.auth_password), email!, user!.vpn_uuid.ToString());
             }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
@@ -56,6 +61,7 @@ public static class ServerEndpoints
 
             if (string.IsNullOrWhiteSpace(session))
                 return Results.Unauthorized();
+
 
             string mainVless = ClientConfigBuilder.MainVless(server, user.vpn_uuid);
             string mainHystria = ClientConfigBuilder.MainHysteria(server, user.vpn_uuid);

@@ -18,7 +18,7 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
 {
     // Column list backing a ServerRow — `id` is aliased to the record's `server_id`.
     private const string ConnectColumns =
-        "id AS server_id, host, reality_public_key, reality_short_ids, reality_server_name, " +
+        "id AS server_id, host, auth_password, reality_public_key, reality_short_ids, reality_server_name, " +
         "reality_dest, vless_port, hysteria_port, obfs_password, hop, " +
         "olcrtc_provider, olcrtc_transport, olcrtc_room_id, olcrtc_room_key, agent_version";
 
