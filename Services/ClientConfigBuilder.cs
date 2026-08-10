@@ -14,7 +14,7 @@ namespace HorusAPI.Services
 
         public static string MainHysteria(ServerRow server, Guid uuid)
         {
-            return $"hysteria2://{uuid}@{server.host}:{server.hysteria_port},{server.hop}/?sni={server.reality_server_name}&obfs=salamander&obfs-password={server.obfs_password}#MainHystria";
+            return $"hysteria2://{uuid}@{server.host}:{server.hysteria_port},{server.hop}/?sni={server.host}&obfs=salamander&obfs-password={server.obfs_password}#MainHystria";
         }
     }
 }
