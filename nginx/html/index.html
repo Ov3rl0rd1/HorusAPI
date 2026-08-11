@@ -1801,16 +1801,179 @@ input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;b
   #hpb-links a{display:none}
   #hpb-links a#hpb-cta{display:inline-block;margin-left:0;padding:10px 16px;font-size:13.5px}
 }
+:root{--hz-logo:url("logo-gold.svg")}
+/* ═══ Horus app UI, rebuilt from the MAUI XAML ═══════════════════════════════
+   Replaces the screenshot placeholders in the laptop and phone mockups.
+
+   Scaling: each mock is a container, and the replica inside is laid out at the
+   app's own pixel dimensions - 1120x700 for the Windows window, 360x792 for the
+   phone. `font-size: calc(100cqw / <design width>)` makes 1em exactly one design
+   pixel, so every value below is the same number that appears in the XAML and the
+   whole thing scales with the mock at any viewport.
+
+   The one rule that keeps that honest: font-size goes on leaf text elements only.
+   An element that sets its own font-size would reinterpret em for its padding.
+   Boxes carry the spacing, spans carry the type.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.hz-screen{position:absolute;inset:0;overflow:hidden;container-type:inline-size;
+  font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-weight:500;
+  color:#EFEAF6;text-align:left}
+.hz-screen *{box-sizing:border-box;margin:0;padding:0}
+.hz-pc .hz-app{font-size:calc(100cqw / 1120)}
+.hz-ph .hz-app{font-size:calc(100cqw / 360)}
+
+.hz-app{display:flex;width:100%;height:100%;position:relative;isolation:isolate}
+.hz-pc .hz-app{background:radial-gradient(ellipse 500em 380em at calc(100% - 280em) 140em,rgba(92,42,120,.29) 0%,rgba(92,42,120,0) 62%),radial-gradient(ellipse 430em 340em at 150em 50%,rgba(61,24,80,.30) 0%,rgba(61,24,80,0) 60%),#0E0718}
+.hz-ph .hz-app{background:radial-gradient(ellipse 500em 380em at calc(100% - 280em) 140em,rgba(92,42,120,.29) 0%,rgba(92,42,120,0) 62%),radial-gradient(ellipse 430em 340em at 150em 50%,rgba(61,24,80,.30) 0%,rgba(61,24,80,0) 60%),#0B0512;flex-direction:column}
+
+/* The two radial glows RootPage paints behind everything. */
+.hz-layer{position:relative;z-index:1;display:flex;width:100%;height:100%}
+.hz-ph .hz-layer{flex-direction:column}
+
+/* Surfaces and type, straight from App.xaml's palette. */
+.hz-card{background:rgba(255,255,255,.024);border:1px solid rgba(255,255,255,.078);
+  border-radius:18em}
+.hz-dim{color:rgba(239,234,246,.549)}
+.hz-muted{color:rgba(239,234,246,.451)}
+.hz-eyebrow{color:rgba(239,234,246,.451);font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase}
+.hz-gold{color:#F0C46A}
+.hz-goldl{color:#F3D48E}
+.hz-green{color:#7ED9A7}
+
+/* ── Windows sidebar ─────────────────────────────────────────────────────── */
+.hz-side{width:268em;flex:0 0 268em;padding:20em 16em 18em;display:flex;
+  flex-direction:column;gap:6em}
+.hz-brand{display:flex;align-items:center;gap:11em;padding:4em 0 16em 10em}
+.hz-logo{background:var(--hz-logo) center/contain no-repeat;flex:none}
+.hz-brand .hz-logo{width:45em;height:32em}
+.hz-wordmark{font-family:'Unbounded','Manrope',system-ui,sans-serif;font-weight:800;
+  font-size:19em;letter-spacing:.02em}
+.hz-nav{display:flex;flex-direction:column;gap:4em}
+.hz-navrow{display:flex;align-items:center;gap:13em;height:52em;padding:0 15em;
+  border-radius:10em}
+.hz-navrow.is-on{background:rgba(255,255,255,.055)}
+.hz-navrow span{font-weight:700;font-size:15.5em}
+.hz-navrow.is-on span{color:#F0C46A}
+.hz-navrow svg{width:22em;height:22em;flex:none;stroke:rgba(239,234,246,.451);
+  fill:none;stroke-linecap:round;stroke-linejoin:round}
+.hz-navrow.is-on svg{stroke:#F0C46A}
+.hz-acct{margin-top:auto;padding:15em 16em;display:flex;flex-direction:column;gap:9em}
+.hz-acct b{font-weight:600;font-size:15em}
+.hz-acct .hz-sub{font-size:13.5em}
+.hz-renew{height:42em;border-radius:11em;background:rgba(240,196,106,.078);
+  border:1px solid rgba(240,196,106,.302);display:flex;align-items:center;
+  justify-content:center}
+.hz-renew span{color:#F3D48E;font-weight:700;font-size:14.5em}
+
+/* ── Windows content ─────────────────────────────────────────────────────── */
+.hz-main{flex:1;min-width:0;padding:30em 38em 32em 34em;display:flex;gap:26em}
+.hz-connect{flex:1;min-width:0;padding:28em 30em 26em;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:6em}
+.hz-rail{width:336em;flex:0 0 336em;display:flex;flex-direction:column;gap:16em}
+
+.hz-pill{display:inline-flex;align-items:center;gap:9em;padding:9em 17em;
+  border-radius:99em;background:rgba(126,217,167,.078);
+  border:1px solid rgba(126,217,167,.302)}
+.hz-pill i{width:8em;height:8em;border-radius:50%;background:#7ED9A7;flex:none}
+.hz-pill span{font-weight:700;font-size:13.5em;letter-spacing:.04em;color:#7ED9A7}
+
+/* Connect ring: dashed outer ellipse, gold rim, gradient face. */
+.hz-ring{position:relative;width:270em;height:270em;margin:18em 0 8em;
+  display:grid;place-items:center;flex:none}
+.hz-ring::before{content:'';position:absolute;inset:0;border-radius:50%;
+  border:1px dashed rgba(240,196,106,.302)}
+.hz-ring::after{content:'';position:absolute;inset:9em;border-radius:50%;
+  box-shadow:0 0 40em rgba(240,196,106,.22)}
+.hz-disc{width:220em;height:220em;border-radius:50%;border:1px solid #F0C46A;
+  background:linear-gradient(135deg,#2A1540,#160A24);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:12em;
+  box-shadow:0 0 60em rgba(240,196,106,.10) inset}
+.hz-disc .hz-logo{width:96em;height:68em}
+.hz-disc span{font-weight:700;letter-spacing:.19em;color:#F0C46A}
+.hz-pc .hz-disc span{font-size:13.5em}
+.hz-statussub{font-size:15em}
+.hz-timer{font-weight:500;letter-spacing:.03em;color:#F3D48E}
+.hz-pc .hz-timer{font-size:32em;margin-top:2em}
+
+.hz-srv{width:100%;max-width:470em;margin-top:20em;padding:15em 18em;
+  display:flex;align-items:center;gap:12em}
+.hz-code{width:44em;height:44em;border-radius:13em;flex:none;display:grid;
+  place-items:center;background:rgba(240,196,106,.078);
+  border:1px solid rgba(240,196,106,.302)}
+.hz-code span{color:#F3D48E;font-weight:700;font-size:11.5em}
+.hz-srv .hz-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1em}
+.hz-srv .hz-txt b{font-weight:700;font-size:16em}
+.hz-srv .hz-txt span{font-size:13.5em}
+.hz-chev{width:16em;height:16em;flex:none;stroke:rgba(239,234,246,.451);fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.hz-rail>div{padding:22em}
+.hz-rail .hz-eyebrow{font-size:12.5em}
+.hz-graph{height:54em;display:flex;align-items:center;margin:12em 0}
+.hz-graph i{display:block;width:100%;height:0;
+  border-top:2px dashed rgba(240,196,106,.85)}
+.hz-two{display:flex;gap:12em}
+.hz-two>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2em}
+.hz-two .hz-eyebrow{font-size:11.5em;letter-spacing:.05em}
+.hz-two b{font-weight:700;font-size:19em}
+.hz-ip{display:flex;flex-direction:column;gap:4em}
+.hz-ip .hz-eyebrow{margin-bottom:4em}
+.hz-dots{letter-spacing:.34em;font-size:21em;color:#EFEAF6}
+.hz-ipnote{font-weight:700;font-size:13.5em}
+.hz-rail .hz-fill{flex:1;display:flex;flex-direction:column;gap:6em}
+.hz-srvrow{display:flex;align-items:center;gap:12em;padding:10em 0;min-height:50em}
+.hz-srvrow .hz-code{width:36em;height:36em;border-radius:9em;
+  background:rgba(255,255,255,.071);border:1px solid rgba(255,255,255,.141)}
+.hz-srvrow .hz-code span{font-size:10.5em}
+.hz-srvrow b{flex:1;font-weight:700;font-size:15em}
+.hz-srvrow i{width:6em;height:6em;border-radius:50%;background:#7ED9A7;flex:none}
+
+/* ── Phone ───────────────────────────────────────────────────────────────── */
+.hz-ph .hz-top{display:flex;align-items:center;justify-content:space-between;
+  padding:66em 18em 6em;flex:none}
+.hz-ph .hz-brand{padding:0;gap:9em}
+.hz-ph .hz-logo{width:42em;height:30em}
+.hz-ph .hz-wordmark{font-size:13em;letter-spacing:.08em}
+.hz-ph .hz-topright{display:flex;flex-direction:column;align-items:flex-end;gap:3em}
+.hz-ph .hz-pill{padding:6em 12em;gap:7em}
+.hz-ph .hz-pill i{width:6em;height:6em}
+.hz-ph .hz-pill span{font-size:11em}
+.hz-proto{font-size:9em;letter-spacing:.06em;padding-right:4em}
+.hz-ph .hz-body{flex:1;display:flex;flex-direction:column;gap:14em;
+  padding:8em 18em 22em;min-height:0}
+.hz-ph .hz-ring{width:224em;height:224em;margin:8em auto 0}
+.hz-ph .hz-ring::after{inset:7em;box-shadow:0 0 32em rgba(240,196,106,.22)}
+.hz-ph .hz-disc{width:182em;height:182em;gap:9em}
+.hz-ph .hz-disc .hz-logo{width:74em;height:52em}
+.hz-ph .hz-disc span{font-size:11em;letter-spacing:.18em}
+.hz-ph .hz-mid{display:flex;flex-direction:column;align-items:center;gap:2em}
+.hz-ph .hz-statussub{font-size:13em}
+.hz-ph .hz-timer{font-size:24em}
+.hz-ph .hz-srv{max-width:none;margin:0;padding:12em 14em}
+.hz-ph .hz-code{width:38em;height:38em;border-radius:11em}
+.hz-ph .hz-code span{font-size:10em}
+.hz-ph .hz-srv .hz-txt b{font-size:14em}
+.hz-ph .hz-srv .hz-txt span{font-size:12em}
+.hz-ph .hz-tiles{display:flex;gap:12em}
+.hz-ph .hz-tiles>div{flex:1;min-width:0;padding:13em 14em;display:flex;
+  flex-direction:column;gap:6em}
+.hz-ph .hz-tiles .hz-eyebrow{font-size:10em}
+.hz-ph .hz-tiles b{font-weight:700;font-size:14em}
+.hz-ph .hz-tiles .hz-small{font-size:12em}
+.hz-ph .hz-tiles .hz-dots{font-size:13em;letter-spacing:.3em}
+.hz-tabs{flex:none;height:62em;display:flex;background:rgba(14,7,24,.9);
+  border-top:1px solid rgba(255,255,255,.078)}
+.hz-tab{flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4em}
+.hz-tab svg{width:22em;height:22em;stroke:rgba(239,234,246,.451);fill:none;
+  stroke-linecap:round;stroke-linejoin:round}
+.hz-tab span{font-weight:700;font-size:10em;color:rgba(239,234,246,.451)}
+.hz-tab.is-on svg{stroke:#F0C46A}
+.hz-tab.is-on span{color:#F0C46A}
 </style>
 </helmet>
-<!-- ══════════ КАК ЗАМЕНИТЬ ПЛЕЙСХОЛДЕРЫ ══════════
-1) СКРИНШОТЫ: найдите два блока с надписью «скриншот приложения» (ноутбук и телефон).
-   Перетащите свой скриншот в чат (он попадёт в uploads/) и замените div-плейсхолдер на:
-   <img src="uploads/screenshot.png" style="width:100%;height:100%;object-fit:cover;display:block">
-2) ССЫЛКИ НА СКАЧИВАНИЕ: в JS-классе найдите «ЗАМЕНИТЕ-ССЫЛКУ» — Windows .exe, APK, Google Play, App Store, оплата.
-3) КОНТАКТЫ: найдите horus_vpn и support@ — подставьте свои Telegram / email / VK.
-4) ЦЕНЫ и АКЦЕНТНЫЙ ЦВЕТ меняются в панели Tweaks (иконка настроек).
-════════════════════════════════════════════════ -->
 <div id="top" data-screen-label="Horus Ping Booster — лендинг" style="min-height:100vh;position:relative;overflow-x:clip;font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-size:16.5px;line-height:1.6;color:#EFEAF6;background:radial-gradient(900px 620px at 88% -6%, rgba(92,42,120,.30), rgba(11,5,18,0) 62%), radial-gradient(760px 540px at -12% 26%, rgba(61,24,80,.34), rgba(11,5,18,0) 62%), #0B0512">
 <div style="display:contents;--accent:{{ accent }}">
 <div aria-hidden="true" style="position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0">
@@ -1869,10 +2032,7 @@ input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;b
             <div style="background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.14);border-radius:18px 18px 5px 5px;padding:12px 12px 14px;box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 70px rgba(122,58,160,.25)">
               <div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.25);margin:0 auto 9px"></div>
               <div style="aspect-ratio:16/10;border-radius:9px;overflow:hidden;background:#160B24;position:relative">
-                <!-- ЗАМЕНИТЕ этот div-плейсхолдер на: <img src="uploads/screenshot-pc.png" style="width:100%;height:100%;object-fit:cover;display:block"> -->
-                <div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.035) 0 10px,rgba(255,255,255,0) 10px 20px),linear-gradient(160deg,#1D0F30,#120821);display:grid;place-items:center">
-                  <div style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:rgba(239,234,246,.55);text-align:center;line-height:1.8;padding:0 20px">[ скриншот приложения ]<br>Windows · 16:10</div>
-                </div>
+                <div class="hz-screen hz-pc" aria-label="Horus для Windows"><div class="hz-app"><div class="hz-layer"><aside class="hz-side"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><nav class="hz-nav"><div class="hz-navrow is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.5 5.6a8 8 0 1 0 9 0"/></svg><span>Главная</span></div><div class="hz-navrow"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"/></svg><span>Серверы</span></div><div class="hz-navrow"><svg viewBox="0 0 24 24"><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.2"/><path d="M4 17h5"/><path d="M15 17h5"/><circle cx="12" cy="17" r="2.2"/></svg><span>Настройки</span></div></nav><div class="hz-acct hz-card"><b>demo@horus.vpn</b><span class="hz-sub hz-goldl">Подписка · до 14 сентября</span><div class="hz-renew"><span>Продлить подписку</span></div></div></aside><main class="hz-main"><section class="hz-connect hz-card"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></section><aside class="hz-rail"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><div class="hz-graph"><i></i></div><div class="hz-two"><div><span class="hz-eyebrow">&#8595; Загрузка</span><b>24 Мбит/с</b></div><div><span class="hz-eyebrow">&#8593; Отдача</span><b>8 Мбит/с</b></div></div></div><div class="hz-card hz-ip"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;</span><span class="hz-ipnote hz-green">Ваш IP скрыт</span></div><div class="hz-card hz-fill"><span class="hz-eyebrow">Рекомендуемые</span><div class="hz-srvrow"><div class="hz-code"><span>CH</span></div><b>Zurich</b><i></i></div></div></aside></main></div></div></div>
                 <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.08),rgba(255,255,255,0) 42%);pointer-events:none"></div>
               </div>
             </div>
@@ -1882,10 +2042,7 @@ input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;b
         <sc-if value="{{ showHeroPhone }}" hint-placeholder-val="{{ false }}">
           <div style="width:clamp(220px,56vw,268px);aspect-ratio:9/19;background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.16);border-radius:44px;padding:10px;box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 70px rgba(122,58,160,.3)">
             <div style="height:100%;border-radius:34px;overflow:hidden;background:#160B24;position:relative">
-              <!-- ЗАМЕНИТЕ этот div-плейсхолдер на: <img src="uploads/screenshot-phone.png" style="width:100%;height:100%;object-fit:cover;display:block"> -->
-              <div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.035) 0 10px,rgba(255,255,255,0) 10px 20px),linear-gradient(160deg,#1D0F30,#120821);display:grid;place-items:center">
-                <div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:rgba(239,234,246,.55);text-align:center;line-height:1.8">[ скриншот приложения ]<br>9:19</div>
-              </div>
+              <div class="hz-screen hz-ph" aria-label="Horus для Android"><div class="hz-app"><div class="hz-layer"><div class="hz-top"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><div class="hz-topright"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><span class="hz-proto hz-muted">Hysteria2</span></div></div><div class="hz-body"><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><div class="hz-mid"><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span></div><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div><div class="hz-tiles"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><b>&#8595; 24 Мбит/с</b><span class="hz-small hz-dim">&#8593; 8 Мбит/с</span></div><div class="hz-card"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;</span><span class="hz-small hz-green" style="font-weight:700">Ваш IP скрыт</span></div></div></div><div class="hz-tabs"><div class="hz-tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.5 5.6a8 8 0 1 0 9 0"/></svg><span>Главная</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"/></svg><span>Серверы</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.2"/><path d="M4 17h5"/><path d="M15 17h5"/><circle cx="12" cy="17" r="2.2"/></svg><span>Настройки</span></div></div></div></div></div>
               <div style="position:absolute;top:10px;left:50%;transform:translateX(-50%);width:84px;height:22px;border-radius:99px;background:#0B0512"></div>
               <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.07),rgba(255,255,255,0) 45%);pointer-events:none"></div>
             </div>
@@ -1897,9 +2054,7 @@ input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;b
       <div ref="{{ sidePhoneRef }}" style="position:absolute;right:clamp(-8px,1vw,24px);bottom:-14px;opacity:0;transform:translate3d(90px,50px,0) rotate(8deg);will-change:transform,opacity">
         <div style="width:148px;aspect-ratio:9/19;background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.16);border-radius:28px;padding:7px;box-shadow:0 30px 60px rgba(0,0,0,.6), 0 0 40px rgba(122,58,160,.3)">
           <div style="height:100%;border-radius:22px;overflow:hidden;background:#160B24;position:relative">
-            <div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.04) 0 8px,rgba(255,255,255,0) 8px 16px),linear-gradient(160deg,#1D0F30,#120821);display:grid;place-items:center">
-              <div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:rgba(239,234,246,.5);text-align:center;line-height:1.7">[ скриншот ]<br>9:19</div>
-            </div>
+            <div class="hz-screen hz-ph" aria-label="Horus для Android"><div class="hz-app"><div class="hz-layer"><div class="hz-top"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><div class="hz-topright"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><span class="hz-proto hz-muted">Hysteria2</span></div></div><div class="hz-body"><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><div class="hz-mid"><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span></div><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div><div class="hz-tiles"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><b>&#8595; 24 Мбит/с</b><span class="hz-small hz-dim">&#8593; 8 Мбит/с</span></div><div class="hz-card"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;</span><span class="hz-small hz-green" style="font-weight:700">Ваш IP скрыт</span></div></div></div><div class="hz-tabs"><div class="hz-tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.5 5.6a8 8 0 1 0 9 0"/></svg><span>Главная</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"/></svg><span>Серверы</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.2"/><path d="M4 17h5"/><path d="M15 17h5"/><circle cx="12" cy="17" r="2.2"/></svg><span>Настройки</span></div></div></div></div></div>
             <div style="position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 52px; height: 14px; border-radius: 99px; background-color: #190B2A"></div>
           </div>
         </div>
@@ -1988,20 +2143,20 @@ input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;b
   </div>
   <!-- ЗАМЕНИТЕ ссылки и адреса на свои -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;margin-top:38px">
-    <a data-reveal="0" href="https://t.me/horus_vpn" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
+    <a data-reveal="0" href="https://t.me/horusping" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
       <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">TELEGRAM</div>
-      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">@horus_vpn</div>
+      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">@horusping</div>
       <div style="font-size:14px;color:rgba(239,234,246,.6)">Отвечаем быстрее всего — обычно в течение часа.</div>
     </a>
-    <a data-reveal="1" href="mailto:support@horusping.app" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
+    <a data-reveal="1" href="mailto:horusping@gmail.com" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
       <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">EMAIL</div>
-      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px;word-break:break-all">support@horusping.app</div>
+      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px;word-break:break-all">horusping@gmail.com</div>
       <div style="font-size:14px;color:rgba(239,234,246,.6)">Для официальных запросов и партнёрств.</div>
     </a>
-    <a data-reveal="2" href="https://vk.com/horus_vpn" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
+    <a data-reveal="2" href="https://vk.com/horus_ping" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
       <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">VK</div>
-      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">vk.com/horus_vpn</div>
-      <div style="font-size:14px;color:rgba(239,234,246,.6)">Новости, обновления и статус серверов.</div>
+      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">vk.com/horus_ping</div>
+      <div style="font-size:14px;color:rgba(239,234,246,.6)">Тех поддержка.</div>
     </a>
   </div>
 </section>
