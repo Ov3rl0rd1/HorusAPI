@@ -1796,6 +1796,12 @@ input[type="range"]::-moz-range-progress{height:6px;border-radius:99px;backgroun
 input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent,#F0C46A);border:5px solid #160A22;box-shadow:0 2px 14px rgba(0,0,0,.5)}
 @keyframes hpb-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
 @keyframes hpb-pulse{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.9;transform:scale(1.07)}}
+/* Панель «Все файлы» живёт внутри шапки, а секции ниже — тоже
+   position:relative;z-index:1 и идут позже в DOM, поэтому перекрывают весь её
+   контекст наложения вместе с панелью. Пока панель открыта, поднимаем шапку
+   целиком — тогда и затемнение ложится поверх меню навигации. */
+#hpb-hero{z-index:1}
+#hpb-hero.is-files-open{z-index:70}
 @media (max-width:680px){
   #hpb-nav{padding:8px 12px;gap:8px}
   #hpb-links a{display:none}
@@ -1993,7 +1999,7 @@ input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;b
     <a id="hpb-cta" href="#top" style="margin-left:10px;background:var(--accent,#F0C46A);color:#1A0C26;font-weight:800;font-size:14.5px;padding:11px 18px;border-radius:11px;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.45);transition:transform .2s ease" style-hover="transform:translateY(-1px);color:#1A0C26">Скачать</a>
   </div>
 </nav>
-<header data-screen-label="Главный экран" style="position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:clamp(36px,6vh,70px) clamp(18px,4vw,40px) clamp(70px,11vh,120px);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));gap:clamp(28px,5vw,56px);align-items:center;min-height:86vh">
+<header id="hpb-hero" class="{{ heroClass }}" data-screen-label="Главный экран" style="position:relative;max-width:1200px;margin:0 auto;padding:clamp(36px,6vh,70px) clamp(18px,4vw,40px) clamp(70px,11vh,120px);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));gap:clamp(28px,5vw,56px);align-items:center;min-height:86vh">
   <div>
     <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(240,196,106,.08);border:1px solid rgba(240,196,106,.28);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:700;color:#F3D48E">
       <span style="width:7px;height:7px;border-radius:50%;background:var(--accent,#F0C46A);animation:hpb-pulse 2.4s ease-in-out infinite"></span>
@@ -2001,24 +2007,48 @@ input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;b
     </div>
     <h1 style="font-family:'Unbounded',sans-serif;font-weight:800;font-size:clamp(33px,5.1vw,60px);line-height:1.08;letter-spacing:-.01em;margin:22px 0 18px">Весь интернет.<br><span style="background:linear-gradient(100deg,var(--accent,#F0C46A) 20%,#C7A6F5 90%);-webkit-background-clip:text;background-clip:text;color:transparent">Без блокировок.</span></h1>
     <p style="color:rgba(239,234,246,.72);font-size:clamp(16px,1.35vw,18.5px);max-width:54ch;margin:0 0 30px;text-wrap:pretty">Horus Ping Booster возвращает доступ к любимым сайтам и сервисам: обходит блокировки, замедления и «белые списки». Одна кнопка — и через 10 секунд всё снова работает.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px">
-      <sc-for list="{{ primaryButtons }}" as="btn" hint-placeholder-count="1">
-        <a href="{{ btn.href }}" style="display:flex;flex-direction:column;justify-content:center;min-height:58px;padding:10px 26px;border-radius:14px;background:var(--accent,#F0C46A);text-decoration:none;box-shadow:0 14px 40px rgba(240,196,106,.22), inset 0 1px 0 rgba(255,255,255,.5);transition:transform .25s ease,box-shadow .25s ease" style-hover="transform:translateY(-3px);box-shadow:0 20px 50px rgba(240,196,106,.32), inset 0 1px 0 rgba(255,255,255,.5)">
-          <span style="font-weight:800;font-size:15.5px;color:#1A0C26">{{ btn.label }}</span>
-          <span style="font-size:12px;font-weight:700;color:rgba(26,12,38,.62)">{{ btn.sub }}</span>
-        </a>
-      </sc-for>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-      <span style="font-size:13px;color:rgba(239,234,246,.5);font-weight:600">Другие платформы:</span>
-      <sc-for list="{{ otherLinks }}" as="lnk" hint-placeholder-count="3">
-        <a href="{{ lnk.href }}" style="font-size:13px;font-weight:700;color:rgba(239,234,246,.8);text-decoration:none;border:1px solid rgba(255,255,255,.14);border-radius:99px;padding:7px 13px;transition:border-color .2s ease" style-hover="border-color:rgba(240,196,106,.6);color:#F3D48E">{{ lnk.label }}</a>
-      </sc-for>
+    <div style="position:relative;margin-bottom:18px">
+      <div style="display:flex;flex-wrap:wrap;gap:12px">
+        <sc-for list="{{ primaryButtons }}" as="btn" hint-placeholder-count="1">
+          <a href="{{ btn.href }}" style="display:flex;flex-direction:column;justify-content:center;min-height:58px;padding:10px 26px;border-radius:14px;background:var(--accent,#F0C46A);text-decoration:none;box-shadow:0 14px 40px rgba(240,196,106,.22), inset 0 1px 0 rgba(255,255,255,.5);transition:transform .25s ease,box-shadow .25s ease" style-hover="transform:translateY(-3px);box-shadow:0 20px 50px rgba(240,196,106,.32), inset 0 1px 0 rgba(255,255,255,.5)">
+            <span style="font-weight:800;font-size:15.5px;color:#1A0C26">{{ btn.label }}</span>
+            <span style="font-size:12px;font-weight:700;color:rgba(26,12,38,.62)">{{ btn.sub }}</span>
+          </a>
+        </sc-for>
+        <button onClick="{{ toggleFiles }}" aria-haspopup="dialog" aria-expanded="{{ filesOpen }}" style="display:flex;flex-direction:column;justify-content:center;min-height:58px;padding:10px 22px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.16);cursor:pointer;text-align:left;font-family:'Manrope',sans-serif;transition:border-color .25s ease,background .25s ease" style-hover="border-color:rgba(240,196,106,.55);background:rgba(240,196,106,.07)">
+          <span style="font-weight:800;font-size:15.5px;color:#EFEAF6">Все файлы</span>
+          <span style="font-size:12px;font-weight:700;color:rgba(239,234,246,.5)">{{ allFilesSub }}</span>
+        </button>
+      </div>
+      <sc-if value="{{ filesOpen }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ closeFiles }}" aria-hidden="true" style="position:fixed;inset:0;z-index:60;background:rgba(6,2,12,.55)"></div>
+        <div role="dialog" aria-label="Все файлы для скачивания" style="position:absolute;z-index:61;left:0;top:calc(100% + 10px);width:min(440px,calc(100vw - 36px));background:#170C25;border:1px solid rgba(240,196,106,.28);border-radius:18px;padding:16px 16px 12px;box-shadow:0 30px 70px rgba(0,0,0,.6)">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+            <span style="font-family:'Unbounded',sans-serif;font-size:14.5px;font-weight:600">Все файлы</span>
+            <span style="font-size:12px;font-weight:700;color:rgba(239,234,246,.5)">{{ versionLabel }}</span>
+          </div>
+          <sc-for list="{{ fileGroups }}" as="grp" hint-placeholder-count="2">
+            <div style="margin-top:12px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.4);margin-bottom:4px">{{ grp.title }}</div>
+              <sc-for list="{{ grp.items }}" as="f" hint-placeholder-count="2">
+                <a href="{{ f.href }}" onClick="{{ closeFiles }}" style="display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:11px;text-decoration:none;transition:background .2s ease" style-hover="background:rgba(240,196,106,.09)">
+                  <span style="flex:1;min-width:0">
+                    <span style="display:block;font-size:14px;font-weight:700;color:#EFEAF6">{{ f.name }}</span>
+                    <span style="display:block;font-size:12px;color:rgba(239,234,246,.5)">{{ f.hint }}</span>
+                  </span>
+                  <span style="font-size:12px;font-weight:700;color:#F3D48E;white-space:nowrap">{{ f.size }}</span>
+                </a>
+              </sc-for>
+            </div>
+          </sc-for>
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:rgba(239,234,246,.45)">Файлы отдаёт наш сервер — GitHub открывать не нужно.</div>
+        </div>
+      </sc-if>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:28px;color:rgba(239,234,246,.55);font-size:13.5px;font-weight:600">
       <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Без логов</span>
       <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Kill Switch</span>
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Windows · Android · iOS</span>
+      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Windows · Android</span>
     </div>
   </div>
   <div style="position:relative;perspective:1400px;min-height:clamp(420px,52vh,560px);display:grid;place-items:center">
@@ -2182,20 +2212,50 @@ class Component extends DCLogic {
     } catch (e) {}
     return 'other';
   }
-  state = { months: 1, os: Component.detectOS() };
+  static formatSize(bytes) {
+    if (!bytes || bytes < 0) return '';
+    const mb = bytes / 1048576;
+    if (mb >= 1024) return (mb / 1024).toFixed(1).replace('.', ',') + ' ГБ';
+    if (mb >= 10) return Math.round(mb) + ' МБ';
+    if (mb >= 1) return mb.toFixed(1).replace('.', ',') + ' МБ';
+    return Math.max(1, Math.round(bytes / 1024)) + ' КБ';
+  }
+  // Файлы отдаёт наш же nginx: /download/… — зеркало последнего релиза
+  // (nginx/sync-releases.sh). Ссылки статичные и версии не содержат, поэтому
+  // работают и без JS; /download/latest.json нужен только ради версии и
+  // размеров. key совпадает с ключами в манифесте.
+  static FILES = [
+    { key: 'win-msi',        group: 'windows', href: '/download/Horus-win-x64.msi',           name: 'Установщик · .msi',       hint: 'Windows 10 и 11 · x64' },
+    { key: 'win-zip',        group: 'windows', href: '/download/Horus-win-x64-portable.zip',  name: 'Портативная версия · .zip', hint: 'Без установки · x64' },
+    { key: 'android-arm64',  group: 'android', href: '/download/Horus-android-arm64-v8a.apk', name: 'APK · arm64-v8a',         hint: 'Почти все телефоны' },
+    { key: 'android-x86_64', group: 'android', href: '/download/Horus-android-x86_64.apk',    name: 'APK · x86_64',            hint: 'Эмуляторы и планшеты на x86' },
+    { key: 'sha256sums',     group: 'checks',  href: '/download/SHA256SUMS.txt',              name: 'SHA256SUMS.txt',          hint: 'Контрольные суммы сборок' }
+  ];
+  static PRIMARY = {
+    'win-msi':       { label: 'Скачать для Windows', sub: 'Установщик · .msi' },
+    'android-arm64': { label: 'Скачать для Android', sub: 'APK · arm64-v8a' }
+  };
+  static GROUPS = [
+    { key: 'windows', title: 'WINDOWS' },
+    { key: 'android', title: 'ANDROID' },
+    { key: 'checks',  title: 'ПРОВЕРКА ФАЙЛОВ' }
+  ];
+  state = { months: 1, os: Component.detectOS(), filesOpen: false, release: null };
   deviceRef = React.createRef();
   sidePhoneRef = React.createRef();
   orbARef = React.createRef();
   orbBRef = React.createRef();
   orbCRef = React.createRef();
-  // ЗАМЕНИТЕ-ССЫЛКУ: подставьте реальные ссылки на скачивание и оплату
-  links = {
-    windows: '#windows-exe',      // прямая ссылка на .exe
-    apk: '#android-apk',          // прямая ссылка на .apk
-    gplay: '#google-play',        // страница в Google Play
-    appstore: '#app-store'        // страница в App Store
-  };
   componentDidMount() {
+    // Манифест зеркала: версия и размеры. Не дошёл — кнопки всё равно рабочие.
+    fetch('/download/latest.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rel) => { if (rel && Array.isArray(rel.files)) this.setState({ release: rel }); })
+      .catch(() => {});
+    this.onKeyDown = (e) => {
+      if (e.key === 'Escape' && this.state.filesOpen) this.setState({ filesOpen: false });
+    };
+    window.addEventListener('keydown', this.onKeyDown);
     this.reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     this.cur = 0; this.tgt = window.scrollY || 0;
     this.onScroll = () => { this.tgt = window.scrollY || 0; };
@@ -2261,6 +2321,7 @@ class Component extends DCLogic {
   componentWillUnmount() {
     if (this.raf) cancelAnimationFrame(this.raf);
     if (this.onScroll) window.removeEventListener('scroll', this.onScroll);
+    if (this.onKeyDown) window.removeEventListener('keydown', this.onKeyDown);
     if (this.io) this.io.disconnect();
   }
   priceFor(m) {
@@ -2279,18 +2340,35 @@ class Component extends DCLogic {
     const savePct = full > 0 ? Math.round((saveAmt / full) * 100) : 0;
     const words = ['1 месяц', '2 месяца', '3 месяца'];
     const os = this.state.os;
-    const L = this.links;
-    const B = {
-      windows: { label: 'Скачать для Windows', sub: 'Прямая загрузка · .exe', href: L.windows },
-      gplay: { label: 'Google Play', sub: 'Android', href: L.gplay },
-      apk: { label: 'Скачать APK', sub: 'Прямая загрузка · Android', href: L.apk },
-      appstore: { label: 'App Store', sub: 'iPhone и iPad', href: L.appstore }
-    };
-    let primary, others;
-    if (os === 'android') { primary = [B.apk]; others = [B.gplay, B.windows, B.appstore]; }
-    else if (os === 'ios') { primary = [B.appstore]; others = [B.windows, B.gplay]; }
-    else if (os === 'windows') { primary = [B.windows]; others = [B.gplay, B.apk, B.appstore]; }
-    else { primary = [B.windows, B.gplay, B.appstore]; others = [B.apk]; }
+    // Пока манифест не пришёл — показываем весь список; после него оставляем
+    // только то, что реально лежит в зеркале.
+    const rel = this.state.release;
+    const mirrored = {};
+    if (rel) rel.files.forEach((f) => { mirrored[f.key] = f; });
+    const files = Component.FILES
+      .filter((f) => !rel || mirrored[f.key])
+      .map((f) => {
+        const m = mirrored[f.key];
+        return {
+          key: f.key,
+          group: f.group,
+          name: f.name,
+          hint: f.hint,
+          href: (m && m.url) || f.href,
+          size: m ? Component.formatSize(m.size) : ''
+        };
+      });
+    const fileGroups = Component.GROUPS
+      .map((g) => ({ title: g.title, items: files.filter((f) => f.group === g.key) }))
+      .filter((g) => g.items.length > 0);
+    const primaryKey = os === 'android' ? 'android-arm64' : 'win-msi';
+    const primaryFile = files.filter((f) => f.key === primaryKey)[0] || files[0];
+    const primaryMeta = (primaryFile && Component.PRIMARY[primaryFile.key]) || null;
+    const primary = primaryFile ? [{
+      href: primaryFile.href,
+      label: primaryMeta ? primaryMeta.label : 'Скачать приложение',
+      sub: [primaryMeta ? primaryMeta.sub : primaryFile.name, primaryFile.size].filter(Boolean).join(' · ')
+    }] : [];
     const monthOptions = [1, 2, 3].map((n) => ({
       label: n + ' мес',
       color: n === m ? '#F3D48E' : 'rgba(239,234,246,.45)',
@@ -2311,7 +2389,15 @@ class Component extends DCLogic {
       showLaptop: os === 'windows' || os === 'mac' || os === 'other',
       showHeroPhone: os === 'android' || os === 'ios',
       primaryButtons: primary,
-      otherLinks: others,
+      allFilesSub: 'Windows и Android',
+      versionLabel: rel && rel.version ? 'Версия ' + rel.version : '',
+      fileGroups: fileGroups,
+      filesOpen: this.state.filesOpen,
+      // См. #hpb-hero в стилях: пока список открыт, шапку надо поднять над
+      // секциями ниже, иначе они перекрывают панель.
+      heroClass: this.state.filesOpen ? 'is-files-open' : '',
+      toggleFiles: () => this.setState({ filesOpen: !this.state.filesOpen }),
+      closeFiles: () => this.setState({ filesOpen: false }),
       deviceRef: this.deviceRef,
       sidePhoneRef: this.sidePhoneRef,
       orbARef: this.orbARef,

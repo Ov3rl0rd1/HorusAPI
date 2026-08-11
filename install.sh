@@ -492,7 +492,10 @@ cat > "${APP_DIR}/deploy.sh" << DEPLOY_SCRIPT
 set -euo pipefail
 cd "${APP_DIR}"
 git pull origin main
-docker compose up -d --build vpn-api
+# nginx is rebuilt too: the site (nginx/html/index.html) is COPYied into that
+# image, so without --build on nginx a front-end change never reaches the
+# server — restarting the container just re-runs the old image.
+docker compose up -d --build vpn-api nginx
 docker image prune -f
 echo "Deployed at \$(date)"
 DEPLOY_SCRIPT

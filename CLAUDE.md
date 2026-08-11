@@ -58,6 +58,27 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 
 `/node` **is** mapped in [Program.cs](Program.cs) now; nginx routes `auth|servers|admin|health|node|whoami` (see [nginx/locations.conf](nginx/locations.conf)).
 
+### Landing page & client downloads (nginx only — the API is not involved)
+
+The site is a single self-contained [nginx/html/index.html](nginx/html/index.html): a
+`dc-runtime` template (`<x-dc>` markup + a `class Component extends DCLogic` script)
+rendered by React from unpkg. It is **`COPY`ed into the nginx image**, so a change to
+it only reaches the server when that image is rebuilt (`docker compose up -d --build
+nginx`) — restarting the container re-runs the old image, which looks exactly like
+browser caching but isn't. `deploy.sh` (from [install.sh](install.sh)) therefore
+builds `vpn-api nginx`.
+
+Clients download from us, never from github.com. [nginx/sync-releases.sh](nginx/sync-releases.sh)
+runs inside the nginx container (start-up + every `RELEASE_SYNC_INTERVAL`), picks the
+newest non-draft release of `RELEASE_REPO` via the GitHub API (`/releases`, not
+`/releases/latest` — the current build is a **pre-release**, which that endpoint
+hides), downloads the Windows/Android assets into the `downloads` volume, verifies
+them against the release's `SHA256SUMS.txt`, and only then flips
+`/var/www/downloads/current` to the new directory. nginx serves that symlink at
+`/download/`, so `/download/Horus-win-x64.msi` is always the newest build and
+`/download/latest.json` describes it (version, sizes, checksums). The page uses the
+manifest for labels only — the hrefs are static, so downloads survive a failed fetch.
+
 ### Email confirmation & password reset
 
 Registration is two-step. `POST /auth/register` creates the account **unverified** (`users.email_verified = FALSE`), mails a 6-digit code from `no-reply@mail.{DOMAIN}`, and answers `202 {status:"unverified"}` — it never returns a session. `POST /auth/verify {email, code}` flips `email_verified` and returns a session (login for an unverified account is refused with `403 code=email_unverified`). `POST /auth/resend-code {email}` re-issues a code. All of this lives in [Services/AccountService.cs](Services/AccountService.cs) + [Endpoints/AuthEndpoints.cs](Endpoints/AuthEndpoints.cs).

@@ -100,12 +100,22 @@ services:
       CERTBOT_EMAIL:   ${CERTBOT_EMAIL}
       USE_SSL:         ${USE_SSL:-1}
       CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
+      # Client release mirror: the container pulls the newest release from this
+      # GitHub repo and serves it from /download (see nginx/sync-releases.sh).
+      RELEASE_REPO:               ${RELEASE_REPO:-Ov3rl0rd1/Horus-Release}
+      RELEASE_INCLUDE_PRERELEASE: ${RELEASE_INCLUDE_PRERELEASE:-1}
+      RELEASE_SYNC_INTERVAL:      ${RELEASE_SYNC_INTERVAL:-3600}
+      # Optional — only to raise the GitHub API rate limit (60/h per IP without).
+      GITHUB_TOKEN:               ${GITHUB_TOKEN:-}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       # Persist Let's Encrypt certs across container restarts / rebuilds
       - letsencrypt:/etc/letsencrypt
+      # Mirrored release binaries (~300 MB) — kept out of the image so a rebuild
+      # does not re-download them
+      - downloads:/var/www/downloads
     deploy:
       resources:
         limits:
@@ -115,3 +125,4 @@ volumes:
   pgdata:
   letsencrypt:
   dkim-keys:
+  downloads:

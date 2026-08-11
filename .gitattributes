@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Files that run inside Linux containers must keep LF even when checked out on
+# Windows — a CRLF shebang makes the container fail with "not found".
+*.sh text eol=lf
+nginx/*.conf text eol=lf

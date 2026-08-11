@@ -87,6 +87,19 @@ envsubst '${DOMAIN}' \
 # Remove the base nginx default server so our config is the only one active.
 rm -f /etc/nginx/conf.d/nginx-default.conf
 
+# ── Client release mirror ─────────────────────────────────────
+# Pulls the newest release from GitHub into /var/www/downloads so nginx serves
+# the installers itself. Runs in the background: an unreachable GitHub must not
+# hold up the site, and the first sync moves ~300 MB.
+if [ "${RELEASE_SYNC:-1}" = "1" ]; then
+    (
+        while true; do
+            /sync-releases.sh || echo "[releases] sync failed — retrying later"
+            sleep "${RELEASE_SYNC_INTERVAL:-3600}"
+        done
+    ) &
+fi
+
 if [ "$USE_SSL" = "1" ]; then
     # ── Background renewal daemon ─────────────────────────────────
     # Checks every 12 hours; certbot only renews when < 30 days remain.
