@@ -1,5 +1,6 @@
 namespace HorusAPI.Models;
 
+/// <summary><c>username</c> accepts either a username or an e-mail address (single-field login).</summary>
 public record LoginRequest(string username, string password);
 public record LoginResponse(string session, DateTime? expiresAt);
 public record RegisterRequest(string username, string password, string email);

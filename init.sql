@@ -91,9 +91,10 @@ CREATE INDEX IF NOT EXISTS idx_servers_auth_pw   ON vpn_servers(auth_password);
 CREATE INDEX IF NOT EXISTS idx_users_current_server ON users(current_server_id);
 CREATE INDEX IF NOT EXISTS idx_password_resets_user  ON password_resets(user_id);
 
--- One account per address: /auth/verify and /auth/reset-request look users up by
--- email, so duplicates would make those routes ambiguous. Partial index so the
--- legacy rows with a NULL/empty email stay valid.
+-- One account per address, and the index behind case-insensitive e-mail lookups:
+-- /auth/verify, /auth/reset-request, and single-field /auth/login (username OR email)
+-- all resolve users via lower(email), which this index serves. Partial so the legacy
+-- rows with a NULL/empty email stay valid.
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key
     ON users (lower(email)) WHERE email IS NOT NULL AND email <> '';
 

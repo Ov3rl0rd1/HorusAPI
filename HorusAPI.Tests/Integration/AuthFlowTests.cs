@@ -65,6 +65,22 @@ public class AuthFlowTests(ApiFixture fixture) : IntegrationTest(fixture)
     }
 
     [SkippableFact]
+    public async Task Login_works_with_email_in_the_username_field_case_insensitively()
+    {
+        RequireDb();
+        var client = Client();
+        var (_, email, _) = await RegisterVerifiedUserAsync(client);
+
+        // Same single field, but this time an e-mail — and upper-cased, to prove the
+        // lookup is case-insensitive on email.
+        var login = await client.PostJsonAsync(
+            "/auth/login", new { username = email.ToUpperInvariant(), password = Password }, TestData.NewIp());
+
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        Assert.False(string.IsNullOrWhiteSpace(await login.ReadStringPropAsync("session")));
+    }
+
+    [SkippableFact]
     public async Task Duplicate_username_and_email_are_reported_distinctly()
     {
         RequireDb();

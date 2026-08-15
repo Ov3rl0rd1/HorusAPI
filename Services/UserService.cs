@@ -12,7 +12,8 @@ public record CreateUserResult(CreateUserStatus status, int userId);
 
 public interface IUserService
 {
-    Task<User?> AuthenticateAsync(string username, string password);
+    /// <summary>Authenticates by username or e-mail (single field) + password.</summary>
+    Task<User?> AuthenticateAsync(string identifier, string password);
     Task<string?> CreateSession(int userId);
     Task<CreateUserResult> CreateUserAsync(string username, string password, string email);
     Task ClearOtherSessionsAsync(string username, string currentSession);
@@ -30,25 +31,31 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
-    public async Task<User?> AuthenticateAsync(string username, string password)
+    public async Task<User?> AuthenticateAsync(string identifier, string password)
     {
+        // Single-field login: match the value against the exact username OR the
+        // case-insensitive email. Usernames can never contain '@' (register regex)
+        // and e-mails always do, so at most one predicate matches — no ambiguity.
+        // Indexed via idx_users_username + users_email_lower_key (planner BitmapOrs).
         const string sql = """
-            SELECT * FROM users WHERE username = @Username LIMIT 1
+            SELECT * FROM users
+            WHERE username = @Identifier OR lower(email) = lower(@Identifier)
+            LIMIT 1
             """;
         try
         {
             await using var conn = Connect();
-            var user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { Username = username });
+            var user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { Identifier = identifier });
 
             if (user is null)
             {
-                log.LogWarning("Auth failed – user not found: {Username}", username);
+                log.LogWarning("Auth failed – no account for identifier");
                 return null;
             }
 
             if (!BCrypt.Net.BCrypt.Verify(password, user.password_hash))
             {
-                log.LogWarning("Auth failed – wrong password: {Username}", username);
+                log.LogWarning("Auth failed – wrong password for {Username}", user.username);
                 return null;
             }
 
@@ -56,7 +63,7 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
         }
         catch (Exception ex)
         {
-            log.LogError(ex, "DB error during authentication for {Username}", username);
+            log.LogError(ex, "DB error during authentication");
             throw;
         }
     }

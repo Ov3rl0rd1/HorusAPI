@@ -24,16 +24,17 @@ public static class AuthEndpoints
             IUserService     userSvc,
             ILogger<Program> log) =>
         {
+            // The `username` field accepts either a username or an e-mail.
             if (string.IsNullOrWhiteSpace(req.username) ||
                 string.IsNullOrWhiteSpace(req.password))
-                return Results.BadRequest(new ApiError("Username and password are required."));
+                return Results.BadRequest(new ApiError("Username or e-mail and password are required."));
 
             User? user;
             string? session;
 
             try
             {
-                user = await userSvc.AuthenticateAsync(req.username, req.password);
+                user = await userSvc.AuthenticateAsync(req.username.Trim(), req.password);
                 if (user is null) return Results.Unauthorized();
 
                 // Unverified accounts exist but cannot be used — the client should
