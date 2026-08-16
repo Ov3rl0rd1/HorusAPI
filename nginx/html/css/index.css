@@ -1,8 +1,15 @@
 /* Лендинг Horus Ping Booster */
 
 /* ── Герой ─────────────────────────────────────────────────────────────── */
+/* width:100% не косметика, а условие работы сетки ниже. body — flex-колонка,
+   поэтому ширина .hero во время расчёта размеров неопределённа: min(100%,430px)
+   не может разрешить 100%, и 1fr начинает резолвиться по max-content содержимого.
+   На узком экране трек выходил ~567px при вьюпорте 425px, и герой уезжал за край
+   вместе с шапкой. Явная ширина делает контейнер определённым — трек становится
+   ровно шириной контента. На широком экране всё как было: max-width держит 1200px.
+   Так же сделано в .acc-main и .doc-main. */
 .hero{
-  position:relative;z-index:1;max-width:1200px;margin:0 auto;
+  position:relative;z-index:1;width:100%;max-width:1200px;margin:0 auto;
   padding:clamp(36px,6vh,70px) clamp(18px,4vw,40px) clamp(70px,11vh,120px);
   display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));
   gap:clamp(28px,5vw,56px);align-items:center;min-height:86vh;
@@ -115,7 +122,10 @@
 .side-phone .phone__notch{top:7px;width:52px;height:14px;background:#190B2A}
 
 /* ── Секции ────────────────────────────────────────────────────────────── */
-.section{position:relative;z-index:1;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px)}
+/* width:100% по той же причине, что и у .hero — .grid внутри построен на том же
+   minmax(min(100%,…),1fr) и переполнил бы секцию, как только содержимое карточек
+   станет шире вьюпорта. */
+.section{position:relative;z-index:1;width:100%;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px)}
 .section--features{max-width:1200px}
 .section--pricing{max-width:820px}
 .section--docs{max-width:1000px}

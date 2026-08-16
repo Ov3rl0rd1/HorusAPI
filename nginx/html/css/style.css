@@ -22,7 +22,12 @@
 *{box-sizing:border-box}
 /* Класс с display: побеждает UA-правило [hidden]{display:none} — вернём атрибуту силу */
 [hidden]{display:none!important}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+/* overflow-x нужен именно здесь, а не только на body. Когда у html он visible,
+   значение с body пробрасывается на вьюпорт, а сам body при этом считается
+   visible — и декоративные пятна .orb (они шире экрана) растягивали документ,
+   давая на телефоне ~260px пустой прокрутки вбок. Клип на html останавливает
+   проброс, и обрезка начинает работать. */
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;overflow-x:clip}
 
 body{
   margin:0;min-height:100vh;position:relative;overflow-x:clip;
