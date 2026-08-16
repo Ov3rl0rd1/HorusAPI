@@ -1,0 +1,6 @@
+/* Вход, регистрация, подтверждение e-mail и запрос ссылки на сброс —
+   всё на одной странице, состояния переключает js/auth.js. */
+
+.auth-back{margin-top:20px;text-align:center}
+.auth-code{margin-top:4px}
+.auth-code .input{margin-bottom:12px}

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Вход — Horus VPN</title>
+<link rel="icon" type="image/svg+xml" href="logo-gold.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/auth.css">
+<script type="module" src="js/auth.js"></script>
+</head>
+<body>
+
+<div class="orbs" aria-hidden="true">
+  <div class="orb orb--a"></div>
+  <div class="orb orb--b orb--bottom"></div>
+</div>
+
+<nav class="nav">
+  <a class="brand" href="/">
+    <img class="brand__logo" src="logo-gold.svg" alt="Horus">
+    <span class="brand__word">HORUS</span>
+  </a>
+  <div class="nav__links">
+    <a class="nav__link" href="mailto:horusping@gmail.com">Поддержка</a>
+    <a class="nav__link btn btn--nav" href="/">На сайт</a>
+  </div>
+</nav>
+
+<main class="center-main">
+  <div class="center-stage">
+    <div class="center-ring center-ring--dashed" aria-hidden="true"></div>
+    <div class="center-ring center-ring--solid" aria-hidden="true"></div>
+
+    <div class="panel center-card">
+
+      <div class="tabs" id="tabs" role="tablist">
+        <button class="tab is-on" type="button" role="tab" data-go="login">Вход</button>
+        <button class="tab" type="button" role="tab" data-go="register">Регистрация</button>
+      </div>
+
+      <!-- Вход -->
+      <section id="state-login" class="state is-active">
+        <div class="eyebrow">ЛИЧНЫЙ КАБИНЕТ</div>
+        <h1 class="h3">С возвращением</h1>
+        <p class="lead lead--card">Подписка, устройства и подключение из браузера — всё здесь.</p>
+
+        <form class="form-col" id="login-form" novalidate>
+          <div class="field">
+            <label class="field__label" for="login-username">Имя пользователя или e-mail</label>
+            <div class="field__row">
+              <input class="input" id="login-username" type="text" autocomplete="username" required placeholder="Как при регистрации">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field__label" for="login-password">Пароль</label>
+            <div class="field__row">
+              <input class="input input--toggle" id="login-password" type="password" autocomplete="current-password" required placeholder="Ваш пароль">
+              <button type="button" class="toggle" data-target="login-password" aria-label="Показать пароль">ПОКАЗАТЬ</button>
+            </div>
+          </div>
+          <div class="row row--top">
+            <button type="button" class="link-btn" data-go="forgot">Забыли пароль?</button>
+            <button type="button" class="link-btn" data-go="register">Создать аккаунт</button>
+          </div>
+          <button class="btn btn--primary" id="login-submit" type="submit" data-label="Войти">Войти</button>
+        </form>
+
+        <p class="msg msg--error" id="login-msg" role="alert"></p>
+      </section>
+
+      <!-- Регистрация -->
+      <section id="state-register" class="state">
+        <div class="eyebrow">РЕГИСТРАЦИЯ</div>
+        <h1 class="h3">Создайте аккаунт</h1>
+        <p class="lead lead--card">На указанный e-mail придёт шестизначный код — он подтвердит адрес.</p>
+
+        <form class="form-col" id="register-form" novalidate>
+          <div class="field">
+            <label class="field__label" for="reg-username">Имя пользователя</label>
+            <div class="field__row">
+              <input class="input" id="reg-username" type="text" autocomplete="username" required placeholder="Латиницей, без пробелов">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field__label" for="reg-email">E-mail</label>
+            <div class="field__row">
+              <input class="input" id="reg-email" type="email" autocomplete="email" required placeholder="you@example.com">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field__label" for="reg-password">Пароль</label>
+            <div class="field__row">
+              <input class="input input--toggle" id="reg-password" type="password" autocomplete="new-password" minlength="8" required placeholder="Минимум 8 символов">
+              <button type="button" class="toggle" data-target="reg-password" aria-label="Показать пароль">ПОКАЗАТЬ</button>
+            </div>
+          </div>
+          <p class="hint">Не используйте пароль от почты или других сервисов.</p>
+          <button class="btn btn--primary" id="register-submit" type="submit" data-label="Отправить код">Отправить код</button>
+        </form>
+
+        <p class="msg msg--error" id="register-msg" role="alert"></p>
+      </section>
+
+      <!-- Код из письма -->
+      <section id="state-verify" class="state">
+        <div class="eyebrow">ПОДТВЕРЖДЕНИЕ</div>
+        <h1 class="h3">Введите код из письма</h1>
+        <p class="lead lead--card">Шесть цифр отправлены на <b id="verify-email"></b>. Письма нет — проверьте «Спам».</p>
+
+        <form class="form-col auth-code" id="verify-form" novalidate>
+          <div class="field">
+            <label class="field__label" for="code">Код подтверждения</label>
+            <div class="field__row">
+              <input class="input input--code" id="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                     maxlength="6" required placeholder="······">
+            </div>
+          </div>
+          <div class="row">
+            <span class="note" id="code-expiry"></span>
+            <button type="button" class="link-btn" id="resend">Отправить код заново</button>
+          </div>
+          <button class="btn btn--primary" id="verify-submit" type="submit" data-label="Подтвердить">Подтвердить</button>
+        </form>
+
+        <p class="msg msg--error" id="verify-msg" role="alert"></p>
+        <div class="auth-back"><button type="button" class="link-btn" data-go="register">Указать другой адрес</button></div>
+      </section>
+
+      <!-- Забыли пароль -->
+      <section id="state-forgot" class="state">
+        <div class="eyebrow">ВОССТАНОВЛЕНИЕ</div>
+        <h1 class="h3">Забыли пароль?</h1>
+        <p class="lead lead--card">Пришлём ссылку для сброса на e-mail, указанный при регистрации.</p>
+
+        <form class="form-col" id="forgot-form" novalidate>
+          <div class="field">
+            <label class="field__label" for="forgot-email">E-mail</label>
+            <div class="field__row">
+              <input class="input" id="forgot-email" type="email" autocomplete="email" required placeholder="you@example.com">
+            </div>
+          </div>
+          <button class="btn btn--primary" id="forgot-submit" type="submit" data-label="Отправить ссылку">Отправить ссылку</button>
+        </form>
+
+        <p class="msg msg--error" id="forgot-msg" role="alert"></p>
+        <div class="auth-back"><button type="button" class="link-btn" data-go="login">Вернуться к входу</button></div>
+      </section>
+
+      <!-- Письмо отправлено -->
+      <section id="state-sent" class="state state--center">
+        <div class="disc" aria-hidden="true"><span class="disc__check">✓</span></div>
+        <h1 class="h3">Проверьте почту</h1>
+        <p class="lead lead--card">Если аккаунт на <b id="sent-email"></b> существует, ссылка для сброса пароля уже в пути. Она действует ограниченное время.</p>
+        <button type="button" class="btn btn--primary" data-go="login">Вернуться к входу</button>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="footer__brand">
+    <img class="footer__logo" src="logo-gold.svg" alt="">
+    © 2026 Horus VPN
+  </div>
+  <nav class="footer__docs" aria-label="Документы">
+    <a href="docs/terms-of-use.html">Пользовательское соглашение</a>
+    <a href="docs/offer.html">Публичная оферта</a>
+    <a href="docs/privacy.html">Политика конфиденциальности</a>
+    <a href="docs/terms.html">Тарифы и оплата</a>
+    <a href="docs/refund.html">Возврат средств</a>
+  </nav>
+  <div>Поддержка: <a href="mailto:horusping@gmail.com">horusping@gmail.com</a> · <a href="https://t.me/horusping">@horusping</a></div>
+  <div class="footer__code">Код проверки: PLAT</div>
+</footer>
+
+</body>
+</html>

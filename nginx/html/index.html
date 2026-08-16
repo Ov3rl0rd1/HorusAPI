@@ -1,2411 +1,265 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>
-// GENERATED from dc-runtime/src/*.ts — do not edit. Rebuild with `cd dc-runtime && bun run build`.
-"use strict";
-(() => {
-  var __defProp = Object.defineProperty;
-  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-
-  // src/react.ts
-  function getReact() {
-    const R = window.React;
-    if (!R) throw new Error("dc-runtime: window.React is not available yet");
-    return R;
-  }
-  function getReactDOM() {
-    const RD = window.ReactDOM;
-    if (!RD) throw new Error("dc-runtime: window.ReactDOM is not available yet");
-    return RD;
-  }
-  var h = ((...args) => getReact().createElement(
-    ...args
-  ));
-
-  // src/parse.ts
-  function parseDcDocument(doc) {
-    const dc = doc.querySelector("x-dc");
-    if (!dc) return null;
-    const scriptEl = doc.querySelector("script[data-dc-script]");
-    const { props, preview } = parseDataProps(
-      scriptEl?.getAttribute("data-props") ?? null
-    );
-    return {
-      template: dc.innerHTML,
-      js: scriptEl ? scriptEl.textContent || "" : "",
-      props,
-      preview
-    };
-  }
-  function parseDcText(src) {
-    const openMatch = /<x-dc(?:\s[^>]*)?>/.exec(src);
-    if (!openMatch) return null;
-    const close = src.lastIndexOf("</x-dc>");
-    if (close === -1 || close < openMatch.index) return null;
-    const template = src.slice(openMatch.index + openMatch[0].length, close);
-    const doc = new DOMParser().parseFromString(src, "text/html");
-    const scriptEl = doc.querySelector("script[data-dc-script]");
-    const { props, preview } = parseDataProps(
-      scriptEl?.getAttribute("data-props") ?? null
-    );
-    return {
-      template,
-      js: scriptEl ? scriptEl.textContent || "" : "",
-      props,
-      preview
-    };
-  }
-  function parseDataProps(raw) {
-    if (!raw) return { props: null, preview: null };
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return { props: null, preview: null };
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { props: null, preview: null };
-    }
-    const obj = parsed;
-    const preview = obj.$preview && typeof obj.$preview === "object" ? obj.$preview : null;
-    const rest = {};
-    for (const k of Object.keys(obj)) {
-      if (k[0] !== "$") rest[k] = obj[k];
-    }
-    return { props: Object.keys(rest).length ? rest : null, preview };
-  }
-  function dcNameFromPath(pathname) {
-    let p = pathname || "";
-    try {
-      p = decodeURIComponent(p);
-    } catch {
-    }
-    const base = p.split("/").pop() || "Root";
-    return base.replace(/\.dc\.html$/, "").replace(/\.html?$/, "") || "Root";
-  }
-
-  // src/boot.ts
-  var BASE_CSS = `
-    .sc-placeholder{background:color-mix(in srgb,currentColor 8%,transparent);
-      border:1px solid color-mix(in srgb,currentColor 50%,transparent);
-      border-radius:2px;box-sizing:border-box;overflow:hidden}
-    @keyframes sc-shine{0%{background-position:100% 50%}100%{background-position:0% 50%}}
-    html.sc-dc-streaming .sc-placeholder,
-    html.sc-dc-streaming .sc-interp.sc-missing{position:relative;
-      background:color-mix(in srgb,currentColor 5%,transparent);
-      border-color:transparent}
-    html.sc-dc-streaming .sc-placeholder::before,
-    html.sc-dc-streaming .sc-interp.sc-missing::before{content:'';
-      position:absolute;inset:0;pointer-events:none;
-      background:linear-gradient(90deg,rgba(217,119,87,0) 25%,rgba(247,225,211,.95) 37%,rgba(217,119,87,0) 63%);
-      background-size:400% 100%;animation:sc-shine 1.4s ease infinite}
-    html.sc-dc-streaming .sc-placeholder:nth-child(n+9 of .sc-placeholder)::before,
-    html.sc-dc-streaming .sc-interp.sc-missing:nth-child(n+9 of .sc-interp.sc-missing)::before{animation:none;
-      background:color-mix(in srgb,currentColor 8%,transparent)}
-    .sc-placeholder-error{padding:4px 8px;font:11px/1.4 ui-monospace,monospace;
-      color:color-mix(in srgb,currentColor 70%,transparent);word-break:break-word}
-    .sc-interp.sc-missing{display:inline-block;width:2em;height:1em;overflow:hidden;
-      vertical-align:text-bottom;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.5);
-      border-radius:2px;box-sizing:border-box;color:transparent;
-      user-select:none}
-    .sc-interp.sc-unresolved{font-family:ui-monospace,monospace;font-size:.85em;
-      color:color-mix(in srgb,currentColor 50%,transparent);
-      background:color-mix(in srgb,currentColor 10%,transparent);border-radius:3px;
-      padding:0 3px}
-    .sc-host.sc-has-error{position:relative}
-    .sc-logic-error{position:absolute;top:8px;left:8px;z-index:2147483647;max-width:60ch;
-      padding:6px 10px;background:#b00020;color:#fff;font:12px/1.4 ui-monospace,monospace;
-      border-radius:4px;white-space:pre-wrap;pointer-events:none}
-    /* Mirrors PRINT_BASELINE_CSS in apps/web deck-stage-export.ts \u2014 keep both
-       in sync until dc-runtime regains a build step. */
-    @media print {
-      @page { margin: 0.5cm; }
-      figure, table { break-inside: avoid; }
-      #dc-root, #dc-root > .sc-host { height: auto; }
-      *, *::before, *::after {
-        print-color-adjust: exact; -webkit-print-color-adjust: exact;
-        backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
-        animation-delay: -99s !important; animation-duration: .001s !important;
-        animation-iteration-count: 1 !important; animation-fill-mode: both !important;
-        animation-play-state: running !important; transition-duration: 0s !important;
-      }
-    }
-  `;
-  var FULL_PAGE_CSS = "html,body{height:100%;margin:0}#dc-root,#dc-root>.sc-host{height:100%}";
-  function rootNameForDocument(doc, loc) {
-    let bootPath = loc.pathname || "";
-    if (!/\.dc\.html?$/i.test(safeDecode(bootPath))) {
-      try {
-        bootPath = new URL(doc.baseURI || "/").pathname;
-      } catch {
-      }
-    }
-    return dcNameFromPath(bootPath);
-  }
-  function safeDecode(s) {
-    try {
-      return decodeURIComponent(s);
-    } catch {
-      return s;
-    }
-  }
-  function boot(runtime, doc = document) {
-    const parsed = parseDcDocument(doc);
-    if (!parsed) return null;
-    const React = getReact();
-    const rootName = rootNameForDocument(doc, location);
-    runtime.markFetched(rootName);
-    runtime.setRootName(rootName);
-    runtime.adoptParsed(rootName, parsed);
-    if (!window.__resources) {
-      fetch(location.href).then((res) => res.ok ? res.text() : "").then((t) => {
-        const raw = t ? parseDcText(t) : null;
-        if (raw?.template) runtime.updateHtml(rootName, raw.template);
-      }).catch(() => {
-      });
-    }
-    const dc = doc.querySelector("x-dc");
-    const hostEl = doc.createElement("div");
-    hostEl.id = "dc-root";
-    dc.replaceWith(hostEl);
-    if (!parsed.preview) {
-      const s = doc.createElement("style");
-      s.textContent = FULL_PAGE_CSS;
-      doc.head.appendChild(s);
-    }
-    const Root = runtime.getDC(rootName);
-    const entry = runtime.registry.get(rootName);
-    function StandaloneRoot() {
-      const [, setTick] = React.useState(0);
-      React.useEffect(() => {
-        const sub = () => setTick((n) => n + 1);
-        entry.subs.add(sub);
-        return () => {
-          entry.subs.delete(sub);
-        };
-      }, []);
-      const defaults = React.useMemo(() => {
-        const d = {};
-        for (const k in entry.propsMeta || {}) {
-          const v = entry.propsMeta?.[k]?.default;
-          if (v !== void 0) d[k] = v;
-        }
-        return d;
-      }, [entry.propsMeta]);
-      return h(Root, { ...defaults, ...entry.propOverrides || {} });
-    }
-    const ReactDOM = getReactDOM();
-    if (ReactDOM.createRoot)
-      ReactDOM.createRoot(hostEl).render(h(StandaloneRoot));
-    else ReactDOM.render(h(StandaloneRoot), hostEl);
-    return rootName;
-  }
-
-  // src/expr.ts
-  var IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/;
-  var NUMBER_RE = /^-?\d+(\.\d+)?$/;
-  function resolve(vals, src) {
-    const expr = String(src).trim();
-    if (!expr) return void 0;
-    if (expr[0] === "(" && expr[expr.length - 1] === ")" && parensWrapWhole(expr)) {
-      return resolve(vals, expr.slice(1, -1));
-    }
-    const eq = findTopLevelEquality(expr);
-    if (eq) {
-      const lv = resolve(vals, expr.slice(0, eq.index));
-      const rv = resolve(vals, expr.slice(eq.index + eq.op.length));
-      switch (eq.op) {
-        case "===":
-          return lv === rv;
-        case "!==":
-          return lv !== rv;
-        case "==":
-          return lv == rv;
-        default:
-          return lv != rv;
-      }
-    }
-    if (expr[0] === "!") return !resolve(vals, expr.slice(1));
-    if (expr === "true") return true;
-    if (expr === "false") return false;
-    if (expr === "null") return null;
-    if (expr === "undefined") return void 0;
-    if (NUMBER_RE.test(expr)) return Number(expr);
-    if (expr.length >= 2 && (expr[0] === '"' || expr[0] === "'") && expr[expr.length - 1] === expr[0]) {
-      return expr.slice(1, -1);
-    }
-    return resolvePath(vals, expr);
-  }
-  function parensWrapWhole(expr) {
-    let depth = 0;
-    for (let i = 0; i < expr.length - 1; i++) {
-      if (expr[i] === "(") depth++;
-      else if (expr[i] === ")") {
-        depth--;
-        if (depth === 0) return false;
-      }
-    }
-    return true;
-  }
-  function findTopLevelEquality(expr) {
-    let depth = 0;
-    for (let i = 0; i < expr.length; i++) {
-      const c = expr[i];
-      if (c === "[" || c === "(") depth++;
-      else if (c === "]" || c === ")") depth--;
-      else if (depth === 0 && (c === "=" || c === "!") && expr[i + 1] === "=") {
-        if (i > 0 && (expr[i - 1] === "=" || expr[i - 1] === "!")) continue;
-        if (!expr.slice(0, i).trim()) continue;
-        const op = expr[i + 2] === "=" ? c + "==" : c + "=";
-        return { index: i, op };
-      }
-    }
-    return null;
-  }
-  function resolvePath(vals, expr) {
-    const head = expr.match(IDENT_RE);
-    if (!head) return void 0;
-    let cur = vals == null ? void 0 : vals[head[0]];
-    let i = head[0].length;
-    while (i < expr.length) {
-      if (expr[i] === ".") {
-        const m = expr.slice(i + 1).match(IDENT_RE) || expr.slice(i + 1).match(/^\d+/);
-        if (!m) return void 0;
-        cur = cur == null ? void 0 : cur[m[0]];
-        i += 1 + m[0].length;
-      } else if (expr[i] === "[") {
-        let depth = 1;
-        let j = i + 1;
-        while (j < expr.length && depth > 0) {
-          if (expr[j] === "[") depth++;
-          else if (expr[j] === "]") {
-            depth--;
-            if (depth === 0) break;
-          }
-          j++;
-        }
-        if (depth !== 0) return void 0;
-        const key = resolve(vals, expr.slice(i + 1, j));
-        cur = cur == null ? void 0 : cur[key];
-        i = j + 1;
-      } else {
-        return void 0;
-      }
-    }
-    return cur;
-  }
-
-  // src/encode.ts
-  var CAMEL_ATTR = "sc-camel-";
-  var INLINE_TEXT_TAGS = new Set(
-    "a abbr b bdi bdo br cite code del dfn em i ins kbd mark q s samp small span strike strong sub sup u var wbr".split(
-      " "
-    )
-  );
-  var RAW_WRAP = {
-    select: "sc-raw-select",
-    table: "sc-raw-table",
-    tbody: "sc-raw-tbody",
-    thead: "sc-raw-thead",
-    tfoot: "sc-raw-tfoot",
-    tr: "sc-raw-tr",
-    td: "sc-raw-td",
-    th: "sc-raw-th",
-    caption: "sc-raw-caption"
-  };
-  var RAW_UNWRAP = Object.fromEntries(
-    Object.entries(RAW_WRAP).map(([k, v]) => [v, k])
-  );
-  var EVENT_MAP = {
-    onclick: "onClick",
-    onchange: "onChange",
-    oninput: "onInput",
-    onsubmit: "onSubmit",
-    onkeydown: "onKeyDown",
-    onkeyup: "onKeyUp",
-    onkeypress: "onKeyPress",
-    onmousedown: "onMouseDown",
-    onmouseup: "onMouseUp",
-    onmouseenter: "onMouseEnter",
-    onmouseleave: "onMouseLeave",
-    onfocus: "onFocus",
-    onblur: "onBlur",
-    ondoubleclick: "onDoubleClick",
-    oncontextmenu: "onContextMenu",
-    onmousemove: "onMouseMove",
-    onmouseover: "onMouseOver",
-    onmouseout: "onMouseOut",
-    onpointerdown: "onPointerDown",
-    onpointerup: "onPointerUp",
-    onpointermove: "onPointerMove",
-    onpointerenter: "onPointerEnter",
-    onpointerleave: "onPointerLeave",
-    onpointercancel: "onPointerCancel",
-    onpointerover: "onPointerOver",
-    onpointerout: "onPointerOut",
-    ongotpointercapture: "onGotPointerCapture",
-    onlostpointercapture: "onLostPointerCapture",
-    ontouchstart: "onTouchStart",
-    ontouchend: "onTouchEnd",
-    ontouchmove: "onTouchMove",
-    ontouchcancel: "onTouchCancel",
-    ondragstart: "onDragStart",
-    ondragend: "onDragEnd",
-    ondragenter: "onDragEnter",
-    ondragleave: "onDragLeave",
-    ondragover: "onDragOver",
-    onanimationstart: "onAnimationStart",
-    onanimationend: "onAnimationEnd",
-    onanimationiteration: "onAnimationIteration",
-    ontransitionend: "onTransitionEnd"
-  };
-  var ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
-  var IMPORT_SELF_CLOSE_RE = new RegExp(
-    "<(x-import|dc-import)(" + ATTRS + ")/>",
-    "gi"
-  );
-  var CAMEL_ATTR_RE = /(\s)([a-z]+[A-Z][A-Za-z0-9]*)(\s*=)/g;
-  function encodeCamelAttrs(html) {
-    return html.replace(
-      CAMEL_ATTR_RE,
-      (_, sp, name, eq) => sp + CAMEL_ATTR + name.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()) + eq
-    );
-  }
-  function encodeCase(html) {
-    html = html.replace(
-      IMPORT_SELF_CLOSE_RE,
-      (_, t, a) => "<" + t + a + "></" + t + ">"
-    );
-    html = html.replace(/<helmet(\s|>)/gi, "<sc-helmet$1");
-    html = html.replace(/<\/helmet\s*>/gi, "</sc-helmet>");
-    html = encodeCamelAttrs(html);
-    for (const [real, alias] of Object.entries(RAW_WRAP)) {
-      html = html.replace(
-        new RegExp("(</?)" + real + "(?=[\\s>])", "gi"),
-        "$1" + alias
-      );
-    }
-    return html;
-  }
-  function kebabToCamel(s) {
-    return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-  }
-  function cssToObj(css) {
-    const o = {};
-    for (const decl of css.split(";")) {
-      const i = decl.indexOf(":");
-      if (i < 0) continue;
-      const prop = decl.slice(0, i).trim();
-      o[prop.startsWith("--") ? prop : kebabToCamel(prop)] = decl.slice(i + 1).trim();
-    }
-    return o;
-  }
-  function compileAttr(raw) {
-    const whole = raw.match(/^\s*\{\{([\s\S]+?)\}\}\s*$/);
-    if (whole) {
-      const path = whole[1];
-      return (vals) => resolve(vals, path);
-    }
-    if (raw.includes("{{")) {
-      const parts = raw.split(/\{\{([\s\S]+?)\}\}/g);
-      return (vals) => parts.map((s, i) => i & 1 ? resolve(vals, s) ?? "" : s).join("");
-    }
-    return () => raw;
-  }
-
-  // src/compile.ts
-  function collectProps(node, kind, host) {
-    const propGetters = [];
-    const pseudoClasses = [];
-    let hintSize = null;
-    for (const { name, value } of [...node.attributes]) {
-      if (name === "sc-name" || name === "data-dc-tpl") continue;
-      let key = name;
-      if (key.startsWith(CAMEL_ATTR))
-        key = kebabToCamel(key.slice(CAMEL_ATTR.length));
-      if (key === "hint-size") {
-        hintSize = value;
-        continue;
-      }
-      if (key.startsWith("style-")) {
-        pseudoClasses.push(host.pseudoClass(key.slice(6), value));
-        continue;
-      }
-      if (kind !== "dom") {
-        if (key.includes("-") && !(kind === "x-import" && (key.startsWith("aria-") || key.startsWith("data-"))))
-          key = kebabToCamel(key);
-      } else {
-        if (key === "class") key = "className";
-        else if (key === "for") key = "htmlFor";
-        else if (key.startsWith("on"))
-          key = EVENT_MAP[key] || "on" + key[2].toUpperCase() + key.slice(3);
-      }
-      propGetters.push([key, compileAttr(value)]);
-    }
-    return { propGetters, pseudoClasses, hintSize };
-  }
-  var HOST_STYLE_PROPS = /* @__PURE__ */ new Set([
-    "position",
-    "left",
-    "right",
-    "top",
-    "bottom",
-    "inset",
-    "width",
-    "height",
-    "z-index",
-    "transform"
-  ]);
-  function hostPositionStyle(style) {
-    const all = typeof style === "string" ? cssToObj(style) : style != null && typeof style === "object" ? style : null;
-    if (!all) return void 0;
-    const out = {};
-    for (const [k, v] of Object.entries(all)) {
-      const kebab = k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
-      if (HOST_STYLE_PROPS.has(kebab)) out[k] = v;
-    }
-    return Object.keys(out).length ? out : void 0;
-  }
-  function compileTemplate(html, host) {
-    const tpl = document.createElement("template");
-    //! nosemgrep: direct-inner-html-assignment
-    tpl.innerHTML = encodeCase(html);
-    let tplN = 0;
-    (function stamp(node) {
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        node.setAttribute("data-dc-tpl", String(tplN++));
-      }
-      for (const c of node.childNodes) stamp(c);
-    })(tpl.content);
-    const builders = walkChildren(tpl.content, host);
-    const render = ((vals, ctx) => builders.map((b, i) => b(vals || {}, ctx, i)));
-    render.__annotated = tpl.innerHTML;
-    return render;
-  }
-  function walkChildren(node, host) {
-    return [...node.childNodes].map((c) => walk(c, host)).filter((b) => b != null);
-  }
-  function walk(node, host) {
-    if (node.nodeType === Node.TEXT_NODE) return walkText(node);
-    if (node.nodeType !== Node.ELEMENT_NODE) return null;
-    const el = node;
-    const tag = el.tagName.toLowerCase();
-    if (tag === "sc-for") return walkFor(el, host);
-    if (tag === "sc-if") return walkIf(el, host);
-    if (tag === "x-import") return walkXImport(el, host);
-    if (tag === "sc-helmet") return host.helmet(el);
-    if (tag === "dc-import") return walkComponent(el, host);
-    return walkElement(el, host);
-  }
-  var warnedHoles = /* @__PURE__ */ new Set();
-  function warnUnresolved(ctx, what) {
-    const key = (ctx?.__name || "?") + "\0" + what;
-    if (warnedHoles.has(key)) return;
-    warnedHoles.add(key);
-    console.warn("[dc-runtime] " + (ctx?.__name || "template") + ": " + what);
-  }
-  function walkText(node) {
-    const txt = node.nodeValue ?? "";
-    if (!txt.includes("{{")) {
-      if (!txt.trim() && !txt.includes(" ")) return null;
-      return () => txt;
-    }
-    const parts = txt.split(/\{\{([\s\S]+?)\}\}/g);
-    return (vals, ctx, key) => h(
-      getReact().Fragment,
-      { key },
-      ...parts.map((p, i) => {
-        if (!(i & 1)) return p;
-        const v = resolve(vals, p);
-        if (v === void 0) {
-          if (!ctx?.__streamingNow) {
-            if (document.body?.hasAttribute("data-dc-editor-on")) {
-              return h(
-                "span",
-                { key: i, className: "sc-interp sc-unresolved" },
-                "{{ " + p.trim() + " }}"
-              );
-            }
-            warnUnresolved(
-              ctx,
-              "{{ " + p.trim() + " }} never resolved \u2014 rendered as empty"
-            );
-            return null;
-          }
-          return h(
-            "span",
-            { key: i, className: "sc-interp sc-missing" },
-            p.trim()
-          );
-        }
-        if (getReact().isValidElement(v) || Array.isArray(v)) {
-          return h(getReact().Fragment, { key: i }, v);
-        }
-        if (v === null || typeof v === "boolean") return null;
-        return h("span", { key: i, className: "sc-interp" }, String(v));
-      })
-    );
-  }
-  function walkFor(el, host) {
-    const listGet = compileAttr(el.getAttribute("list") || "");
-    const asName = el.getAttribute("as") || "item";
-    const hintN = parseInt(el.getAttribute("hint-placeholder-count") || "0", 10);
-    const kids = walkChildren(el, host);
-    const listSrc = el.getAttribute("list") || "";
-    return (vals, ctx, key) => {
-      let list = listGet(vals);
-      if (!Array.isArray(list)) {
-        if (!ctx?.__streamingNow) {
-          if (list !== void 0 && list !== null) {
-            warnUnresolved(
-              ctx,
-              'sc-for list="' + listSrc + '" is not an array (' + typeof list + ")"
-            );
-          }
-          list = [];
-        } else {
-          list = hintN > 0 ? Array(hintN).fill(void 0) : [];
-        }
-      }
-      return h(
-        getReact().Fragment,
-        { key },
-        list.map((item, i) => {
-          const sub = { ...vals, [asName]: item, $index: i };
-          return h(
-            getReact().Fragment,
-            { key: i },
-            kids.map((b, j) => b(sub, ctx, j))
-          );
-        })
-      );
-    };
-  }
-  function walkIf(el, host) {
-    const valGet = compileAttr(el.getAttribute("value") || "");
-    const hintRaw = el.getAttribute("hint-placeholder-val");
-    const hintGet = hintRaw != null ? compileAttr(hintRaw) : null;
-    const kids = walkChildren(el, host);
-    return (vals, ctx, key) => {
-      let v = valGet(vals);
-      if (v === void 0 && hintGet && ctx?.__streamingNow) v = hintGet(vals);
-      return v ? h(
-        getReact().Fragment,
-        { key },
-        kids.map((b, j) => b(vals, ctx, j))
-      ) : null;
-    };
-  }
-  function walkComponent(el, host) {
-    const name = el.getAttribute("name") || el.getAttribute("component") || "";
-    el.removeAttribute("name");
-    el.removeAttribute("component");
-    const tplId = el.getAttribute("data-dc-tpl");
-    const styleRaw = el.getAttribute("style");
-    el.removeAttribute("style");
-    const styleGet = styleRaw != null ? compileAttr(styleRaw) : null;
-    const { propGetters, hintSize } = collectProps(el, "dc-import", host);
-    const kids = walkChildren(el, host);
-    return (vals, ctx, key) => {
-      const props = {
-        key,
-        __hintSize: hintSize,
-        __tplId: tplId,
-        __hostStyle: styleGet ? hostPositionStyle(styleGet(vals)) : void 0
-      };
-      for (const [k, g] of propGetters) {
-        const v = g(vals);
-        if (k === "dcProps") {
-          if (v && typeof v === "object") Object.assign(props, v);
-          continue;
-        }
-        props[k] = v;
-      }
-      if (kids.length) props.children = kids.map((b, j) => b(vals, ctx, j));
-      return h(host.component(name), props);
-    };
-  }
-  function walkXImport(el, host) {
-    const globalNameGet = compileAttr(
-      el.getAttribute("component-from-global-scope") || ""
-    );
-    const exportNameGet = compileAttr(
-      el.getAttribute("component") || el.getAttribute("name") || ""
-    );
-    const fromRaw = el.getAttribute("from") || (el.getAttribute("component-from-global-scope") ? "" : el.getAttribute("src") || el.getAttribute("import") || "");
-    const urls = fromRaw.trim() ? fromRaw.trim().split(/\s+/) : [];
-    const url = urls.length ? urls[urls.length - 1] : "";
-    const kindOf = (u) => /\.(jsx|tsx)(\?|#|$)/i.test(u) ? "jsx" : "js";
-    const tplId = el.getAttribute("data-dc-tpl");
-    const styleRaw = el.getAttribute("style");
-    el.removeAttribute("style");
-    const styleGet = styleRaw != null ? compileAttr(styleRaw) : null;
-    const wrap = tplId != null || styleGet != null;
-    const { propGetters, hintSize } = collectProps(el, "x-import", host);
-    const hasContent = el.children.length > 0 || !!(el.textContent || "").trim();
-    const kids = hasContent ? walkChildren(el, host) : [];
-    const urlBindable = fromRaw.includes("{{");
-    if (urls.length && !urlBindable) {
-      let prev;
-      for (const u of urls) prev = host.loadExternal(kindOf(u), u, prev);
-    }
-    const evalName = (g, vals) => {
-      const v = g(vals);
-      const s = v == null ? "" : String(v);
-      return s.includes("{{") ? "" : s;
-    };
-    return (vals, ctx, key) => {
-      const globalName = evalName(globalNameGet, vals);
-      const name = globalName || evalName(exportNameGet, vals);
-      const C = !name || urlBindable ? null : globalName ? host.resolveExternalGlobal(url, globalName) : host.resolveExternal(url, name);
-      const hostStyle = styleGet ? hostPositionStyle(styleGet(vals)) : void 0;
-      const wrapper = wrap ? {
-        key,
-        className: "sc-host-x",
-        "data-dc-tpl": tplId,
-        style: hostStyle || { display: "contents" }
-      } : null;
-      if (!C) {
-        const error = urlBindable ? "x-import `from` cannot contain {{ \u2026 }} \u2014 module URLs are resolved at parse time; use a literal URL" : host.resolveExternalError(url, name);
-        const ph = host.placeholder({
-          key: wrapper ? void 0 : key,
-          name,
-          hintSize,
-          error
-        });
-        return wrapper ? h("div", wrapper, ph) : ph;
-      }
-      const props = wrapper ? {} : { key };
-      let unresolvedHole = false;
-      for (const [k, g] of propGetters) {
-        if (k === "component" || k === "componentFromGlobalScope" || k === "from") {
-          continue;
-        }
-        const v = g(vals);
-        if (v === void 0) unresolvedHole = true;
-        if (k === "dcProps") {
-          if (v && typeof v === "object") Object.assign(props, v);
-          continue;
-        }
-        props[k] = v;
-      }
-      if (unresolvedHole && ctx?.__htmlStreamingNow) {
-        const ph = host.placeholder({
-          key: wrapper ? void 0 : key,
-          name,
-          hintSize,
-          error: null
-        });
-        return wrapper ? h("div", wrapper, ph) : ph;
-      }
-      if (kids.length) props.children = kids.map((b, j) => b(vals, ctx, j));
-      return wrapper ? h("div", wrapper, h(C, props)) : h(C, props);
-    };
-  }
-  function contentKey(el) {
-    const clone = el.cloneNode(true);
-    for (const d of clone.querySelectorAll("*")) {
-      while (d.attributes.length) d.removeAttribute(d.attributes[0].name);
-    }
-    const s = clone.innerHTML;
-    let h2 = 5381;
-    for (let i = 0; i < s.length; i++) h2 = (h2 << 5) + h2 + s.charCodeAt(i) | 0;
-    return s.length + "." + (h2 >>> 0).toString(36);
-  }
-  var NEVER_CONTENT_KEYED = new Set(
-    "script style textarea option title select canvas iframe video audio".split(
-      " "
-    )
-  );
-  var NOT_INLINE_SELECTOR = ":not(" + [...INLINE_TEXT_TAGS].join(",") + ")";
-  function walkElement(el, host) {
-    const realTag = RAW_UNWRAP[el.localName] || el.localName;
-    const tplId = el.getAttribute("data-dc-tpl");
-    const inlineOnly = el.childNodes.length > 0 && !NEVER_CONTENT_KEYED.has(realTag) && el.querySelector(NOT_INLINE_SELECTOR) === null;
-    const keySuffix = inlineOnly ? "|" + contentKey(el) : "";
-    const { propGetters, pseudoClasses } = collectProps(el, "dom", host);
-    const kids = walkChildren(el, host);
-    return (vals, ctx, key) => {
-      const props = {
-        key: key + keySuffix,
-        "data-dc-tpl": tplId
-      };
-      for (const [k, g] of propGetters) {
-        let v = g(vals);
-        if (k === "style" && typeof v === "string") v = cssToObj(v);
-        if ((k === "value" || k === "checked") && v === void 0) {
-          v = k === "checked" ? false : "";
-        }
-        props[k] = v;
-      }
-      if (pseudoClasses.length) {
-        props.className = [props.className, ...pseudoClasses].filter(Boolean).join(" ");
-      }
-      return h(realTag, props, ...kids.map((b, j) => b(vals, ctx, j)));
-    };
-  }
-
-  // src/logic.ts
-  var StreamableLogic = class {
-    constructor(props) {
-      __publicField(this, "props");
-      __publicField(this, "state", {});
-      /** Back-pointer to the wrapper component, installed after construction. */
-      __publicField(this, "__host");
-      this.props = props || {};
-    }
-    setState(update, cb) {
-      this.__host && this.__host.__setLogicState(update, cb);
-    }
-    forceUpdate() {
-      this.__host && this.__host.forceUpdate();
-    }
-    componentDidMount() {
-    }
-    componentDidUpdate(_prevProps) {
-    }
-    componentWillUnmount() {
-    }
-    /** The flat object the template renders against (merged over props). */
-    renderVals() {
-      return {};
-    }
-  };
-  function evalDcLogic(src) {
-    //! nosemgrep: eval-and-function-constructor
-    const fn = new Function(
-      "DCLogic",
-      "StreamableLogic",
-      "React",
-      src + '\n;return (typeof Component!=="undefined"&&Component)||undefined;'
-    );
-    return fn(StreamableLogic, StreamableLogic, getReact());
-  }
-
-  // src/component.ts
-  function shallowEqual(a, b) {
-    if (!b) return false;
-    const ak = Object.keys(a).filter((k) => k !== "children");
-    const bk = Object.keys(b).filter((k) => k !== "children");
-    if (ak.length !== bk.length) return false;
-    for (const k of ak) if (a[k] !== b[k]) return false;
-    return true;
-  }
-  function Placeholder({
-    name,
-    hintSize,
-    streaming,
-    error
-  }) {
-    const [w, hgt] = (hintSize || "100%,60px").split(",");
-    return h(
-      "div",
-      {
-        className: "sc-placeholder" + (streaming ? " sc-streaming" : ""),
-        style: { width: w.trim(), height: hgt && hgt.trim() },
-        title: name
-      },
-      error ? h(
-        "div",
-        { className: "sc-placeholder-error" },
-        (name ? name + ": " : "") + error
-      ) : null
-    );
-  }
-  function hintToMin(hint) {
-    if (!hint) return void 0;
-    const [w, hgt] = hint.split(",");
-    return { minWidth: w.trim(), minHeight: hgt && hgt.trim() };
-  }
-  function createComponentFactory(registry, ensureFetched) {
-    const React = getReact();
-    const AncestorContext = React.createContext([]);
-    class StreamableComponent extends React.Component {
-      constructor(props) {
-        super(props);
-        __publicField(this, "__name");
-        __publicField(this, "__sub");
-        __publicField(this, "__needsDidMount", false);
-        /** Snapshot of the registry's streaming flags taken at render time —
-         *  builders read it off the RenderCtx (this) to pick placeholder vs
-         *  render-nothing for unresolved values. */
-        __publicField(this, "__streamingNow", false);
-        __publicField(this, "__htmlStreamingNow", false);
-        /** When a construct throws, remember the (class, registry.ver, props)
-         *  triple so render-time reconcile doesn't re-attempt it on every parent
-         *  re-render. A registry bump (new class, template, external module
-         *  resolving via bumpAll) changes `ver` and breaks the memo so an
-         *  env-dependent constructor can self-heal. */
-        __publicField(this, "__failedLogic", null);
-        __publicField(this, "__failedUserProps", null);
-        __publicField(this, "__failedVer", -1);
-        /** Per-instance constructor error — kept here (not on the registry entry)
-         *  so one instance's successful construct can't hide a sibling's failure,
-         *  and a construct can never wipe an eval error `updateJs` recorded on
-         *  `r.logicError`. */
-        __publicField(this, "__ctorError", null);
-        __publicField(this, "logic");
-        this.__name = props.__name;
-        this.state = { __v: 0, __err: null };
-        this.__sub = () => {
-          if (this.state.__err) this.setState({ __err: null });
-          this.forceUpdate();
-        };
-        this.__makeLogic(registry.get(this.__name).Logic, null);
-        ensureFetched(this.__name);
-      }
-      /** Error-boundary hook: a render crash anywhere in this DC's subtree
-       *  (its own template, an x-import'd component, a child DC without its
-       *  own deeper boundary) lands here instead of unmounting the page. */
-      static getDerivedStateFromError(e) {
-        return { __err: e instanceof Error && e.message ? e.message : String(e) };
-      }
-      componentDidCatch(e, info) {
-        console.error(
-          "[dc-runtime] render error in <" + this.__name + ">:",
-          e,
-          info?.componentStack || ""
-        );
-      }
-      /** Instantiate the logic class (or the no-op base) and adopt `prevState`
-       *  over its initial state — used both at mount and on hot-swap. */
-      __makeLogic(Logic, prevState) {
-        const L = Logic || StreamableLogic;
-        try {
-          this.logic = new L(this.__userProps());
-          this.__failedLogic = null;
-          this.__failedUserProps = null;
-          this.__ctorError = null;
-        } catch (e) {
-          console.error(e);
-          this.__failedLogic = Logic;
-          this.__failedUserProps = this.__userProps();
-          this.__failedVer = registry.get(this.__name).ver;
-          this.__ctorError = this.__name + ": " + (e instanceof Error && e.message ? e.message : String(e));
-          this.logic = new StreamableLogic(
-            this.__userProps()
-          );
-        }
-        this.logic.__host = this;
-        if (prevState)
-          this.logic.state = { ...this.logic.state || {}, ...prevState };
-      }
-      /** The props the author's logic + template see — internal __-prefixed
-       *  wiring stripped. */
-      __userProps() {
-        const { __name, __hintSize, __tplId, __hostStyle, ...rest } = this.props;
-        return rest;
-      }
-      __setLogicState(update, cb) {
-        const prev = this.logic.state;
-        const patch = typeof update === "function" ? update(prev) : update;
-        this.logic.state = { ...prev, ...patch };
-        this.setState((s) => ({ __v: s.__v + 1 }), cb);
-      }
-      /** Swap the logic instance when the registry's Logic class changed
-       *  (streaming completion, hot reload). State carries over; didMount
-       *  re-fires after the swap commits so refs exist. */
-      __reconcileLogic() {
-        const r = registry.get(this.__name);
-        const Next = r.Logic;
-        const Cur = this.logic.constructor;
-        if (Next === Cur || !Next && Cur === StreamableLogic || Next === this.__failedLogic && r.ver === this.__failedVer && shallowEqual(this.__userProps(), this.__failedUserProps)) {
-          return;
-        }
-        if (!this.__needsDidMount) {
-          try {
-            this.logic.componentWillUnmount();
-          } catch (e) {
-            console.error(e);
-          }
-        }
-        this.__makeLogic(Next, this.logic.state);
-        this.__needsDidMount = true;
-      }
-      componentDidMount() {
-        registry.get(this.__name).subs.add(this.__sub);
-        try {
-          this.logic.componentDidMount();
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      componentDidUpdate(prevProps) {
-        this.logic.props = this.__userProps();
-        if (this.__needsDidMount) {
-          if (this.state.__err || !registry.get(this.__name).tpl) return;
-          this.__needsDidMount = false;
-          try {
-            this.logic.componentDidMount();
-          } catch (e) {
-            console.error(e);
-          }
-        } else {
-          try {
-            this.logic.componentDidUpdate(prevProps);
-          } catch (e) {
-            console.error(e);
-          }
-        }
-      }
-      componentWillUnmount() {
-        registry.get(this.__name).subs.delete(this.__sub);
-        if (!this.__needsDidMount) {
-          try {
-            this.logic.componentWillUnmount();
-          } catch (e) {
-            console.error(e);
-          }
-        }
-      }
-      render() {
-        const r = registry.get(this.__name);
-        const cls = "sc-host" + (r.htmlStreaming ? " sc-streaming-html" : "") + (r.jsStreaming ? " sc-streaming-js" : "");
-        const hintStyle = r.htmlStreaming ? hintToMin(this.props.__hintSize) : void 0;
-        const hostStyle = this.props.__hostStyle || hintStyle ? { ...hintStyle || {}, ...this.props.__hostStyle || {} } : void 0;
-        const hostBase = {
-          className: cls,
-          style: hostStyle,
-          "data-sc-name": this.__name,
-          "data-dc-tpl": this.props.__tplId
-        };
-        const chain = Array.isArray(this.context) ? this.context : [];
-        if (chain.includes(this.__name)) {
-          const cycle = [
-            ...chain.slice(chain.indexOf(this.__name)),
-            this.__name
-          ].join(" \u2192 ");
-          return h(
-            "div",
-            { ...hostBase, className: cls + " sc-has-error" },
-            h(Placeholder, {
-              name: this.__name,
-              hintSize: this.props.__hintSize,
-              error: "circular import: " + cycle
-            })
-          );
-        }
-        if (this.state.__err) {
-          return h(
-            "div",
-            { ...hostBase, className: cls + " sc-has-error" },
-            h(
-              "div",
-              { className: "sc-logic-error", "data-omelette-chrome": "" },
-              this.__name + ": " + this.state.__err
-            ),
-            h(Placeholder, {
-              name: this.__name,
-              hintSize: this.props.__hintSize,
-              error: this.state.__err
-            })
-          );
-        }
-        this.__reconcileLogic();
-        if (!r.tpl) {
-          return h(
-            "div",
-            hostBase,
-            h(Placeholder, { name: this.__name, hintSize: this.props.__hintSize })
-          );
-        }
-        const userProps = this.__userProps();
-        this.logic.props = userProps;
-        let vals = userProps;
-        let renderErr = r.logicError || this.__ctorError;
-        try {
-          vals = { ...userProps, ...this.logic.renderVals() || {} };
-        } catch (e) {
-          console.error(e);
-          renderErr = this.__name + ".renderVals(): " + (e instanceof Error && e.message ? e.message : String(e));
-        }
-        this.__streamingNow = !!(r.htmlStreaming || r.jsStreaming);
-        this.__htmlStreamingNow = !!r.htmlStreaming;
-        return h(
-          "div",
-          { ...hostBase, className: cls + (renderErr ? " sc-has-error" : "") },
-          renderErr && h(
-            "div",
-            { className: "sc-logic-error", "data-omelette-chrome": "" },
-            renderErr
-          ),
-          h(
-            AncestorContext.Provider,
-            { value: [...chain, this.__name] },
-            r.tpl(vals, this)
-          )
-        );
-      }
-    }
-    __publicField(StreamableComponent, "contextType", AncestorContext);
-    const named = /* @__PURE__ */ new Map();
-    function getDC(name) {
-      const hit = named.get(name);
-      if (hit) return hit;
-      function Dispatcher(p) {
-        const [, setTick] = React.useState(0);
-        React.useEffect(() => {
-          const sub = () => setTick((n) => n + 1);
-          registry.get(name).subs.add(sub);
-          return () => {
-            registry.get(name).subs.delete(sub);
-          };
-        }, []);
-        ensureFetched(name);
-        return h(StreamableComponent, { ...p, __name: name });
-      }
-      Dispatcher.displayName = name;
-      named.set(name, Dispatcher);
-      return Dispatcher;
-    }
-    return {
-      getDC,
-      StreamableComponent
-    };
-  }
-
-  // src/bundled.ts
-  function bundledBlob(url) {
-    const blobs = window.__resourceBlobs;
-    const b = blobs ? blobs[url.split("#")[0]] : void 0;
-    return b instanceof Blob ? b : null;
-  }
-
-  // src/cdn.ts
-  var REACT_URL = "https://unpkg.com/react@18.3.1/umd/react.production.min.js";
-  var REACT_SRI = "sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z";
-  var REACT_DOM_URL = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js";
-  var REACT_DOM_SRI = "sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1";
-  var BABEL_URL = "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js";
-  var BABEL_SRI = "sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y";
-  function cdnScriptFor(url, sri) {
-    const res = window.__resources;
-    const v = res ? res[url] : void 0;
-    return typeof v === "string" && v ? { src: v } : { src: url, integrity: sri };
-  }
-
-  // src/external.ts
-  var isCustomElementName = (n) => !n.includes(".") && n.includes("-");
-  function isRenderableType(g) {
-    if (typeof g === "function") return !isElementClass(g);
-    return typeof g === "object" && g !== null && typeof g.$$typeof === "symbol";
-  }
-  function resolveDottedPath(root, name) {
-    let cur = root;
-    for (const seg of name.split(".")) {
-      if (cur == null) return void 0;
-      cur = cur[seg];
-    }
-    return cur;
-  }
-  var GLOBAL_POLL_INTERVAL_MS = 50;
-  var GLOBAL_POLL_TIMEOUT_MS = 3e4;
-  function createExternalModules(onResolved) {
-    const cache = /* @__PURE__ */ new Map();
-    let babelLoading = null;
-    const reportedMissing = /* @__PURE__ */ new Map();
-    const polling = /* @__PURE__ */ new Set();
-    function ensureBabel() {
-      if (window.Babel) return Promise.resolve();
-      if (babelLoading) return babelLoading;
-      const babel = cdnScriptFor(BABEL_URL, BABEL_SRI);
-      babelLoading = new Promise((res, rej) => {
-        const s = document.createElement("script");
-        s.src = babel.src;
-        if (babel.integrity) {
-          s.integrity = babel.integrity;
-          s.crossOrigin = "anonymous";
-        }
-        s.onload = () => res();
-        s.onerror = rej;
-        document.head.appendChild(s);
-      });
-      return babelLoading;
-    }
-    const pending = /* @__PURE__ */ new Map();
-    function load(kind, url, after) {
-      const existing = pending.get(url);
-      if (existing) return existing;
-      cache.set(url, null);
-      console.info("[dc-runtime] x-import: loading", url, "(" + kind + ")");
-      const ready = Promise.all([
-        kind === "jsx" ? ensureBabel() : Promise.resolve(),
-        after ?? Promise.resolve()
-      ]);
-      const p = ready.then(() => {
-        const pre = bundledBlob(url);
-        if (pre) return pre.text();
-        return fetch(url).then((r) => {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.text();
-        });
-      }).then((src) => {
-        const code = kind === "jsx" ? window.Babel.transform(src, {
-          filename: url,
-          presets: ["react", "typescript"]
-        }).code : src;
-        const module = { exports: {} };
-        const before = new Set(Object.keys(window));
-        //! nosemgrep: eval-and-function-constructor
-        new Function("React", "module", "exports", "require", code)(
-          getReact(),
-          module,
-          module.exports,
-          () => ({})
-        );
-        const globals = {};
-        for (const k of Object.keys(window)) {
-          if (!before.has(k) && typeof window[k] === "function") {
-            globals[k] = window[k];
-          }
-        }
-        cache.set(url, { mod: module.exports, globals });
-        console.info(
-          "[dc-runtime] x-import: loaded",
-          url,
-          "\u2014 exports:",
-          Object.keys(module.exports),
-          "window globals:",
-          Object.keys(globals)
-        );
-        onResolved();
-      }).catch((e) => {
-        cache.set(url, {
-          mod: {},
-          globals: {},
-          error: "failed to load: " + (e instanceof Error && e.message ? e.message : String(e))
-        });
-        console.error(
-          "[dc-runtime] x-import: FAILED to load",
-          url,
-          "(" + kind + ")",
-          e
-        );
-        onResolved();
-      });
-      pending.set(url, p);
-      return p;
-    }
-    function resolve2(url, name) {
-      const entry = cache.get(url);
-      if (!entry) return null;
-      const { mod, globals } = entry;
-      const C = mod && mod[name] || globals && globals[name] || typeof window !== "undefined" && window[name] || mod && mod.default;
-      if (typeof C === "function") return C;
-      const key = url + "\0" + name;
-      if (!reportedMissing.has(key)) {
-        reportedMissing.set(
-          key,
-          entry.error || 'no export named "' + name + '" (has: ' + Object.keys(mod).join(", ") + ")"
-        );
-        console.error(
-          "[dc-runtime] x-import: module",
-          url,
-          "loaded but has no component named",
-          JSON.stringify(name),
-          "\u2014 available exports:",
-          Object.keys(mod),
-          "window globals:",
-          Object.keys(globals),
-          ". The module must `module.exports = {" + name + "}` or set `window." + name + "`."
-        );
-      }
-      return null;
-    }
-    function waitForGlobal(name) {
-      if (polling.has(name)) return;
-      polling.add(name);
-      const started = Date.now();
-      const isCE = isCustomElementName(name);
-      const tick = () => {
-        const found = isCE ? customElements.get(name) : isRenderableType(resolveDottedPath(window, name));
-        if (found) {
-          polling.delete(name);
-          onResolved();
-          return;
-        }
-        if (Date.now() - started >= GLOBAL_POLL_TIMEOUT_MS) {
-          console.warn(
-            "[dc-runtime] x-import: global",
-            JSON.stringify(name),
-            "never appeared on window after " + GLOBAL_POLL_TIMEOUT_MS + "ms"
-          );
-          return;
-        }
-        setTimeout(tick, GLOBAL_POLL_INTERVAL_MS);
-      };
-      setTimeout(tick, GLOBAL_POLL_INTERVAL_MS);
-    }
-    function resolveGlobal(url, name) {
-      const isCE = isCustomElementName(name);
-      if (!url) {
-        if (isCE) {
-          if (customElements.get(name)) return name;
-          waitForGlobal(name);
-          return null;
-        }
-        const g2 = resolveDottedPath(window, name);
-        if (isRenderableType(g2)) return g2;
-        waitForGlobal(name);
-        return null;
-      }
-      const entry = cache.get(url);
-      if (!entry) return null;
-      if (isCE && customElements.get(name)) return name;
-      const g = entry.globals[name] ?? resolveDottedPath(window, name);
-      if (isRenderableType(g)) return g;
-      if (name.includes(".")) return null;
-      const key = url + "\0global\0" + name;
-      if (!reportedMissing.has(key)) {
-        reportedMissing.set(key, null);
-        if (isCE && !customElements.get(name)) {
-          console.warn(
-            "[dc-runtime] x-import:",
-            url,
-            "loaded but no custom element",
-            JSON.stringify(name),
-            "is registered and window." + name + " is not a function \u2014 rendering <" + name + "> as an unknown element."
-          );
-        }
-      }
-      return name;
-    }
-    function getError(url, name) {
-      const entry = cache.get(url);
-      if (entry?.error) return entry.error;
-      return reportedMissing.get(url + "\0" + name) || null;
-    }
-    return { load, resolve: resolve2, resolveGlobal, getError };
-  }
-  function isElementClass(g) {
-    try {
-      return typeof g === "function" && typeof HTMLElement !== "undefined" && g.prototype instanceof HTMLElement;
-    } catch {
-      return false;
-    }
-  }
-
-  // src/atomics.ts
-  var ATOMIC_CSS = (
-    // layout
-    ".fx{display:flex}.col{display:flex;flex-direction:column}.grid{display:grid}.ac{align-items:center}.jc{justify-content:center}.jb{justify-content:space-between}.f1{flex:1}.noshrink{flex-shrink:0}.wrap{flex-wrap:wrap}.fw5{font-weight:500}.fw6{font-weight:600}.fw7{font-weight:700}.fw8{font-weight:800}.fs11{font-size:11px}.fs12{font-size:12px}.fs13{font-size:13px}.fs14{font-size:14px}.fs15{font-size:15px}.fs16{font-size:16px}.fs20{font-size:20px}.fs22{font-size:22px}.upper{text-transform:uppercase}.tc{text-align:center}.nowrap{white-space:nowrap}.gap8{gap:8px}.gap10{gap:10px}.gap12{gap:12px}.gap16{gap:16px}.gap24{gap:24px}.m0{margin:0}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}.posrel{position:relative}.posabs{position:absolute}.round{border-radius:50%}.ohide{overflow:hidden}.bbox{box-sizing:border-box}.pointer{cursor:pointer}.w100{width:100%}.b0{border:none}"
-  );
-
-  // src/helmet.ts
-  var DESIGN_DOC_MODE_RE = /<meta\b[^>]*\bname\s*=\s*["']design_doc_mode["'][^>]*\b(?:content|value)\s*=\s*["'](\w+)["']/i;
-  var CANVAS_BG_LIGHT = "#f0eee6";
-  var CANVAS_BG_DARK = "#2e2c26";
-  function createHelmetManager(doc, isStreaming) {
-    const mounted = /* @__PURE__ */ new Set();
-    const live = /* @__PURE__ */ new Map();
-    let designDocMode = null;
-    let canvasStyleEl = null;
-    let appTheme = "light";
-    try {
-      const ds = doc.documentElement.dataset.theme;
-      appTheme = ds === "dark" || ds === "light" ? ds : new URLSearchParams(doc.defaultView?.location.search ?? "").get(
-        "theme"
-      ) === "dark" ? "dark" : "light";
-    } catch {
-    }
-    function applyCanvasBg() {
-      if (!canvasStyleEl) return;
-      const bg = appTheme === "dark" ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
-      canvasStyleEl.textContent = `html,body{background:${bg}}#dc-root>.sc-host{position:relative}`;
-    }
-    function postDesignMode(mode) {
-      if (window.parent === window) return;
-      try {
-        window.parent.postMessage({ type: "__dc_design_mode", mode }, "*");
-      } catch {
-      }
-    }
-    function setDesignDocMode(mode) {
-      if (mode === designDocMode) return;
-      designDocMode = mode;
-      postDesignMode(mode);
-      if (mode === "canvas") {
-        doc.documentElement.setAttribute("data-dc-canvas", "");
-        canvasStyleEl = doc.createElement("style");
-        canvasStyleEl.setAttribute("data-dc-canvas", "");
-        applyCanvasBg();
-        doc.head.appendChild(canvasStyleEl);
-      } else {
-        doc.documentElement.removeAttribute("data-dc-canvas");
-        canvasStyleEl?.remove();
-        canvasStyleEl = null;
-      }
-    }
-    window.addEventListener("message", (e) => {
-      const type = e.data && e.data.type;
-      if (type === "__dc_theme") {
-        const t = e.data.theme;
-        if (t === "light" || t === "dark") {
-          appTheme = t;
-          applyCanvasBg();
-        }
-        return;
-      }
-      if (!designDocMode || type !== "__dc_probe") return;
-      postDesignMode(designDocMode);
-    });
-    function compile(node) {
-      const raw = [...node.children];
-      const helmetClosed = node.nextSibling != null || node.parentNode?.nextSibling != null;
-      if (node.hasAttribute("data-dc-atomics") && !mounted.has("__dc-atomics")) {
-        mounted.add("__dc-atomics");
-        const el = doc.createElement("style");
-        el.id = "__dc-atomics";
-        el.textContent = ATOMIC_CSS;
-        doc.head.appendChild(el);
-      }
-      return (_vals, ctx) => {
-        const name = ctx && ctx.__name || "";
-        const streaming = !!(name && isStreaming(name));
-        for (let i = 0; i < raw.length; i++) {
-          const child = raw[i];
-          const tag = child.tagName;
-          const mayBePartial = streaming && !helmetClosed && i === raw.length - 1;
-          if (tag === "SCRIPT") {
-            if (mayBePartial) continue;
-            const key = "SCRIPT|" + (child.getAttribute("src") || child.textContent || "");
-            if (mounted.has(key)) continue;
-            mounted.add(key);
-            const el = doc.createElement("script");
-            for (const { name: an, value } of [...child.attributes])
-              el.setAttribute(an, value);
-            if (child.textContent) el.textContent = child.textContent;
-            doc.head.appendChild(el);
-          } else if (tag === "LINK" || tag === "META") {
-            if (mayBePartial) continue;
-            const key = tag + "|" + (child.getAttribute("href") || child.getAttribute("src") || child.outerHTML);
-            if (mounted.has(key)) continue;
-            mounted.add(key);
-            if (tag === "LINK") {
-              const rel = (child.getAttribute("rel") || "").toLowerCase().split(/\s+/);
-              const href = (child.getAttribute("href") || "").trim();
-              const res = window.__resources;
-              const pre = res && rel.includes("stylesheet") && !rel.includes("alternate") ? res[href] : void 0;
-              const blob = typeof pre === "string" && pre ? bundledBlob(pre) : null;
-              if (blob) {
-                const el = doc.createElement("style");
-                if (child.hasAttribute("disabled")) {
-                  el.setAttribute("media", "not all");
-                } else if (child.getAttribute("media")) {
-                  el.setAttribute("media", child.getAttribute("media"));
-                }
-                if (child.getAttribute("title"))
-                  el.setAttribute("title", child.getAttribute("title"));
-                void blob.text().then((css) => {
-                  el.textContent = css;
-                });
-                doc.head.appendChild(el);
-                continue;
-              }
-            }
-            doc.head.appendChild(child.cloneNode(true));
-          } else {
-            const key = name + "|" + i;
-            let el = live.get(key);
-            if (!el || el.tagName !== tag) {
-              if (el) el.remove();
-              el = doc.createElement(tag.toLowerCase());
-              live.set(key, el);
-              doc.head.appendChild(el);
-            }
-            for (const { name: an, value } of [...child.attributes]) {
-              if (el.getAttribute(an) !== value) el.setAttribute(an, value);
-            }
-            if (el.textContent !== child.textContent)
-              el.textContent = child.textContent;
-          }
-        }
-        return null;
-      };
-    }
-    return { compile, setDesignDocMode };
-  }
-
-  // src/pseudo.ts
-  function createPseudoSheet(doc) {
-    let el = null;
-    const cache = /* @__PURE__ */ new Map();
-    let n = 0;
-    return (pseudo, css) => {
-      const k = pseudo + "|" + css;
-      const hit = cache.get(k);
-      if (hit) return hit;
-      if (!el) {
-        el = doc.createElement("style");
-        doc.head.appendChild(el);
-      }
-      const cls = "scp" + (n++).toString(36);
-      const sel = pseudo === "before" || pseudo === "after" ? "." + cls + "::" + pseudo : "." + cls + ":" + pseudo;
-      el.sheet.insertRule(sel + "{" + css + "}", el.sheet.cssRules.length);
-      cache.set(k, cls);
-      return cls;
-    };
-  }
-
-  // src/registry.ts
-  function createRegistry() {
-    const entries = /* @__PURE__ */ Object.create(null);
-    function get(name) {
-      return entries[name] || (entries[name] = {
-        html: "",
-        tpl: null,
-        Logic: null,
-        jsStreaming: false,
-        htmlStreaming: false,
-        ver: 0,
-        subs: /* @__PURE__ */ new Set(),
-        fetched: false
-      });
-    }
-    function bump(name) {
-      const r = get(name);
-      r.ver++;
-      for (const fn of r.subs) fn();
-    }
-    return {
-      entries,
-      get,
-      bump,
-      bumpAll() {
-        for (const n in entries) bump(n);
-      }
-    };
-  }
-
-  // src/runtime.ts
-  var COMPONENT_DIR = ".";
-  function createRuntime(doc = document) {
-    const registry = createRegistry();
-    const pseudoClass = createPseudoSheet(doc);
-    const helmet = createHelmetManager(
-      doc,
-      (name) => registry.get(name).htmlStreaming
-    );
-    const external = createExternalModules(() => registry.bumpAll());
-    const factory = createComponentFactory(registry, ensureFetched);
-    const host = {
-      component: (name) => factory.getDC(name),
-      placeholder: (props) => h(Placeholder, props),
-      helmet: (node) => helmet.compile(node),
-      loadExternal: (kind, url, after) => external.load(kind, url, after),
-      resolveExternal: (url, name) => external.resolve(url, name),
-      resolveExternalGlobal: (url, name) => external.resolveGlobal(url, name),
-      resolveExternalError: (url, name) => external.getError(url, name),
-      pseudoClass
-    };
-    function ensureFetched(name) {
-      const r = registry.get(name);
-      if (r.fetched) return;
-      r.fetched = true;
-      const url = COMPONENT_DIR + "/" + encodeURIComponent(name) + ".dc.html";
-      const res = window.__resources;
-      const pre = res ? res[url] : void 0;
-      const target = typeof pre === "string" && pre ? pre : url;
-      const blob = bundledBlob(target);
-      (blob ? blob.text() : fetch(target).then((res2) => {
-        if (!res2.ok) {
-          console.error(
-            '[dc-runtime] sibling fetch for "' + name + '" failed:',
-            url,
-            "returned",
-            res2.status,
-            "\u2014 the reference renders as an empty placeholder."
-          );
-          return "";
-        }
-        return res2.text();
-      })).then((t) => {
-        if (!t) return;
-        const parsed = parseDcText(t);
-        if (!parsed) {
-          console.error(
-            '[dc-runtime] sibling fetch for "' + name + '":',
-            url,
-            "has no <x-" + "dc> block \u2014 not a Design Component."
-          );
-          return;
-        }
-        if (parsed.props) r.propsMeta = parsed.props;
-        if (parsed.preview) r.preview = parsed.preview;
-        if (parsed.template && !r.html) updateHtml(name, parsed.template);
-        if (parsed.js && !r.Logic) updateJs(name, parsed.js);
-      }).catch(
-        (e) => console.error(
-          '[dc-runtime] sibling fetch for "' + name + '" threw:',
-          url,
-          e
-        )
-      );
-    }
-    let rootName = null;
-    function updateHtml(name, html) {
-      const r = registry.get(name);
-      r.html = html;
-      if (name === rootName) {
-        const mode = DESIGN_DOC_MODE_RE.exec(html)?.[1] ?? null;
-        if (mode || !r.htmlStreaming) helmet.setDesignDocMode(mode);
-      }
-      try {
-        r.tpl = compileTemplate(html, host);
-      } catch (e) {
-        console.error("[dc-runtime] template compile FAILED for", name, e);
-      }
-      registry.bump(name);
-    }
-    function updateJs(name, src) {
-      const r = registry.get(name);
-      const seq = r.jsSeq = (r.jsSeq || 0) + 1;
-      try {
-        const Cls = evalDcLogic(src);
-        if (r.jsSeq !== seq) return;
-        if (typeof Cls !== "function") {
-          r.logicError = name + ".dc.html: <script data-dc-script> must define `class Component extends DCLogic`";
-        } else {
-          r.logicError = null;
-          r.Logic = Cls;
-        }
-      } catch (e) {
-        if (r.jsSeq !== seq) return;
-        console.error(
-          "[dc-runtime] logic class eval FAILED for",
-          name,
-          "\u2014 the template renders with props only.",
-          e
-        );
-        r.logicError = name + ": " + (e instanceof Error && e.message ? e.message : String(e));
-      }
-      registry.bump(name);
-    }
-    function setStreaming(name, kind, on) {
-      const r = registry.get(name);
-      if (kind === "html") r.htmlStreaming = !!on;
-      else r.jsStreaming = !!on;
-      let any = false;
-      for (const n in registry.entries) {
-        const e = registry.entries[n];
-        if (e && (e.htmlStreaming || e.jsStreaming)) {
-          any = true;
-          break;
-        }
-      }
-      doc.documentElement.classList.toggle("sc-dc-streaming", any);
-      registry.bump(name);
-    }
-    function dcUpdate(name, kind, content, streaming) {
-      if (streaming) registry.get(name).fetched = true;
-      if (kind === "html") {
-        setStreaming(name, "html", !!streaming);
-        updateHtml(name, content);
-      } else if (kind === "js") {
-        setStreaming(name, "js", !!streaming);
-        if (!streaming) updateJs(name, content);
-      } else if (kind === "props") {
-        const { props, preview } = parseDataProps(content);
-        const r = registry.get(name);
-        r.propsMeta = props ?? void 0;
-        r.preview = preview;
-        registry.bump(name);
-      }
-    }
-    function setProps(name, overrides) {
-      registry.get(name).propOverrides = overrides && typeof overrides === "object" ? { ...overrides } : null;
-      registry.bump(name);
-    }
-    function adoptParsed(name, parsed) {
-      if (!parsed) return;
-      const r = registry.get(name);
-      if (parsed.props) r.propsMeta = parsed.props;
-      if (parsed.preview) r.preview = parsed.preview;
-      if (parsed.template) updateHtml(name, parsed.template);
-      if (parsed.js) updateJs(name, parsed.js);
-    }
-    return {
-      registry,
-      getDC: factory.getDC,
-      updateHtml,
-      updateJs,
-      dcUpdate,
-      setProps,
-      adoptParsed,
-      setRootName: (name) => {
-        rootName = name;
-      },
-      markFetched: (name) => {
-        registry.get(name).fetched = true;
-      },
-      annotatedTemplate: (name) => {
-        const r = registry.get(name);
-        return r.tpl && r.tpl.__annotated || null;
-      },
-      templateSource: (name) => registry.get(name).html || null,
-      StreamableLogic
-    };
-  }
-
-  // src/stream-state.ts
-  function createStreamTracker(staleMs = 6e4, now = Date.now) {
-    const since = /* @__PURE__ */ new Map();
-    const liveOne = (n) => {
-      const t = since.get(n);
-      if (t === void 0) return false;
-      if (now() - t > staleMs) {
-        since.delete(n);
-        return false;
-      }
-      return true;
-    };
-    return {
-      push(name, streaming, viewportKey) {
-        if (viewportKey === "dc-model") return;
-        if (streaming) since.set(name, now());
-        else since.delete(name);
-      },
-      live(name) {
-        if (name !== void 0) return liveOne(name);
-        for (const n of [...since.keys()]) if (liveOne(n)) return true;
-        return false;
-      }
-    };
-  }
-
-  // src/index.ts
-  function hideRawTemplate() {
-    const s = document.createElement("style");
-    s.textContent = "x-dc{display:none!important}";
-    document.head.appendChild(s);
-  }
-  function loadScript(src, integrity) {
-    return new Promise((resolve2, reject) => {
-      //! nosemgrep: create-script-element
-      const s = document.createElement("script");
-      s.src = src;
-      if (integrity) {
-        s.integrity = integrity;
-        s.crossOrigin = "anonymous";
-      }
-      s.async = false;
-      s.onload = () => resolve2();
-      s.onerror = () => reject(new Error(`failed to load ${src}`));
-      document.head.appendChild(s);
-    });
-  }
-  function loadReactUmd() {
-    const w = window;
-    if (w.React && w.ReactDOM) return Promise.resolve();
-    const react = cdnScriptFor(REACT_URL, REACT_SRI);
-    const reactDom = cdnScriptFor(REACT_DOM_URL, REACT_DOM_SRI);
-    return Promise.all([
-      loadScript(react.src, react.integrity),
-      loadScript(reactDom.src, reactDom.integrity)
-    ]).then(() => void 0);
-  }
-  function init() {
-    const runtime = createRuntime(document);
-    let rootName = "Root";
-    const baseCss = document.createElement("style");
-    baseCss.textContent = BASE_CSS;
-    document.head.prepend(baseCss);
-    const notifyHost = () => {
-      if (window.parent === window) return;
-      const r = runtime.registry.entries[rootName];
-      try {
-        window.parent.postMessage(
-          {
-            type: "__dc_booted",
-            rootName,
-            propsMeta: r && r.propsMeta || null,
-            preview: r && r.preview || null
-          },
-          "*"
-        );
-      } catch {
-      }
-    };
-    const streams = createStreamTracker();
-    const api = {
-      __dcUpdate: (name, kind, content, streaming, viewportKey) => {
-        streams.push(name, streaming, viewportKey);
-        runtime.dcUpdate(name, kind, content, streaming);
-        if (name === rootName && !streaming && kind === "props") notifyHost();
-      },
-      __dcStreaming: (name) => streams.live(name),
-      __dcSetProps: (name, overrides) => runtime.setProps(name, overrides),
-      /** Name of the component currently mounted as the page root — DC tools
-       *  push their template-stream here when targeting "the open page". */
-      __dcRootName: () => rootName,
-      /** Editor bridge — the encoded, `data-dc-tpl`-annotated template source.
-       *  The host editor parses this into its own template DOM so it can map a
-       *  rendered node (carrying the same `data-dc-tpl`) back to the source
-       *  node that emitted it. Returns the encoded form (`sc-camel-*` attrs,
-       *  `<sc-raw-*>`/`<sc-helmet>` tags); the editor decodes on serialize. */
-      __dcAnnotatedTemplate: (name) => runtime.annotatedTemplate(name),
-      /** Editor bridge — the *original* (decoded) template source. */
-      __dcTemplateSource: (name) => runtime.templateSource(name),
-      __dcBoot: () => {
-        rootName = boot(runtime, document) ?? rootName;
-        notifyHost();
-      },
-      __dcRegistry: runtime.registry.entries,
-      getDC: (name) => runtime.getDC(name),
-      // `DCLogic` is the documented base class name; `StreamableLogic` is the
-      // implementation alias kept for any project that already references it.
-      DCLogic: runtime.StreamableLogic,
-      StreamableLogic: runtime.StreamableLogic
-    };
-    Object.assign(window, api);
-    window.__dcContentKeyed = true;
-    if (document.readyState !== "loading") api.__dcBoot();
-    else document.addEventListener("DOMContentLoaded", () => api.__dcBoot());
-  }
-  hideRawTemplate();
-  loadReactUmd().then(init).catch((err) => {
-    console.error("[dc] failed to load React or boot:", err);
-    throw err;
-  });
-})();
-</script>
-</head>
-<body>
-<x-dc>
-<helmet>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjI0MCIgdmlld0JveD0iNjAgMTAwIDM0MCAyNDAiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWw6c3BhY2U9InByZXNlcnZlIiBzdHlsZT0iZmlsbC1ydWxlOmV2ZW5vZGQ7Y2xpcC1ydWxlOmV2ZW5vZGQ7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1taXRlcmxpbWl0OjI7Ij4KICA8ZGVmcz4KICAgIAogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJocGItZ29sZC1hIiBjeD0iMjMxLjU4IiBjeT0iMjQwLjA3IiBmeD0iMjg2LjEyIiBmeT0iMTQzLjQ0IiByPSIxNDMuNzYiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIuMDgiIHN0b3AtY29sb3I9InJnYmEoMjQ3LCAyMTgsIDE1NSwgMSkiPjwvc3RvcD4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJoc2xhKDM4LCA1NiUsIDUyJSwgMS4wMCkiPjwvc3RvcD4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgICA8cmFkaWFsR3JhZGllbnQgaWQ9ImhwYi1nb2xkLWIiIGN4PSIyMjcuODYiIGN5PSIxNjcuMDUiIGZ4PSIyODQuODEiIGZ5PSIxNDEuNzUiIHI9IjE0MC41NSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBvZmZzZXQ9Ii4wOSIgc3RvcC1jb2xvcj0iaHNsYSg0MSwgODUlLCA3OSUsIDEuMDApIj48L3N0b3A+CiAgICAgIDxzdG9wIG9mZnNldD0iLjk1IiBzdG9wLWNvbG9yPSJoc2xhKDM4LCA1NiUsIDUyJSwgMS4wMCkiPjwvc3RvcD4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxnIGlkPSJMYXllcl8xIiBkYXRhLW5hbWU9IkxheWVyIDEiPgogICAgPGc+CiAgICAgIDxwYXRoIGZpbGw9InVybCgjaHBiLWdvbGQtYSkiIGQ9Ik0zMjAuNjUsMjU3LjE3Yy4yOCwxLjIxLjU4LDMuMjUuMTEsNS42Ny0uMTMuNjYtLjUsMi42MS0xLjU1LDQuMTMtMi4yNiwzLjI3LTYuNTYsNC44NC0xMC45OCwzLjU4LTcuNDctMi4xMi0xMS4xOC05LjY2LTEwLjctMTUuOTEuOTgtMTIuNjMsMTAuNS0xOS4xOSwyMS4wMy0yMC43NiwxMi40OC0xLjg2LDIyLjU0LDUuMTEsMjUuNjQsMTcuNjYsMy4zMSwxMy4zOS40LDI1LjQ0LTguODMsMzUuNjctNS43MSw2LjM0LTEzLjA2LDEwLjQ0LTIxLjE2LDEzLjA1LTE0Ljk5LDQuODItMzAuMjYsNS43Ni00NS43MSwyLjc2LTEyLjgzLTIuNDktMjUuMTgtNi40MS0zNi41NC0xMy4wNC0xMC41NS02LjE2LTE5LjczLTE0LjAzLTI4LjE5LTIyLjc5LTEwLjM1LTEwLjcxLTE5LjMtMjIuNTQtMjcuNi0zNC44Ny0uNC0uNi0uOC0xLjItMS40Ni0yLjItLjI4LDIuMy0uNTIsNC4xOC0uNzIsNi4wNy0xLjA0LDkuNjktMS43MSwxOS4zOS0xLjE5LDI5LjE0LjU5LDEwLjg2LDIuNTYsMjEuNTMsNC43MiwzMi4xNiwxLjAzLDUuMDUsMi4xNSwxMC4wOCwzLjIzLDE1LjEyLjAyLjEuMDkuMi4wNy4yOC0uMTMuNDYtLjI3LjkxLS40MSwxLjM3LS4zMi0uMy0uNzktLjU0LS45NC0uOTEtLjc3LTEuODQtMS4zNi0zLjc2LTIuMi01LjU2LTIuODQtNi4wNy01LjUxLTEyLjI1LTguNzItMTguMTItMi4xOS00LTUuMzktNy4zNC05LjQzLTkuNzgtMy40Ni0yLjA5LTYuODEtNC4zNS0xMC4xOC02LjU3LTUuMDctMy4zNC00LjY4LTYuMjQtMi4yMS0xMC40OSwyLjY0LTQuNTQsNS43Ni04Ljc5LDguNDktMTMuMjgsMS4zMy0yLjE4LDIuNDUtNC41NCwzLjMxLTYuOTUsMi4yNS02LjI4LjItMTEuODMtMy42LTE2Ljc4LTQuNTEtNS44OC0xMC44Ny05LjIzLTE3LjY5LTExLjY1LTcuNDktMi42Ni0xNS4yOC0zLjM3LTIzLjE4LTIuNTktLjkxLjA5LTEuODIuNjQtMi42NCwxLjEzLTIuNzgsMS42My02LjE2LDEtOC4wOS0xLjU4LTEuMTktMS42LTEuMTktMy41NS4zNy01LjAzLDEuNS0xLjQyLDMuMTYtMi43OSw0Ljk5LTMuNzQsOC4wNy00LjIxLDE2LjE4LTguMzMsMjQuMzUtMTIuMzUsOS44Mi00Ljg0LDE5LjY1LTkuNjgsMjkuNi0xNC4yNSwxMC4wMy00LjYsMjAuNDktNy45OSwzMS40OS05LjQ0LDYuODMtLjksMTMuNi0uMzgsMjAuMzUuODEsMTAuNiwxLjg3LDIwLjYxLDUuNzQsMzAuNzcsOS4wOCwxNC4zMyw0LjcyLDI4LjY2LDkuNDMsNDMuMzgsMTIuODQsOS4zLDIuMTYsMTguNjgsMy44MywyOC4yLDQuNjksMTUuMDcsMS4zNSwyOC41Ny0yLjMyLDQwLjMxLTEyLjAyLDEuNS0xLjI0LDMuMDItMi40Niw0LjU4LTMuNjMuMy0uMjMuODMtLjE1LDEuMjUtLjIyLS4wNy4zOS0uMDIuODktLjI0LDEuMTUtNi4zNyw3LjUyLTEyLjgyLDE0Ljk5LTIxLjc5LDE5LjU3LTUuOTEsMy4wMS0xMi4yNiw0Ljg1LTE4Ljg4LDUuMjEtNS40Ny4zLTEwLjk4LS4xLTE2LjQ3LS4wNi0xLjg4LjAyLTMuNzcuMzgtNS42My42OS02Ljk2LDEuMTQtMTQuMDIsMS45Mi0yMC44NSwzLjYxLTUuNTgsMS4zOC0xMC45NSwzLjctMTYuMjksNS44OS03LjgzLDMuMjEtMTUuNDYsNi45NC0yMy4zNSw5Ljk4LTEwLjYsNC4wNy0yMS43MSw1Ljc2LTMzLjA2LDUuNy01LjE2LS4wMy0xMC4zMi0uMTctMTUuNDgtLjI2LS41MywwLTEuMDYsMC0xLjk5LDAsMS41OCwyLjEyLDIuOTEsMy45Niw0LjI5LDUuNzcsMTAuNTYsMTMuOTEsMjIuNDMsMjYuNTIsMzYuNjgsMzYuNzUsMTIuNTMsOC45OSwyNi4yLDE1LjQ3LDQxLjM0LDE4LjcsMTEuMDQsMi4zNSwyMi4wNiwzLjAyLDMzLjEtLjA0LDguNjMtMi4zOSwxNi42Mi01LjkyLDIyLjgzLTEyLjYsNS43NC02LjE5LDcuOS0xMy42Miw2LjQzLTIxLjg1LS44Ny00LjktNC4wNi04LjU4LTguMTktMTEuMjgtMi44MS0xLjg0LTUuOTItMi4wNy05LjExLS45Ny0yLjkyLDEuMDEtNS43NSwyLjE2LTguMDEsNC4zNi0zLjc0LDMuNjQtMy40Nyw5LjYxLjU2LDEyLjg5LDEuOTQsMS41NywzLjk2LDEuNzksNS44NS4xOSwxLjg2LTEuNTgsMi41LTMuNTUsNC4wOC00LjUxLjQyLS4yNi43OS0uMzYsMS4xNC0uMjYuNDEuMTIuNjMuNDkuNzIuNjZaTTIxMi42MSwxNzUuNjFjLS4wNC4xNi0uMDguMzMtLjEyLjQ5LDgsOS4yOCw2Ljk1LDIxLjUuNDQsMjkuMzEtNi4wMyw3LjIzLTE3LDkuNzYtMjUuODEsNS43MS01Ljg3LTIuNy05Ljg3LTcuMTMtMTEuOS0xMy4zLTIuMDMtNi4xNC0xLjA5LTEyLjAyLDEuODYtMTguMDEtMTcuNDUsNS42Mi0zMy4xOSwxMy45LTQ4Ljg5LDIzLjAxLjcyLjE5LDEuMDkuMywxLjQ2LjM5LDMuNzcuOTUsNy42LDEuNzQsMTEuMzEsMi44Nyw3LjkxLDIuNDEsMTUuNzYsNS4wMywyMy42NSw3LjUsOS4yOCwyLjkxLDE4LjgyLDQuNTQsMjguNSw1LjI3LDEwLjUzLjc5LDIxLjAxLjUsMzEuNDEtMS41MiwxMC42OS0yLjA4LDIwLjczLTUuOTIsMzAuNDctMTAuNzMsNi43MS0zLjMxLDEzLjM5LTYuNzYsMjAuNjMtOC44Ni40NC0uMTMuODctLjI5LDEuNTYtLjUyLS41Ny0uMjQtLjg3LS4zOC0xLjE4LS41LTcuOTQtMi45My0xNS44OC01Ljg4LTIzLjgzLTguNzktOC41NC0zLjEyLTE3LjAzLTYuNDEtMjUuNjctOS4yMy00LjQ5LTEuNDctOS4yNy0yLjA5LTEzLjkxLTMuMDlaIj48L3BhdGg+CiAgICAgIDxwYXRoIGZpbGw9InVybCgjaHBiLWdvbGQtYikiIGQ9Ik0yMDAuNywxNDEuNzVjMTMuMTYtLjIzLDI1LjgzLDIuNjEsMzguMzcsNi4xMywxMC42OCwzLDIxLjI4LDYuMjgsMzEuOTQsOS4zNiw5LjQ0LDIuNzMsMTguOTMsNS4yNiwyOC43MSw2LjYxLDE0LjIyLDEuOTUsMjcuODIsMCw0MC45LTUuOTMsNi42Mi0zLDEyLjk4LTYuNDUsMTkuMTEtMTAuMzUuNTMtLjM0LDEuMDYtLjcyLDEuNjQtLjk1LjM5LS4xNi44OC0uMDksMS4zMi0uMTMtLjEyLjQyLS4xMy45NS0uMzksMS4yMy0xLjAzLDEuMS0yLjEyLDIuMTQtMy4yMSwzLjE4LTYuMzIsNi4wMS0xMi43MywxMS44OS0yMC4zNSwxNi4zLTguMzMsNC44Mi0xNy4zLDcuNDYtMjYuODYsOC4xNC0xMC42OC43Ni0yMS4wNy0xLjA3LTMxLjI4LTMuOTQtMTIuNDYtMy41LTI0Ljg0LTcuMjgtMzcuMjgtMTAuODQtMTMuMzMtMy44MS0yNi44OC02LjM4LTQwLjc5LTYuODMtMTcuMDYtLjU2LTMzLjEyLDMuMDktNDcuODgsMTEuNjUtOC4yLDQuNzYtMTYuMDMsMTAuMTUtMjQuMDYsMTUuMjEtMy43NCwyLjM2LTcuMzUsNS4wNC0xMS4zNiw2LjgtNS40MSwyLjM4LTExLjAzLDQuNDUtMTcuMDMsNC45NC0yLjM0LjE5LTQuNTctLjI2LTYuNDktMS43LTMtMi4yNi0zLjUtNi4wNS0xLjIzLTkuMDIsMS45OS0yLjYxLDQuNy00LjA0LDcuODMtNC43MiwyLjUyLS41NCw1LjA1LTEuMDUsNy41OS0xLjQ5LDcuNzgtMS4zNSwxNC41NS00Ljk4LDIxLjE5LTkuMDYsNy41OC00LjY1LDE1LjE4LTkuMzYsMjMuMTItMTMuMzYsMTYuNDUtOC4yOCwzMC43NS0xMS4xOSw0Ni41MS0xMS4yM1oiPjwvcGF0aD4KICAgICAgPHBhdGggZmlsbD0iaHNsYSg0MCwgNTMlLCAxMCUsIDEuMDApIiBkPSJNMTgxLjkzLDE5NC40OWMtLjM1LS4zLTMuMjMtMi44MS0zLjA0LTYuODQuMTUtMy4yNSwyLjItNS4yNywyLjY2LTUuNy4zNS0uMzEsMS4xMy0uOTEsMi4yOC0xLjE0LjgtLjE2LDEuNDgtLjA4LDEuOSwwLDEuMDMuMjUsMi42My44NCwzLjgsMi4yOCwyLjEsMi41OSwxLjk3LDYuODktLjU0LDEwLjU2LS4zNi40MS0xLjE5LDEuMjItMi41LDEuNi0yLjMyLjY3LTQuMjUtLjU2LTQuNTYtLjc2WiI+PC9wYXRoPgogICAgPC9nPgogIDwvZz4KPC9zdmc+">
+<title>Horus VPN — приватное и защищённое соединение</title>
+<meta name="description" content="Horus VPN — сервис защищённого соединения: шифрование трафика, скрытие IP-адреса, работа без логов. Windows и Android.">
+<link rel="icon" type="image/svg+xml" href="logo-gold.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
-<style>
-html{scroll-behavior:smooth}
-body{margin:0;background:#0B0512;color:#EFEAF6;-webkit-font-smoothing:antialiased}
-a{color:#F0C46A}
-a:hover{color:#F7DA9B}
-::selection{background:#F0C46A;color:#1A0C26}
-input[type="range"]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer}
-input[type="range"]::-webkit-slider-runnable-track{height:6px;border-radius:99px;background:linear-gradient(90deg,var(--accent,#F0C46A) var(--fill,0%),rgba(255,255,255,.13) var(--fill,0%))}
-input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;border-radius:50%;background:var(--accent,#F0C46A);border:5px solid #160A22;margin-top:-11px;box-shadow:0 2px 14px rgba(0,0,0,.5)}
-input[type="range"]::-moz-range-track{height:6px;border-radius:99px;background:rgba(255,255,255,.13)}
-input[type="range"]::-moz-range-progress{height:6px;border-radius:99px;background:var(--accent,#F0C46A)}
-input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent,#F0C46A);border:5px solid #160A22;box-shadow:0 2px 14px rgba(0,0,0,.5)}
-@keyframes hpb-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
-@keyframes hpb-pulse{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.9;transform:scale(1.07)}}
-/* Панель «Все файлы» живёт внутри шапки, а секции ниже — тоже
-   position:relative;z-index:1 и идут позже в DOM, поэтому перекрывают весь её
-   контекст наложения вместе с панелью. Пока панель открыта, поднимаем шапку
-   целиком — тогда и затемнение ложится поверх меню навигации. */
-#hpb-hero{z-index:1}
-#hpb-hero.is-files-open{z-index:70}
-@media (max-width:680px){
-  #hpb-nav{padding:8px 12px;gap:8px}
-  #hpb-links a{display:none}
-  #hpb-links a#hpb-cta{display:inline-block;margin-left:0;padding:10px 16px;font-size:13.5px}
-}
-:root{--hz-logo:url("logo-gold.svg")}
-/* ═══ Horus app UI, rebuilt from the MAUI XAML ═══════════════════════════════
-   Replaces the screenshot placeholders in the laptop and phone mockups.
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/index.css">
+<script type="module" src="js/index.js"></script>
+</head>
+<body id="top">
 
-   Scaling: each mock is a container, and the replica inside is laid out at the
-   app's own pixel dimensions - 1120x700 for the Windows window, 360x792 for the
-   phone. `font-size: calc(100cqw / <design width>)` makes 1em exactly one design
-   pixel, so every value below is the same number that appears in the XAML and the
-   whole thing scales with the mock at any viewport.
-
-   The one rule that keeps that honest: font-size goes on leaf text elements only.
-   An element that sets its own font-size would reinterpret em for its padding.
-   Boxes carry the spacing, spans carry the type.
-   ────────────────────────────────────────────────────────────────────────── */
-
-.hz-screen{position:absolute;inset:0;overflow:hidden;container-type:inline-size;
-  font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-weight:500;
-  color:#EFEAF6;text-align:left}
-.hz-screen *{box-sizing:border-box;margin:0;padding:0}
-.hz-pc .hz-app{font-size:calc(100cqw / 1120)}
-.hz-ph .hz-app{font-size:calc(100cqw / 360)}
-
-.hz-app{display:flex;width:100%;height:100%;position:relative;isolation:isolate}
-.hz-pc .hz-app{background:radial-gradient(ellipse 500em 380em at calc(100% - 280em) 140em,rgba(92,42,120,.29) 0%,rgba(92,42,120,0) 62%),radial-gradient(ellipse 430em 340em at 150em 50%,rgba(61,24,80,.30) 0%,rgba(61,24,80,0) 60%),#0E0718}
-.hz-ph .hz-app{background:radial-gradient(ellipse 500em 380em at calc(100% - 280em) 140em,rgba(92,42,120,.29) 0%,rgba(92,42,120,0) 62%),radial-gradient(ellipse 430em 340em at 150em 50%,rgba(61,24,80,.30) 0%,rgba(61,24,80,0) 60%),#0B0512;flex-direction:column}
-
-/* The two radial glows RootPage paints behind everything. */
-.hz-layer{position:relative;z-index:1;display:flex;width:100%;height:100%}
-.hz-ph .hz-layer{flex-direction:column}
-
-/* Surfaces and type, straight from App.xaml's palette. */
-.hz-card{background:rgba(255,255,255,.024);border:1px solid rgba(255,255,255,.078);
-  border-radius:18em}
-.hz-dim{color:rgba(239,234,246,.549)}
-.hz-muted{color:rgba(239,234,246,.451)}
-.hz-eyebrow{color:rgba(239,234,246,.451);font-weight:700;letter-spacing:.16em;
-  text-transform:uppercase}
-.hz-gold{color:#F0C46A}
-.hz-goldl{color:#F3D48E}
-.hz-green{color:#7ED9A7}
-
-/* ── Windows sidebar ─────────────────────────────────────────────────────── */
-.hz-side{width:268em;flex:0 0 268em;padding:20em 16em 18em;display:flex;
-  flex-direction:column;gap:6em}
-.hz-brand{display:flex;align-items:center;gap:11em;padding:4em 0 16em 10em}
-.hz-logo{background:var(--hz-logo) center/contain no-repeat;flex:none}
-.hz-brand .hz-logo{width:45em;height:32em}
-.hz-wordmark{font-family:'Unbounded','Manrope',system-ui,sans-serif;font-weight:800;
-  font-size:19em;letter-spacing:.02em}
-.hz-nav{display:flex;flex-direction:column;gap:4em}
-.hz-navrow{display:flex;align-items:center;gap:13em;height:52em;padding:0 15em;
-  border-radius:10em}
-.hz-navrow.is-on{background:rgba(255,255,255,.055)}
-.hz-navrow span{font-weight:700;font-size:15.5em}
-.hz-navrow.is-on span{color:#F0C46A}
-.hz-navrow svg{width:22em;height:22em;flex:none;stroke:rgba(239,234,246,.451);
-  fill:none;stroke-linecap:round;stroke-linejoin:round}
-.hz-navrow.is-on svg{stroke:#F0C46A}
-.hz-acct{margin-top:auto;padding:15em 16em;display:flex;flex-direction:column;gap:9em}
-.hz-acct b{font-weight:600;font-size:15em}
-.hz-acct .hz-sub{font-size:13.5em}
-.hz-renew{height:42em;border-radius:11em;background:rgba(240,196,106,.078);
-  border:1px solid rgba(240,196,106,.302);display:flex;align-items:center;
-  justify-content:center}
-.hz-renew span{color:#F3D48E;font-weight:700;font-size:14.5em}
-
-/* ── Windows content ─────────────────────────────────────────────────────── */
-.hz-main{flex:1;min-width:0;padding:30em 38em 32em 34em;display:flex;gap:26em}
-.hz-connect{flex:1;min-width:0;padding:28em 30em 26em;display:flex;
-  flex-direction:column;align-items:center;justify-content:center;gap:6em}
-.hz-rail{width:336em;flex:0 0 336em;display:flex;flex-direction:column;gap:16em}
-
-.hz-pill{display:inline-flex;align-items:center;gap:9em;padding:9em 17em;
-  border-radius:99em;background:rgba(126,217,167,.078);
-  border:1px solid rgba(126,217,167,.302)}
-.hz-pill i{width:8em;height:8em;border-radius:50%;background:#7ED9A7;flex:none}
-.hz-pill span{font-weight:700;font-size:13.5em;letter-spacing:.04em;color:#7ED9A7}
-
-/* Connect ring: dashed outer ellipse, gold rim, gradient face. */
-.hz-ring{position:relative;width:270em;height:270em;margin:18em 0 8em;
-  display:grid;place-items:center;flex:none}
-.hz-ring::before{content:'';position:absolute;inset:0;border-radius:50%;
-  border:1px dashed rgba(240,196,106,.302)}
-.hz-ring::after{content:'';position:absolute;inset:9em;border-radius:50%;
-  box-shadow:0 0 40em rgba(240,196,106,.22)}
-.hz-disc{width:220em;height:220em;border-radius:50%;border:1px solid #F0C46A;
-  background:linear-gradient(135deg,#2A1540,#160A24);display:flex;
-  flex-direction:column;align-items:center;justify-content:center;gap:12em;
-  box-shadow:0 0 60em rgba(240,196,106,.10) inset}
-.hz-disc .hz-logo{width:96em;height:68em}
-.hz-disc span{font-weight:700;letter-spacing:.19em;color:#F0C46A}
-.hz-pc .hz-disc span{font-size:13.5em}
-.hz-statussub{font-size:15em}
-.hz-timer{font-weight:500;letter-spacing:.03em;color:#F3D48E}
-.hz-pc .hz-timer{font-size:32em;margin-top:2em}
-
-.hz-srv{width:100%;max-width:470em;margin-top:20em;padding:15em 18em;
-  display:flex;align-items:center;gap:12em}
-.hz-code{width:44em;height:44em;border-radius:13em;flex:none;display:grid;
-  place-items:center;background:rgba(240,196,106,.078);
-  border:1px solid rgba(240,196,106,.302)}
-.hz-code span{color:#F3D48E;font-weight:700;font-size:11.5em}
-.hz-srv .hz-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1em}
-.hz-srv .hz-txt b{font-weight:700;font-size:16em}
-.hz-srv .hz-txt span{font-size:13.5em}
-.hz-chev{width:16em;height:16em;flex:none;stroke:rgba(239,234,246,.451);fill:none;
-  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-
-.hz-rail>div{padding:22em}
-.hz-rail .hz-eyebrow{font-size:12.5em}
-.hz-graph{height:54em;display:flex;align-items:center;margin:12em 0}
-.hz-graph i{display:block;width:100%;height:0;
-  border-top:2px dashed rgba(240,196,106,.85)}
-.hz-two{display:flex;gap:12em}
-.hz-two>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2em}
-.hz-two .hz-eyebrow{font-size:11.5em;letter-spacing:.05em}
-.hz-two b{font-weight:700;font-size:19em}
-.hz-ip{display:flex;flex-direction:column;gap:4em}
-.hz-ip .hz-eyebrow{margin-bottom:4em}
-.hz-dots{letter-spacing:.34em;font-size:21em;color:#EFEAF6}
-.hz-ipnote{font-weight:700;font-size:13.5em}
-.hz-rail .hz-fill{flex:1;display:flex;flex-direction:column;gap:6em}
-.hz-srvrow{display:flex;align-items:center;gap:12em;padding:10em 0;min-height:50em}
-.hz-srvrow .hz-code{width:36em;height:36em;border-radius:9em;
-  background:rgba(255,255,255,.071);border:1px solid rgba(255,255,255,.141)}
-.hz-srvrow .hz-code span{font-size:10.5em}
-.hz-srvrow b{flex:1;font-weight:700;font-size:15em}
-.hz-srvrow i{width:6em;height:6em;border-radius:50%;background:#7ED9A7;flex:none}
-
-/* ── Phone ───────────────────────────────────────────────────────────────── */
-.hz-ph .hz-top{display:flex;align-items:center;justify-content:space-between;
-  padding:66em 18em 6em;flex:none}
-.hz-ph .hz-brand{padding:0;gap:9em}
-.hz-ph .hz-logo{width:42em;height:30em}
-.hz-ph .hz-wordmark{font-size:13em;letter-spacing:.08em}
-.hz-ph .hz-topright{display:flex;flex-direction:column;align-items:flex-end;gap:3em}
-.hz-ph .hz-pill{padding:6em 12em;gap:7em}
-.hz-ph .hz-pill i{width:6em;height:6em}
-.hz-ph .hz-pill span{font-size:11em}
-.hz-proto{font-size:9em;letter-spacing:.06em;padding-right:4em}
-.hz-ph .hz-body{flex:1;display:flex;flex-direction:column;gap:14em;
-  padding:8em 18em 22em;min-height:0}
-.hz-ph .hz-ring{width:224em;height:224em;margin:8em auto 0}
-.hz-ph .hz-ring::after{inset:7em;box-shadow:0 0 32em rgba(240,196,106,.22)}
-.hz-ph .hz-disc{width:182em;height:182em;gap:9em}
-.hz-ph .hz-disc .hz-logo{width:74em;height:52em}
-.hz-ph .hz-disc span{font-size:11em;letter-spacing:.18em}
-.hz-ph .hz-mid{display:flex;flex-direction:column;align-items:center;gap:2em}
-.hz-ph .hz-statussub{font-size:13em}
-.hz-ph .hz-timer{font-size:24em}
-.hz-ph .hz-srv{max-width:none;margin:0;padding:12em 14em}
-.hz-ph .hz-code{width:38em;height:38em;border-radius:11em}
-.hz-ph .hz-code span{font-size:10em}
-.hz-ph .hz-srv .hz-txt b{font-size:14em}
-.hz-ph .hz-srv .hz-txt span{font-size:12em}
-.hz-ph .hz-tiles{display:flex;gap:12em}
-.hz-ph .hz-tiles>div{flex:1;min-width:0;padding:13em 14em;display:flex;
-  flex-direction:column;gap:6em}
-.hz-ph .hz-tiles .hz-eyebrow{font-size:10em}
-.hz-ph .hz-tiles b{font-weight:700;font-size:14em}
-.hz-ph .hz-tiles .hz-small{font-size:12em}
-.hz-ph .hz-tiles .hz-dots{font-size:13em;letter-spacing:.3em}
-.hz-tabs{flex:none;height:62em;display:flex;background:rgba(14,7,24,.9);
-  border-top:1px solid rgba(255,255,255,.078)}
-.hz-tab{flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:4em}
-.hz-tab svg{width:22em;height:22em;stroke:rgba(239,234,246,.451);fill:none;
-  stroke-linecap:round;stroke-linejoin:round}
-.hz-tab span{font-weight:700;font-size:10em;color:rgba(239,234,246,.451)}
-.hz-tab.is-on svg{stroke:#F0C46A}
-.hz-tab.is-on span{color:#F0C46A}
-</style>
-</helmet>
-<div id="top" data-screen-label="Horus Ping Booster — лендинг" style="min-height:100vh;position:relative;overflow-x:clip;font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-size:16.5px;line-height:1.6;color:#EFEAF6;background:radial-gradient(900px 620px at 88% -6%, rgba(92,42,120,.30), rgba(11,5,18,0) 62%), radial-gradient(760px 540px at -12% 26%, rgba(61,24,80,.34), rgba(11,5,18,0) 62%), #0B0512">
-<div style="display:contents;--accent:{{ accent }}">
-<div aria-hidden="true" style="position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0">
-  <div ref="{{ orbARef }}" style="position:absolute;top:-140px;right:-100px;width:540px;height:540px;border-radius:50%;background:radial-gradient(circle at 35% 35%, rgba(126,60,165,.5), rgba(11,5,18,0) 70%);filter:blur(70px);animation:hpb-pulse 9s ease-in-out infinite"></div>
-  <div ref="{{ orbBRef }}" style="position:absolute;top:920px;left:-160px;width:640px;height:640px;border-radius:50%;background:radial-gradient(circle at 60% 40%, rgba(240,196,106,.13), rgba(11,5,18,0) 70%);filter:blur(80px)"></div>
-  <div ref="{{ orbCRef }}" style="position:absolute;top:2100px;right:-120px;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle at 40% 40%, rgba(96,44,126,.42), rgba(11,5,18,0) 70%);filter:blur(80px)"></div>
+<div class="orbs" aria-hidden="true">
+  <div class="orb orb--a" id="orb-a"></div>
+  <div class="orb orb--b" id="orb-b"></div>
+  <div class="orb orb--c" id="orb-c"></div>
 </div>
-<nav id="hpb-nav" style="position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:13px clamp(16px,4vw,40px);background:rgba(11,5,18,.72);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.07)">
-  <a href="#top" style="display:flex;align-items:center;gap:11px;text-decoration:none;color:#EFEAF6">
-    <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjI0MCIgdmlld0JveD0iNjAgMTAwIDM0MCAyNDAiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWw6c3BhY2U9InByZXNlcnZlIiBzdHlsZT0iZmlsbC1ydWxlOmV2ZW5vZGQ7Y2xpcC1ydWxlOmV2ZW5vZGQ7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1taXRlcmxpbWl0OjI7Ij4KICA8ZGVmcz4KICAgIAogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJocGItZ29sZC1hIiBjeD0iMjMxLjU4IiBjeT0iMjQwLjA3IiBmeD0iMjg2LjEyIiBmeT0iMTQzLjQ0IiByPSIxNDMuNzYiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIuMDgiIHN0b3AtY29sb3I9InJnYmEoMjQ3LCAyMTgsIDE1NSwgMSkiPjwvc3RvcD4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJoc2xhKDM4LCA1NiUsIDUyJSwgMS4wMCkiPjwvc3RvcD4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgICA8cmFkaWFsR3JhZGllbnQgaWQ9ImhwYi1nb2xkLWIiIGN4PSIyMjcuODYiIGN5PSIxNjcuMDUiIGZ4PSIyODQuODEiIGZ5PSIxNDEuNzUiIHI9IjE0MC41NSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBvZmZzZXQ9Ii4wOSIgc3RvcC1jb2xvcj0iaHNsYSg0MSwgODUlLCA3OSUsIDEuMDApIj48L3N0b3A+CiAgICAgIDxzdG9wIG9mZnNldD0iLjk1IiBzdG9wLWNvbG9yPSJoc2xhKDM4LCA1NiUsIDUyJSwgMS4wMCkiPjwvc3RvcD4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxnIGlkPSJMYXllcl8xIiBkYXRhLW5hbWU9IkxheWVyIDEiPgogICAgPGc+CiAgICAgIDxwYXRoIGZpbGw9InVybCgjaHBiLWdvbGQtYSkiIGQ9Ik0zMjAuNjUsMjU3LjE3Yy4yOCwxLjIxLjU4LDMuMjUuMTEsNS42Ny0uMTMuNjYtLjUsMi42MS0xLjU1LDQuMTMtMi4yNiwzLjI3LTYuNTYsNC44NC0xMC45OCwzLjU4LTcuNDctMi4xMi0xMS4xOC05LjY2LTEwLjctMTUuOTEuOTgtMTIuNjMsMTAuNS0xOS4xOSwyMS4wMy0yMC43NiwxMi40OC0xLjg2LDIyLjU0LDUuMTEsMjUuNjQsMTcuNjYsMy4zMSwxMy4zOS40LDI1LjQ0LTguODMsMzUuNjctNS43MSw2LjM0LTEzLjA2LDEwLjQ0LTIxLjE2LDEzLjA1LTE0Ljk5LDQuODItMzAuMjYsNS43Ni00NS43MSwyLjc2LTEyLjgzLTIuNDktMjUuMTgtNi40MS0zNi41NC0xMy4wNC0xMC41NS02LjE2LTE5LjczLTE0LjAzLTI4LjE5LTIyLjc5LTEwLjM1LTEwLjcxLTE5LjMtMjIuNTQtMjcuNi0zNC44Ny0uNC0uNi0uOC0xLjItMS40Ni0yLjItLjI4LDIuMy0uNTIsNC4xOC0uNzIsNi4wNy0xLjA0LDkuNjktMS43MSwxOS4zOS0xLjE5LDI5LjE0LjU5LDEwLjg2LDIuNTYsMjEuNTMsNC43MiwzMi4xNiwxLjAzLDUuMDUsMi4xNSwxMC4wOCwzLjIzLDE1LjEyLjAyLjEuMDkuMi4wNy4yOC0uMTMuNDYtLjI3LjkxLS40MSwxLjM3LS4zMi0uMy0uNzktLjU0LS45NC0uOTEtLjc3LTEuODQtMS4zNi0zLjc2LTIuMi01LjU2LTIuODQtNi4wNy01LjUxLTEyLjI1LTguNzItMTguMTItMi4xOS00LTUuMzktNy4zNC05LjQzLTkuNzgtMy40Ni0yLjA5LTYuODEtNC4zNS0xMC4xOC02LjU3LTUuMDctMy4zNC00LjY4LTYuMjQtMi4yMS0xMC40OSwyLjY0LTQuNTQsNS43Ni04Ljc5LDguNDktMTMuMjgsMS4zMy0yLjE4LDIuNDUtNC41NCwzLjMxLTYuOTUsMi4yNS02LjI4LjItMTEuODMtMy42LTE2Ljc4LTQuNTEtNS44OC0xMC44Ny05LjIzLTE3LjY5LTExLjY1LTcuNDktMi42Ni0xNS4yOC0zLjM3LTIzLjE4LTIuNTktLjkxLjA5LTEuODIuNjQtMi42NCwxLjEzLTIuNzgsMS42My02LjE2LDEtOC4wOS0xLjU4LTEuMTktMS42LTEuMTktMy41NS4zNy01LjAzLDEuNS0xLjQyLDMuMTYtMi43OSw0Ljk5LTMuNzQsOC4wNy00LjIxLDE2LjE4LTguMzMsMjQuMzUtMTIuMzUsOS44Mi00Ljg0LDE5LjY1LTkuNjgsMjkuNi0xNC4yNSwxMC4wMy00LjYsMjAuNDktNy45OSwzMS40OS05LjQ0LDYuODMtLjksMTMuNi0uMzgsMjAuMzUuODEsMTAuNiwxLjg3LDIwLjYxLDUuNzQsMzAuNzcsOS4wOCwxNC4zMyw0LjcyLDI4LjY2LDkuNDMsNDMuMzgsMTIuODQsOS4zLDIuMTYsMTguNjgsMy44MywyOC4yLDQuNjksMTUuMDcsMS4zNSwyOC41Ny0yLjMyLDQwLjMxLTEyLjAyLDEuNS0xLjI0LDMuMDItMi40Niw0LjU4LTMuNjMuMy0uMjMuODMtLjE1LDEuMjUtLjIyLS4wNy4zOS0uMDIuODktLjI0LDEuMTUtNi4zNyw3LjUyLTEyLjgyLDE0Ljk5LTIxLjc5LDE5LjU3LTUuOTEsMy4wMS0xMi4yNiw0Ljg1LTE4Ljg4LDUuMjEtNS40Ny4zLTEwLjk4LS4xLTE2LjQ3LS4wNi0xLjg4LjAyLTMuNzcuMzgtNS42My42OS02Ljk2LDEuMTQtMTQuMDIsMS45Mi0yMC44NSwzLjYxLTUuNTgsMS4zOC0xMC45NSwzLjctMTYuMjksNS44OS03LjgzLDMuMjEtMTUuNDYsNi45NC0yMy4zNSw5Ljk4LTEwLjYsNC4wNy0yMS43MSw1Ljc2LTMzLjA2LDUuNy01LjE2LS4wMy0xMC4zMi0uMTctMTUuNDgtLjI2LS41MywwLTEuMDYsMC0xLjk5LDAsMS41OCwyLjEyLDIuOTEsMy45Niw0LjI5LDUuNzcsMTAuNTYsMTMuOTEsMjIuNDMsMjYuNTIsMzYuNjgsMzYuNzUsMTIuNTMsOC45OSwyNi4yLDE1LjQ3LDQxLjM0LDE4LjcsMTEuMDQsMi4zNSwyMi4wNiwzLjAyLDMzLjEtLjA0LDguNjMtMi4zOSwxNi42Mi01LjkyLDIyLjgzLTEyLjYsNS43NC02LjE5LDcuOS0xMy42Miw2LjQzLTIxLjg1LS44Ny00LjktNC4wNi04LjU4LTguMTktMTEuMjgtMi44MS0xLjg0LTUuOTItMi4wNy05LjExLS45Ny0yLjkyLDEuMDEtNS43NSwyLjE2LTguMDEsNC4zNi0zLjc0LDMuNjQtMy40Nyw5LjYxLjU2LDEyLjg5LDEuOTQsMS41NywzLjk2LDEuNzksNS44NS4xOSwxLjg2LTEuNTgsMi41LTMuNTUsNC4wOC00LjUxLjQyLS4yNi43OS0uMzYsMS4xNC0uMjYuNDEuMTIuNjMuNDkuNzIuNjZaTTIxMi42MSwxNzUuNjFjLS4wNC4xNi0uMDguMzMtLjEyLjQ5LDgsOS4yOCw2Ljk1LDIxLjUuNDQsMjkuMzEtNi4wMyw3LjIzLTE3LDkuNzYtMjUuODEsNS43MS01Ljg3LTIuNy05Ljg3LTcuMTMtMTEuOS0xMy4zLTIuMDMtNi4xNC0xLjA5LTEyLjAyLDEuODYtMTguMDEtMTcuNDUsNS42Mi0zMy4xOSwxMy45LTQ4Ljg5LDIzLjAxLjcyLjE5LDEuMDkuMywxLjQ2LjM5LDMuNzcuOTUsNy42LDEuNzQsMTEuMzEsMi44Nyw3LjkxLDIuNDEsMTUuNzYsNS4wMywyMy42NSw3LjUsOS4yOCwyLjkxLDE4LjgyLDQuNTQsMjguNSw1LjI3LDEwLjUzLjc5LDIxLjAxLjUsMzEuNDEtMS41MiwxMC42OS0yLjA4LDIwLjczLTUuOTIsMzAuNDctMTAuNzMsNi43MS0zLjMxLDEzLjM5LTYuNzYsMjAuNjMtOC44Ni40NC0uMTMuODctLjI5LDEuNTYtLjUyLS41Ny0uMjQtLjg3LS4zOC0xLjE4LS41LTcuOTQtMi45My0xNS44OC01Ljg4LTIzLjgzLTguNzktOC41NC0zLjEyLTE3LjAzLTYuNDEtMjUuNjctOS4yMy00LjQ5LTEuNDctOS4yNy0yLjA5LTEzLjkxLTMuMDlaIj48L3BhdGg+CiAgICAgIDxwYXRoIGZpbGw9InVybCgjaHBiLWdvbGQtYikiIGQ9Ik0yMDAuNywxNDEuNzVjMTMuMTYtLjIzLDI1LjgzLDIuNjEsMzguMzcsNi4xMywxMC42OCwzLDIxLjI4LDYuMjgsMzEuOTQsOS4zNiw5LjQ0LDIuNzMsMTguOTMsNS4yNiwyOC43MSw2LjYxLDE0LjIyLDEuOTUsMjcuODIsMCw0MC45LTUuOTMsNi42Mi0zLDEyLjk4LTYuNDUsMTkuMTEtMTAuMzUuNTMtLjM0LDEuMDYtLjcyLDEuNjQtLjk1LjM5LS4xNi44OC0uMDksMS4zMi0uMTMtLjEyLjQyLS4xMy45NS0uMzksMS4yMy0xLjAzLDEuMS0yLjEyLDIuMTQtMy4yMSwzLjE4LTYuMzIsNi4wMS0xMi43MywxMS44OS0yMC4zNSwxNi4zLTguMzMsNC44Mi0xNy4zLDcuNDYtMjYuODYsOC4xNC0xMC42OC43Ni0yMS4wNy0xLjA3LTMxLjI4LTMuOTQtMTIuNDYtMy41LTI0Ljg0LTcuMjgtMzcuMjgtMTAuODQtMTMuMzMtMy44MS0yNi44OC02LjM4LTQwLjc5LTYuODMtMTcuMDYtLjU2LTMzLjEyLDMuMDktNDcuODgsMTEuNjUtOC4yLDQuNzYtMTYuMDMsMTAuMTUtMjQuMDYsMTUuMjEtMy43NCwyLjM2LTcuMzUsNS4wNC0xMS4zNiw2LjgtNS40MSwyLjM4LTExLjAzLDQuNDUtMTcuMDMsNC45NC0yLjM0LjE5LTQuNTctLjI2LTYuNDktMS43LTMtMi4yNi0zLjUtNi4wNS0xLjIzLTkuMDIsMS45OS0yLjYxLDQuNy00LjA0LDcuODMtNC43MiwyLjUyLS41NCw1LjA1LTEuMDUsNy41OS0xLjQ5LDcuNzgtMS4zNSwxNC41NS00Ljk4LDIxLjE5LTkuMDYsNy41OC00LjY1LDE1LjE4LTkuMzYsMjMuMTItMTMuMzYsMTYuNDUtOC4yOCwzMC43NS0xMS4xOSw0Ni41MS0xMS4yM1oiPjwvcGF0aD4KICAgICAgPHBhdGggZmlsbD0iaHNsYSg0MCwgNTMlLCAxMCUsIDEuMDApIiBkPSJNMTgxLjkzLDE5NC40OWMtLjM1LS4zLTMuMjMtMi44MS0zLjA0LTYuODQuMTUtMy4yNSwyLjItNS4yNywyLjY2LTUuNy4zNS0uMzEsMS4xMy0uOTEsMi4yOC0xLjE0LjgtLjE2LDEuNDgtLjA4LDEuOSwwLDEuMDMuMjUsMi42My44NCwzLjgsMi4yOCwyLjEsMi41OSwxLjk3LDYuODktLjU0LDEwLjU2LS4zNi40MS0xLjE5LDEuMjItMi41LDEuNi0yLjMyLjY3LTQuMjUtLjU2LTQuNTYtLjc2WiI+PC9wYXRoPgogICAgPC9nPgogIDwvZz4KPC9zdmc+" alt="Horus" style="height:38px;width:auto;display:block;filter:drop-shadow(0 2px 10px rgba(240,196,106,.35))">
-    <span style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:15.5px;letter-spacing:.05em">HORUS</span>
+
+<nav class="nav">
+  <a class="brand" href="#top">
+    <img class="brand__logo" src="logo-gold.svg" alt="Horus">
+    <span class="brand__word">HORUS</span>
   </a>
-  <div id="hpb-links" style="display:flex;gap:2px;flex-wrap:nowrap;margin-left:auto;align-items:center">
-    <a href="#features" style="color:rgba(239,234,246,.75);text-decoration:none;font-size:14.5px;font-weight:600;padding:9px 12px;border-radius:9px" style-hover="color:#FFFFFF;background:rgba(255,255,255,.06)">Возможности</a>
-    <a href="#pricing" style="color:rgba(239,234,246,.75);text-decoration:none;font-size:14.5px;font-weight:600;padding:9px 12px;border-radius:9px" style-hover="color:#FFFFFF;background:rgba(255,255,255,.06)">Цена</a>
-    <a href="#contacts" style="color:rgba(239,234,246,.75);text-decoration:none;font-size:14.5px;font-weight:600;padding:9px 12px;border-radius:9px" style-hover="color:#FFFFFF;background:rgba(255,255,255,.06)">Контакты</a>
-    <a id="hpb-cta" href="#top" style="margin-left:10px;background:var(--accent,#F0C46A);color:#1A0C26;font-weight:800;font-size:14.5px;padding:11px 18px;border-radius:11px;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.45);transition:transform .2s ease" style-hover="transform:translateY(-1px);color:#1A0C26">Скачать</a>
+  <div class="nav__links">
+    <a class="nav__link" href="#features">Возможности</a>
+    <a class="nav__link" href="#pricing">Цена</a>
+    <a class="nav__link" href="#docs">Документы</a>
+    <a class="nav__link" href="#contacts">Контакты</a>
+    <a class="nav__link" href="cabinet.html">Кабинет</a>
+    <a class="nav__link btn btn--nav" href="#top">Скачать</a>
   </div>
 </nav>
-<header id="hpb-hero" class="{{ heroClass }}" data-screen-label="Главный экран" style="position:relative;max-width:1200px;margin:0 auto;padding:clamp(36px,6vh,70px) clamp(18px,4vw,40px) clamp(70px,11vh,120px);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));gap:clamp(28px,5vw,56px);align-items:center;min-height:86vh">
-  <div>
-    <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(240,196,106,.08);border:1px solid rgba(240,196,106,.28);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:700;color:#F3D48E">
-      <span style="width:7px;height:7px;border-radius:50%;background:var(--accent,#F0C46A);animation:hpb-pulse 2.4s ease-in-out infinite"></span>
-      Работает в России · обходит «белые списки»
-    </div>
-    <h1 style="font-family:'Unbounded',sans-serif;font-weight:800;font-size:clamp(33px,5.1vw,60px);line-height:1.08;letter-spacing:-.01em;margin:22px 0 18px">Весь интернет.<br><span style="background:linear-gradient(100deg,var(--accent,#F0C46A) 20%,#C7A6F5 90%);-webkit-background-clip:text;background-clip:text;color:transparent">Без блокировок.</span></h1>
-    <p style="color:rgba(239,234,246,.72);font-size:clamp(16px,1.35vw,18.5px);max-width:54ch;margin:0 0 30px;text-wrap:pretty">Horus Ping Booster возвращает доступ к любимым сайтам и сервисам: обходит блокировки, замедления и «белые списки». Одна кнопка — и через 10 секунд всё снова работает.</p>
-    <div style="position:relative;margin-bottom:18px">
-      <div style="display:flex;flex-wrap:wrap;gap:12px">
-        <sc-for list="{{ primaryButtons }}" as="btn" hint-placeholder-count="1">
-          <a href="{{ btn.href }}" style="display:flex;flex-direction:column;justify-content:center;min-height:58px;padding:10px 26px;border-radius:14px;background:var(--accent,#F0C46A);text-decoration:none;box-shadow:0 14px 40px rgba(240,196,106,.22), inset 0 1px 0 rgba(255,255,255,.5);transition:transform .25s ease,box-shadow .25s ease" style-hover="transform:translateY(-3px);box-shadow:0 20px 50px rgba(240,196,106,.32), inset 0 1px 0 rgba(255,255,255,.5)">
-            <span style="font-weight:800;font-size:15.5px;color:#1A0C26">{{ btn.label }}</span>
-            <span style="font-size:12px;font-weight:700;color:rgba(26,12,38,.62)">{{ btn.sub }}</span>
-          </a>
-        </sc-for>
-        <button onClick="{{ toggleFiles }}" aria-haspopup="dialog" aria-expanded="{{ filesOpen }}" style="display:flex;flex-direction:column;justify-content:center;min-height:58px;padding:10px 22px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.16);cursor:pointer;text-align:left;font-family:'Manrope',sans-serif;transition:border-color .25s ease,background .25s ease" style-hover="border-color:rgba(240,196,106,.55);background:rgba(240,196,106,.07)">
-          <span style="font-weight:800;font-size:15.5px;color:#EFEAF6">Все файлы</span>
-          <span style="font-size:12px;font-weight:700;color:rgba(239,234,246,.5)">{{ allFilesSub }}</span>
+
+<header class="hero" id="hero">
+  <div class="hero__copy">
+    <div class="pill"><span class="pill__dot"></span>Шифрование трафика · политика без логов</div>
+    <h1 class="h1">Ваше соединение.<br><span class="h1__grad">Только ваше.</span></h1>
+    <p class="lead hero__lead">Horus VPN шифрует трафик и скрывает ваш IP-адрес: в кафе, отеле и любой открытой сети данные остаются приватными. Одна кнопка — и соединение защищено.</p>
+
+    <div class="hero__actions">
+      <div class="hero__buttons">
+        <a class="btn btn--hero" id="primary-download" href="/download/Horus-win-x64.msi" hidden>
+          <b id="primary-label">Скачать приложение</b>
+          <span id="primary-sub"></span>
+        </a>
+        <button class="btn btn--ghost" id="files-toggle" type="button" aria-haspopup="dialog" aria-expanded="false">
+          <b>Все файлы</b>
+          <span>Windows и Android</span>
         </button>
       </div>
-      <sc-if value="{{ filesOpen }}" hint-placeholder-val="{{ false }}">
-        <div onClick="{{ closeFiles }}" aria-hidden="true" style="position:fixed;inset:0;z-index:60;background:rgba(6,2,12,.55)"></div>
-        <div role="dialog" aria-label="Все файлы для скачивания" style="position:absolute;z-index:61;left:0;top:calc(100% + 10px);width:min(440px,calc(100vw - 36px));background:#170C25;border:1px solid rgba(240,196,106,.28);border-radius:18px;padding:16px 16px 12px;box-shadow:0 30px 70px rgba(0,0,0,.6)">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
-            <span style="font-family:'Unbounded',sans-serif;font-size:14.5px;font-weight:600">Все файлы</span>
-            <span style="font-size:12px;font-weight:700;color:rgba(239,234,246,.5)">{{ versionLabel }}</span>
-          </div>
-          <sc-for list="{{ fileGroups }}" as="grp" hint-placeholder-count="2">
-            <div style="margin-top:12px">
-              <div style="font-size:11px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.4);margin-bottom:4px">{{ grp.title }}</div>
-              <sc-for list="{{ grp.items }}" as="f" hint-placeholder-count="2">
-                <a href="{{ f.href }}" onClick="{{ closeFiles }}" style="display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:11px;text-decoration:none;transition:background .2s ease" style-hover="background:rgba(240,196,106,.09)">
-                  <span style="flex:1;min-width:0">
-                    <span style="display:block;font-size:14px;font-weight:700;color:#EFEAF6">{{ f.name }}</span>
-                    <span style="display:block;font-size:12px;color:rgba(239,234,246,.5)">{{ f.hint }}</span>
-                  </span>
-                  <span style="font-size:12px;font-weight:700;color:#F3D48E;white-space:nowrap">{{ f.size }}</span>
-                </a>
-              </sc-for>
-            </div>
-          </sc-for>
-          <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:rgba(239,234,246,.45)">Файлы отдаёт наш сервер — GitHub открывать не нужно.</div>
+
+      <div class="files-backdrop" id="files-backdrop" aria-hidden="true" hidden></div>
+      <div class="files" id="files-panel" role="dialog" aria-label="Все файлы для скачивания" hidden>
+        <div class="files__head">
+          <span class="files__title">Все файлы</span>
+          <span class="files__ver" id="files-version"></span>
+          <button class="files__close" id="files-close" type="button" aria-label="Закрыть">×</button>
         </div>
-      </sc-if>
+        <div class="files__body" id="files-groups"></div>
+      </div>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:28px;color:rgba(239,234,246,.55);font-size:13.5px;font-weight:600">
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Без логов</span>
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Kill Switch</span>
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Windows · Android</span>
-    </div>
+
+    <p class="hero__browser">Не хотите ставить приложение или у вас iPhone? <a href="connect.html">Подключитесь из браузера</a></p>
+
+    <ul class="bullets hero__bullets">
+      <li>Без логов</li>
+      <li>Kill Switch</li>
+      <li>Windows · Android</li>
+    </ul>
   </div>
-  <div style="position:relative;perspective:1400px;min-height:clamp(420px,52vh,560px);display:grid;place-items:center">
-    <div aria-hidden="true" style="position:absolute;width:72%;height:58%;border-radius:50%;background:radial-gradient(circle, rgba(126,60,165,.45), rgba(11,5,18,0) 70%);filter:blur(55px);animation:hpb-pulse 7s ease-in-out infinite"></div>
-    <div aria-hidden="true" style="position:absolute;width:min(500px,88%);aspect-ratio:1/1;border:1px dashed rgba(240,196,106,.2);border-radius:50%"></div>
-    <div aria-hidden="true" style="position:absolute;width:min(380px,66%);aspect-ratio:1/1;border:1px solid rgba(255,255,255,.06);border-radius:50%"></div>
-    <div ref="{{ deviceRef }}" style="position:relative;transform-style:preserve-3d;transform:rotateY(-22deg) rotateX(7deg);will-change:transform">
-      <div style="animation:hpb-float 7s ease-in-out infinite;transform-style:preserve-3d">
-        <sc-if value="{{ showLaptop }}" hint-placeholder-val="{{ true }}">
-          <div style="width:clamp(320px,36vw,540px);position:relative;transform-style:preserve-3d">
-            <div style="background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.14);border-radius:18px 18px 5px 5px;padding:12px 12px 14px;box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 70px rgba(122,58,160,.25)">
-              <div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.25);margin:0 auto 9px"></div>
-              <div style="aspect-ratio:16/10;border-radius:9px;overflow:hidden;background:#160B24;position:relative">
-                <div class="hz-screen hz-pc" aria-label="Horus для Windows"><div class="hz-app"><div class="hz-layer"><aside class="hz-side"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><nav class="hz-nav"><div class="hz-navrow is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.5 5.6a8 8 0 1 0 9 0"/></svg><span>Главная</span></div><div class="hz-navrow"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"/></svg><span>Серверы</span></div><div class="hz-navrow"><svg viewBox="0 0 24 24"><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.2"/><path d="M4 17h5"/><path d="M15 17h5"/><circle cx="12" cy="17" r="2.2"/></svg><span>Настройки</span></div></nav><div class="hz-acct hz-card"><b>demo@horus.vpn</b><span class="hz-sub hz-goldl">Подписка · до 14 сентября</span><div class="hz-renew"><span>Продлить подписку</span></div></div></aside><main class="hz-main"><section class="hz-connect hz-card"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></section><aside class="hz-rail"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><div class="hz-graph"><i></i></div><div class="hz-two"><div><span class="hz-eyebrow">&#8595; Загрузка</span><b>24 Мбит/с</b></div><div><span class="hz-eyebrow">&#8593; Отдача</span><b>8 Мбит/с</b></div></div></div><div class="hz-card hz-ip"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;</span><span class="hz-ipnote hz-green">Ваш IP скрыт</span></div><div class="hz-card hz-fill"><span class="hz-eyebrow">Рекомендуемые</span><div class="hz-srvrow"><div class="hz-code"><span>CH</span></div><b>Zurich</b><i></i></div></div></aside></main></div></div></div>
-                <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.08),rgba(255,255,255,0) 42%);pointer-events:none"></div>
-              </div>
-            </div>
-            <div style="position:absolute;left:0;right:0;top:100%;aspect-ratio:488/171;transform-origin:50% 0;transform:rotateX(78deg);background:linear-gradient(180deg,#160A24 0%,#2E1745 40%,#1C0E2E 100%);border:1px solid rgba(255,255,255,.12);border-top:none;border-radius:3px 3px 18px 18px;box-shadow:0 10px 30px rgba(0,0,0,.45)"></div>
-          </div>
-        </sc-if>
-        <sc-if value="{{ showHeroPhone }}" hint-placeholder-val="{{ false }}">
-          <div style="width:clamp(220px,56vw,268px);aspect-ratio:9/19;background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.16);border-radius:44px;padding:10px;box-shadow:0 40px 90px rgba(0,0,0,.55), 0 0 70px rgba(122,58,160,.3)">
-            <div style="height:100%;border-radius:34px;overflow:hidden;background:#160B24;position:relative">
-              <div class="hz-screen hz-ph" aria-label="Horus для Android"><div class="hz-app"><div class="hz-layer"><div class="hz-top"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><div class="hz-topright"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><span class="hz-proto hz-muted">Hysteria2</span></div></div><div class="hz-body"><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><div class="hz-mid"><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span></div><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div><div class="hz-tiles"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><b>&#8595; 24 Мбит/с</b><span class="hz-small hz-dim">&#8593; 8 Мбит/с</span></div><div class="hz-card"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;</span><span class="hz-small hz-green" style="font-weight:700">Ваш IP скрыт</span></div></div></div><div class="hz-tabs"><div class="hz-tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.5 5.6a8 8 0 1 0 9 0"/></svg><span>Главная</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"/></svg><span>Серверы</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.2"/><path d="M4 17h5"/><path d="M15 17h5"/><circle cx="12" cy="17" r="2.2"/></svg><span>Настройки</span></div></div></div></div></div>
-              <div style="position:absolute;top:10px;left:50%;transform:translateX(-50%);width:84px;height:22px;border-radius:99px;background:#0B0512"></div>
-              <div style="position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.07),rgba(255,255,255,0) 45%);pointer-events:none"></div>
+
+  <div class="stage">
+    <div class="stage__glow" aria-hidden="true"></div>
+    <div class="stage__ring stage__ring--dashed" aria-hidden="true"></div>
+    <div class="stage__ring stage__ring--solid" aria-hidden="true"></div>
+
+    <div class="stage__device" id="device">
+      <div class="stage__float">
+        <div class="laptop" id="mock-laptop">
+          <div class="laptop__lid">
+            <div class="laptop__cam"></div>
+            <div class="laptop__screen">
+              <div class="hz-screen hz-pc" aria-label="Horus для Windows"><div class="hz-app"><div class="hz-layer"><aside class="hz-side"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><nav class="hz-nav"><div class="hz-navrow is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"></path><path d="M7.5 5.6a8 8 0 1 0 9 0"></path></svg><span>Главная</span></div><div class="hz-navrow"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"></path></svg><span>Серверы</span></div><div class="hz-navrow"><svg viewBox="0 0 24 24"><path d="M4 7h9"></path><path d="M19 7h1"></path><circle cx="16" cy="7" r="2.2"></circle><path d="M4 17h5"></path><path d="M15 17h5"></path><circle cx="12" cy="17" r="2.2"></circle></svg><span>Настройки</span></div></nav><div class="hz-acct hz-card"><b>demo@horus.vpn</b><span class="hz-sub hz-goldl">Подписка · до 14 сентября</span><div class="hz-renew"><span>Продлить подписку</span></div></div></aside><main class="hz-main"><section class="hz-connect hz-card"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></div></section><aside class="hz-rail"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><div class="hz-graph"><i></i></div><div class="hz-two"><div><span class="hz-eyebrow">↓ Загрузка</span><b>24 Мбит/с</b></div><div><span class="hz-eyebrow">↑ Отдача</span><b>8 Мбит/с</b></div></div></div><div class="hz-card hz-ip"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">•&nbsp;•&nbsp;•&nbsp;•&nbsp;•&nbsp;•&nbsp;•&nbsp;•&nbsp;•&nbsp;•</span><span class="hz-ipnote hz-green">Ваш IP скрыт</span></div><div class="hz-card hz-fill"><span class="hz-eyebrow">Рекомендуемые</span><div class="hz-srvrow"><div class="hz-code"><span>CH</span></div><b>Zurich</b><i></i></div></div></aside></main></div></div></div>
+              <div class="gloss"></div>
             </div>
           </div>
-        </sc-if>
-      </div>
-    </div>
-    <sc-if value="{{ showLaptop }}" hint-placeholder-val="{{ true }}">
-      <div ref="{{ sidePhoneRef }}" style="position:absolute;right:clamp(-8px,1vw,24px);bottom:-14px;opacity:0;transform:translate3d(90px,50px,0) rotate(8deg);will-change:transform,opacity">
-        <div style="width:148px;aspect-ratio:9/19;background:linear-gradient(165deg,#241335,#120821);border:1px solid rgba(255,255,255,.16);border-radius:28px;padding:7px;box-shadow:0 30px 60px rgba(0,0,0,.6), 0 0 40px rgba(122,58,160,.3)">
-          <div style="height:100%;border-radius:22px;overflow:hidden;background:#160B24;position:relative">
-            <div class="hz-screen hz-ph" aria-label="Horus для Android"><div class="hz-app"><div class="hz-layer"><div class="hz-top"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><div class="hz-topright"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><span class="hz-proto hz-muted">Hysteria2</span></div></div><div class="hz-body"><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><div class="hz-mid"><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span></div><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div><div class="hz-tiles"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><b>&#8595; 24 Мбит/с</b><span class="hz-small hz-dim">&#8593; 8 Мбит/с</span></div><div class="hz-card"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;&nbsp;&bull;</span><span class="hz-small hz-green" style="font-weight:700">Ваш IP скрыт</span></div></div></div><div class="hz-tabs"><div class="hz-tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.5 5.6a8 8 0 1 0 9 0"/></svg><span>Главная</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"/></svg><span>Серверы</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.2"/><path d="M4 17h5"/><path d="M15 17h5"/><circle cx="12" cy="17" r="2.2"/></svg><span>Настройки</span></div></div></div></div></div>
-            <div style="position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 52px; height: 14px; border-radius: 99px; background-color: #190B2A"></div>
+          <div class="laptop__base"></div>
+        </div>
+
+        <div class="phone" id="mock-phone" hidden>
+          <div class="phone__screen">
+            <div class="hz-screen hz-ph" aria-label="Horus для Android"><div class="hz-app"><div class="hz-layer"><div class="hz-top"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><div class="hz-topright"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><span class="hz-proto hz-muted">Hysteria2</span></div></div><div class="hz-body"><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><div class="hz-mid"><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span></div><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></div><div class="hz-tiles"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><b>↓ 24 Мбит/с</b><span class="hz-small hz-dim">↑ 8 Мбит/с</span></div><div class="hz-card"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">•&nbsp;•&nbsp;•&nbsp;•&nbsp;•&nbsp;•</span><span class="hz-small hz-green" style="font-weight:700">Ваш IP скрыт</span></div></div></div><div class="hz-tabs"><div class="hz-tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"></path><path d="M7.5 5.6a8 8 0 1 0 9 0"></path></svg><span>Главная</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"></path></svg><span>Серверы</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><path d="M4 7h9"></path><path d="M19 7h1"></path><circle cx="16" cy="7" r="2.2"></circle><path d="M4 17h5"></path><path d="M15 17h5"></path><circle cx="12" cy="17" r="2.2"></circle></svg><span>Настройки</span></div></div></div></div></div>
+            <div class="phone__notch"></div>
+            <div class="gloss"></div>
           </div>
         </div>
       </div>
-    </sc-if>
-    
+    </div>
+
+    <div class="side-phone" id="side-phone">
+      <div class="phone">
+        <div class="phone__screen">
+          <div class="hz-screen hz-ph" aria-label="Horus для Android"><div class="hz-app"><div class="hz-layer"><div class="hz-top"><div class="hz-brand"><i class="hz-logo"></i><span class="hz-wordmark">HORUS</span></div><div class="hz-topright"><div class="hz-pill"><i></i><span>ЗАЩИЩЕНО</span></div><span class="hz-proto hz-muted">Hysteria2</span></div></div><div class="hz-body"><div class="hz-ring"><div class="hz-disc"><i class="hz-logo"></i><span>ОТКЛЮЧИТЬ</span></div></div><div class="hz-mid"><span class="hz-statussub hz-dim">Ваш трафик зашифрован</span><span class="hz-timer">00:34</span></div><div class="hz-srv hz-card"><div class="hz-code"><span>AUTO</span></div><div class="hz-txt"><b>Автовыбор</b><span class="hz-dim">Zurich · оптимальный сервер</span></div><svg class="hz-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></div><div class="hz-tiles"><div class="hz-card"><span class="hz-eyebrow">Скорость</span><b>↓ 24 Мбит/с</b><span class="hz-small hz-dim">↑ 8 Мбит/с</span></div><div class="hz-card"><span class="hz-eyebrow">IP-адрес</span><span class="hz-dots">•&nbsp;•&nbsp;•&nbsp;•&nbsp;•&nbsp;•</span><span class="hz-small hz-green" style="font-weight:700">Ваш IP скрыт</span></div></div></div><div class="hz-tabs"><div class="hz-tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v9"></path><path d="M7.5 5.6a8 8 0 1 0 9 0"></path></svg><span>Главная</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c3.5 4.5 3.5 13.5 0 18c-3.5-4.5-3.5-13.5 0-18"></path></svg><span>Серверы</span></div><div class="hz-tab"><svg viewBox="0 0 24 24"><path d="M4 7h9"></path><path d="M19 7h1"></path><circle cx="16" cy="7" r="2.2"></circle><path d="M4 17h5"></path><path d="M15 17h5"></path><circle cx="12" cy="17" r="2.2"></circle></svg><span>Настройки</span></div></div></div></div></div>
+          <div class="phone__notch"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
-<section id="features" data-screen-label="Возможности" style="position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px)">
-  <div data-reveal="0" style="max-width:640px">
-    <div style="font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#F3D48E;margin-bottom:14px">ВОЗМОЖНОСТИ</div>
-    <h2 style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(26px,3.6vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.01em">Не просто VPN — умный туннель</h2>
-    <p style="margin:0;color:rgba(239,234,246,.66);font-size:clamp(15.5px,1.3vw,17.5px);text-wrap:pretty">Шесть причин, почему Хорус приживается на каждом устройстве.</p>
+
+<section class="section section--features" id="features">
+  <div class="section__head" data-reveal="0">
+    <div class="eyebrow">ВОЗМОЖНОСТИ</div>
+    <h2 class="h2">Приватность на каждом устройстве</h2>
+    <p class="lead">Шесть причин, почему Хорус остаётся на телефоне и ноутбуке надолго.</p>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;margin-top:40px">
-    <div data-reveal="0" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
-      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="width:15px;height:15px;border:2px solid var(--accent,#F0C46A);transform:rotate(45deg)"></div></div>
-      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Обход «белых списков»</h3>
-      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Работает даже там, где разрешён только «белый список» сайтов: трафик маскируется под обычный HTTPS и не выделяется из потока.</p>
-    </div>
-    <div data-reveal="1" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
-      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="display:flex;gap:5px"><div style="width:5px;height:18px;border-radius:3px;background:var(--accent,#F0C46A)"></div><div style="width:5px;height:18px;border-radius:3px;background:rgba(240,196,106,.35)"></div></div></div>
-      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Split tunneling</h3>
-      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Сами выбираете, какие приложения идут через VPN, а какие — напрямую. Банк — напрямую, YouTube — через Хорус.</p>
-    </div>
-    <div data-reveal="2" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
-      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="position:relative;width:18px;height:18px"><div style="position:absolute;inset:0;border:2px solid var(--accent,#F0C46A);border-radius:50%"></div><div style="position:absolute;left:-3px;top:8px;width:24px;height:2px;background:var(--accent,#F0C46A);transform:rotate(-45deg)"></div></div></div>
-      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Без логов</h3>
-      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Мы не записываем, куда вы ходите и что делаете. Нечего хранить — нечего и передавать.</p>
-    </div>
-    <div data-reveal="0" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
-      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="width:14px;height:14px;border-radius:3px;background:var(--accent,#F0C46A)"></div></div>
-      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Kill Switch</h3>
-      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Если соединение оборвётся, интернет замрёт вместе с ним. Ни один пакет не уйдёт наружу без защиты.</p>
-    </div>
-    <div data-reveal="1" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
-      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="display:flex;gap:4px;align-items:center"><div style="width:6px;height:6px;border-radius:50%;background:rgba(240,196,106,.4)"></div><div style="width:9px;height:9px;border-radius:50%;background:var(--accent,#F0C46A)"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(240,196,106,.4)"></div></div></div>
-      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">До 5 устройств</h3>
-      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Одна подписка — телефон, ноутбук и планшет одновременно. Хватит на всю семью.</p>
-    </div>
-    <div data-reveal="2" style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease,background .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.35);background:rgba(240,196,106,.05)">
-      <div style="width:46px;height:46px;border-radius:13px;background:rgba(240,196,106,.09);border:1px solid rgba(240,196,106,.25);display:grid;place-items:center;margin-bottom:18px"><div style="position:relative;width:18px;height:18px;border:2px solid var(--accent,#F0C46A);border-radius:50%;display:grid;place-items:center"><div style="width:6px;height:6px;border-radius:50%;background:var(--accent,#F0C46A)"></div></div></div>
-      <h3 style="font-family:'Unbounded',sans-serif;font-size:16.5px;font-weight:600;margin:0 0 10px">Серверы в разных странах</h3>
-      <p style="margin:0;font-size:15px;color:rgba(239,234,246,.66);text-wrap:pretty">Выбирайте локацию вручную или доверьтесь автовыбору — Хорус сам найдёт самый быстрый сервер.</p>
-    </div>
-  </div>
-</section>
-<section id="pricing" data-screen-label="Цена" style="position:relative;z-index:1;max-width:820px;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px)">
-  <div data-reveal="0" style="text-align:center">
-    <div style="font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#F3D48E;margin-bottom:14px">ЦЕНА</div>
-    <h2 style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(26px,3.6vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.01em">Один тариф. Всё включено.</h2>
-    <p style="margin:0 auto;max-width:46ch;color:rgba(239,234,246,.66);font-size:clamp(15.5px,1.3vw,17.5px);text-wrap:pretty">Все функции и все платформы в любом варианте — выбирайте только срок.</p>
-  </div>
-  <div data-reveal="1" style="margin-top:38px;background:linear-gradient(170deg,rgba(74,32,96,.32),rgba(26,12,38,.6));border:1px solid rgba(240,196,106,.22);border-radius:26px;padding:clamp(26px,4.5vw,46px);box-shadow:0 30px 80px rgba(0,0,0,.45)">
-    <input type="range" min="1" max="3" step="1" value="{{ months }}" onChange="{{ onSlider }}" aria-label="Срок подписки в месяцах" style="width:100%;height:30px;display:block;--fill:{{ fillPct }}">
-    <div style="display:flex;justify-content:space-between;margin-top:6px">
-      <sc-for list="{{ monthOptions }}" as="opt" hint-placeholder-count="3">
-        <button onClick="{{ opt.onPick }}" style="background:none;border:none;cursor:pointer;font-family:'Manrope',sans-serif;font-weight:800;font-size:14px;padding:10px 6px;min-height:44px;color:{{ opt.color }};transition:color .2s ease">{{ opt.label }}</button>
-      </sc-for>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-top:22px">
-      <div style="font-family:'Unbounded',sans-serif;font-weight:800;font-size:clamp(42px,7vw,62px);line-height:1;color:#FFFFFF">{{ total }} ₽</div>
-      <div style="padding-bottom:5px">
-        <div style="font-weight:800;font-size:15px;color:rgba(239,234,246,.85)">за {{ monthsWord }}</div>
-        <div style="font-size:13.5px;color:rgba(239,234,246,.55)">{{ perMonthLabel }}</div>
+  <div class="grid">
+      <div class="card card--hover feat" data-reveal="0">
+        <div class="ficon"><div class="sh-diamond"></div></div>
+        <h3>Шифрование трафика</h3>
+        <p>Соединение защищено современным шифрованием. В открытых сетях — Wi-Fi в кафе, отеле, аэропорту — ваши данные и IP-адрес остаются скрытыми.</p>
       </div>
-      <sc-if value="{{ hasSavings }}" hint-placeholder-val="{{ false }}">
-        <div style="margin-left:auto;align-self:center;background:rgba(240,196,106,.12);border:1px solid rgba(240,196,106,.4);color:#F3D48E;border-radius:99px;padding:9px 16px;font-weight:800;font-size:13.5px;white-space:nowrap">Выгода {{ savePct }}% · −{{ saveAmt }} ₽</div>
-      </sc-if>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:22px;font-size:13.5px;font-weight:600;color:rgba(239,234,246,.6)">
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Все платформы</span>
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>До 5 устройств</span>
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Без логов</span>
-      <span style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent,#F0C46A)"></span>Отмена в любой момент</span>
-    </div>
-    <a href="#top" style="display:flex;align-items:center;justify-content:center;min-height:58px;margin-top:26px;border-radius:16px;background:var(--accent,#F0C46A);color:#1A0C26;font-weight:800;font-size:17px;text-decoration:none;box-shadow:0 14px 40px rgba(240,196,106,.25), inset 0 1px 0 rgba(255,255,255,.5);transition:transform .25s ease,box-shadow .25s ease" style-hover="transform:translateY(-2px);color:#1A0C26;box-shadow:0 20px 55px rgba(240,196,106,.35), inset 0 1px 0 rgba(255,255,255,.5)">Скачать приложение</a>
-    <div style="text-align:center;margin-top:14px;font-size:12.5px;color:rgba(239,234,246,.45)">Оплата — внутри приложения · активация сразу после оплаты</div>
+      <div class="card card--hover feat" data-reveal="1">
+        <div class="ficon"><div class="sh-bars"><i></i><i></i></div></div>
+        <h3>Split tunneling</h3>
+        <p>Сами выбираете, какие приложения идут через VPN, а какие — напрямую. Рабочие сервисы — напрямую, остальное — через Хорус.</p>
+      </div>
+      <div class="card card--hover feat" data-reveal="2">
+        <div class="ficon"><div class="sh-slash"><i></i><b></b></div></div>
+        <h3>Без логов</h3>
+        <p>Мы не записываем, куда вы ходите и что делаете. Нечего хранить — нечего и передавать.</p>
+      </div>
+      <div class="card card--hover feat" data-reveal="0">
+        <div class="ficon"><div class="sh-square"></div></div>
+        <h3>Kill Switch</h3>
+        <p>Если соединение оборвётся, интернет замрёт вместе с ним. Ни один пакет не уйдёт наружу без защиты.</p>
+      </div>
+      <div class="card card--hover feat" data-reveal="1">
+        <div class="ficon"><div class="sh-dots"><i></i><i></i><i></i></div></div>
+        <h3>До 5 устройств</h3>
+        <p>Одна подписка — телефон, ноутбук и планшет одновременно. Хватит на всю семью.</p>
+      </div>
+      <div class="card card--hover feat" data-reveal="2">
+        <div class="ficon"><div class="sh-ring"><i></i></div></div>
+        <h3>Серверы на выбор</h3>
+        <p>Выбирайте локацию вручную или доверьтесь автовыбору — Хорус подберёт наименее загруженный сервер.</p>
+      </div>
   </div>
 </section>
-<section id="contacts" data-screen-label="Контакты" style="position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:clamp(50px,9vh,110px) clamp(18px,4vw,40px) clamp(60px,10vh,90px)">
-  <div data-reveal="0" style="text-align:center">
-    <div style="font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#F3D48E;margin-bottom:14px">КОНТАКТЫ</div>
-    <h2 style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(26px,3.6vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.01em">Мы на связи</h2>
-    <p style="margin:0 auto;max-width:46ch;color:rgba(239,234,246,.66);font-size:clamp(15.5px,1.3vw,17.5px);text-wrap:pretty">Остались вопросы или нужна помощь? Напишите, поможем.</p>
+
+<section class="section section--pricing" id="pricing">
+  <div class="section__head section__head--center" data-reveal="0">
+    <div class="eyebrow">ЦЕНА</div>
+    <h2 class="h2">Один тариф. Всё включено.</h2>
+    <p class="lead">Все функции и все платформы в любом варианте — выбирайте только срок.</p>
   </div>
-  <!-- ЗАМЕНИТЕ ссылки и адреса на свои -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;margin-top:38px">
-    <a data-reveal="0" href="https://t.me/horusping" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
-      <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">TELEGRAM</div>
-      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">@horusping</div>
-      <div style="font-size:14px;color:rgba(239,234,246,.6)">Отвечаем быстрее всего — обычно в течение часа.</div>
+
+  <div class="panel price" data-reveal="1">
+    <input class="slider" id="months" type="range" min="1" max="3" step="1" value="1" aria-label="Срок подписки в месяцах">
+    <div class="price__ticks">
+      <button class="price__tick is-on" type="button">1 мес</button>
+      <button class="price__tick" type="button">2 мес</button>
+      <button class="price__tick" type="button">3 мес</button>
+    </div>
+
+    <div class="price__row">
+      <div class="price__total" id="price-total">199 ₽</div>
+      <div class="price__for">
+        <b id="price-for">за 1 месяц</b>
+        <span id="price-permonth">все функции включены</span>
+      </div>
+      <div class="price__save" id="price-save" hidden></div>
+    </div>
+
+    <ul class="bullets">
+      <li>Все платформы</li>
+      <li>До 5 устройств</li>
+      <li>Без логов</li>
+      <li>Отмена в любой момент</li>
+    </ul>
+
+    <a class="btn btn--primary" href="login.html">Оформить подписку</a>
+    <div class="price__note">Оплата картой на сайте или в приложении · активация сразу после оплаты<br>Условия — в <a href="docs/offer.html">публичной оферте</a> и <a href="docs/terms.html">тарифах</a></div>
+  </div>
+</section>
+
+<section class="section section--docs" id="docs">
+  <div class="section__head section__head--center" data-reveal="0">
+    <div class="eyebrow">ДОКУМЕНТЫ</div>
+    <h2 class="h2">Условия — открыто и всегда под рукой</h2>
+    <p class="lead">Оферта, политика обработки данных, тарифы и порядок возврата доступны без регистрации.</p>
+  </div>
+  <div class="grid grid--docs">
+    <a class="card card--hover doc-link" data-reveal="0" href="docs/terms-of-use.html">
+      <div class="doc-link__name">Пользовательское соглашение</div>
+      <div class="doc-link__note">Правила использования сервиса, гарантии и ограничения.</div>
     </a>
-    <a data-reveal="1" href="mailto:horusping@gmail.com" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
-      <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">EMAIL</div>
-      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px;word-break:break-all">horusping@gmail.com</div>
-      <div style="font-size:14px;color:rgba(239,234,246,.6)">Для официальных запросов и партнёрств.</div>
+    <a class="card card--hover doc-link" data-reveal="1" href="docs/offer.html">
+      <div class="doc-link__name">Публичная оферта</div>
+      <div class="doc-link__note">Договор на оказание услуг связи по подписке.</div>
     </a>
-    <a data-reveal="2" href="https://vk.com/horus_ping" style="display:block;text-decoration:none;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:26px 24px;transition:transform .35s ease,border-color .35s ease" style-hover="transform:translateY(-5px);border-color:rgba(240,196,106,.4)">
-      <div style="font-size:12px;font-weight:800;letter-spacing:.18em;color:rgba(239,234,246,.5);margin-bottom:10px">VK</div>
-      <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:600;color:#F3D48E;margin-bottom:8px">vk.com/horus_ping</div>
-      <div style="font-size:14px;color:rgba(239,234,246,.6)">Тех поддержка.</div>
+    <a class="card card--hover doc-link" data-reveal="2" href="docs/privacy.html">
+      <div class="doc-link__name">Политика конфиденциальности</div>
+      <div class="doc-link__note">Какие данные обрабатываем и зачем. Логов активности нет.</div>
+    </a>
+    <a class="card card--hover doc-link" data-reveal="0" href="docs/terms.html">
+      <div class="doc-link__name">Тарифы и оплата</div>
+      <div class="doc-link__note">Стоимость, сроки, способы оплаты и продление.</div>
+    </a>
+    <a class="card card--hover doc-link" data-reveal="1" href="docs/refund.html">
+      <div class="doc-link__name">Возврат средств</div>
+      <div class="doc-link__note">Условия и сроки возврата, как оформить заявку.</div>
     </a>
   </div>
 </section>
-<footer style="position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.07);padding:26px clamp(18px,4vw,40px);display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;color:rgba(239,234,246,.45);font-size:13px">
-  <div style="display:flex;align-items:center;gap:10px">
-    <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjI0MCIgdmlld0JveD0iNjAgMTAwIDM0MCAyNDAiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWw6c3BhY2U9InByZXNlcnZlIiBzdHlsZT0iZmlsbC1ydWxlOmV2ZW5vZGQ7Y2xpcC1ydWxlOmV2ZW5vZGQ7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1taXRlcmxpbWl0OjI7Ij4KICA8ZGVmcz4KICAgIAogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJocGItZ29sZC1hIiBjeD0iMjMxLjU4IiBjeT0iMjQwLjA3IiBmeD0iMjg2LjEyIiBmeT0iMTQzLjQ0IiByPSIxNDMuNzYiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIuMDgiIHN0b3AtY29sb3I9InJnYmEoMjQ3LCAyMTgsIDE1NSwgMSkiPjwvc3RvcD4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJoc2xhKDM4LCA1NiUsIDUyJSwgMS4wMCkiPjwvc3RvcD4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgICA8cmFkaWFsR3JhZGllbnQgaWQ9ImhwYi1nb2xkLWIiIGN4PSIyMjcuODYiIGN5PSIxNjcuMDUiIGZ4PSIyODQuODEiIGZ5PSIxNDEuNzUiIHI9IjE0MC41NSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBvZmZzZXQ9Ii4wOSIgc3RvcC1jb2xvcj0iaHNsYSg0MSwgODUlLCA3OSUsIDEuMDApIj48L3N0b3A+CiAgICAgIDxzdG9wIG9mZnNldD0iLjk1IiBzdG9wLWNvbG9yPSJoc2xhKDM4LCA1NiUsIDUyJSwgMS4wMCkiPjwvc3RvcD4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxnIGlkPSJMYXllcl8xIiBkYXRhLW5hbWU9IkxheWVyIDEiPgogICAgPGc+CiAgICAgIDxwYXRoIGZpbGw9InVybCgjaHBiLWdvbGQtYSkiIGQ9Ik0zMjAuNjUsMjU3LjE3Yy4yOCwxLjIxLjU4LDMuMjUuMTEsNS42Ny0uMTMuNjYtLjUsMi42MS0xLjU1LDQuMTMtMi4yNiwzLjI3LTYuNTYsNC44NC0xMC45OCwzLjU4LTcuNDctMi4xMi0xMS4xOC05LjY2LTEwLjctMTUuOTEuOTgtMTIuNjMsMTAuNS0xOS4xOSwyMS4wMy0yMC43NiwxMi40OC0xLjg2LDIyLjU0LDUuMTEsMjUuNjQsMTcuNjYsMy4zMSwxMy4zOS40LDI1LjQ0LTguODMsMzUuNjctNS43MSw2LjM0LTEzLjA2LDEwLjQ0LTIxLjE2LDEzLjA1LTE0Ljk5LDQuODItMzAuMjYsNS43Ni00NS43MSwyLjc2LTEyLjgzLTIuNDktMjUuMTgtNi40MS0zNi41NC0xMy4wNC0xMC41NS02LjE2LTE5LjczLTE0LjAzLTI4LjE5LTIyLjc5LTEwLjM1LTEwLjcxLTE5LjMtMjIuNTQtMjcuNi0zNC44Ny0uNC0uNi0uOC0xLjItMS40Ni0yLjItLjI4LDIuMy0uNTIsNC4xOC0uNzIsNi4wNy0xLjA0LDkuNjktMS43MSwxOS4zOS0xLjE5LDI5LjE0LjU5LDEwLjg2LDIuNTYsMjEuNTMsNC43MiwzMi4xNiwxLjAzLDUuMDUsMi4xNSwxMC4wOCwzLjIzLDE1LjEyLjAyLjEuMDkuMi4wNy4yOC0uMTMuNDYtLjI3LjkxLS40MSwxLjM3LS4zMi0uMy0uNzktLjU0LS45NC0uOTEtLjc3LTEuODQtMS4zNi0zLjc2LTIuMi01LjU2LTIuODQtNi4wNy01LjUxLTEyLjI1LTguNzItMTguMTItMi4xOS00LTUuMzktNy4zNC05LjQzLTkuNzgtMy40Ni0yLjA5LTYuODEtNC4zNS0xMC4xOC02LjU3LTUuMDctMy4zNC00LjY4LTYuMjQtMi4yMS0xMC40OSwyLjY0LTQuNTQsNS43Ni04Ljc5LDguNDktMTMuMjgsMS4zMy0yLjE4LDIuNDUtNC41NCwzLjMxLTYuOTUsMi4yNS02LjI4LjItMTEuODMtMy42LTE2Ljc4LTQuNTEtNS44OC0xMC44Ny05LjIzLTE3LjY5LTExLjY1LTcuNDktMi42Ni0xNS4yOC0zLjM3LTIzLjE4LTIuNTktLjkxLjA5LTEuODIuNjQtMi42NCwxLjEzLTIuNzgsMS42My02LjE2LDEtOC4wOS0xLjU4LTEuMTktMS42LTEuMTktMy41NS4zNy01LjAzLDEuNS0xLjQyLDMuMTYtMi43OSw0Ljk5LTMuNzQsOC4wNy00LjIxLDE2LjE4LTguMzMsMjQuMzUtMTIuMzUsOS44Mi00Ljg0LDE5LjY1LTkuNjgsMjkuNi0xNC4yNSwxMC4wMy00LjYsMjAuNDktNy45OSwzMS40OS05LjQ0LDYuODMtLjksMTMuNi0uMzgsMjAuMzUuODEsMTAuNiwxLjg3LDIwLjYxLDUuNzQsMzAuNzcsOS4wOCwxNC4zMyw0LjcyLDI4LjY2LDkuNDMsNDMuMzgsMTIuODQsOS4zLDIuMTYsMTguNjgsMy44MywyOC4yLDQuNjksMTUuMDcsMS4zNSwyOC41Ny0yLjMyLDQwLjMxLTEyLjAyLDEuNS0xLjI0LDMuMDItMi40Niw0LjU4LTMuNjMuMy0uMjMuODMtLjE1LDEuMjUtLjIyLS4wNy4zOS0uMDIuODktLjI0LDEuMTUtNi4zNyw3LjUyLTEyLjgyLDE0Ljk5LTIxLjc5LDE5LjU3LTUuOTEsMy4wMS0xMi4yNiw0Ljg1LTE4Ljg4LDUuMjEtNS40Ny4zLTEwLjk4LS4xLTE2LjQ3LS4wNi0xLjg4LjAyLTMuNzcuMzgtNS42My42OS02Ljk2LDEuMTQtMTQuMDIsMS45Mi0yMC44NSwzLjYxLTUuNTgsMS4zOC0xMC45NSwzLjctMTYuMjksNS44OS03LjgzLDMuMjEtMTUuNDYsNi45NC0yMy4zNSw5Ljk4LTEwLjYsNC4wNy0yMS43MSw1Ljc2LTMzLjA2LDUuNy01LjE2LS4wMy0xMC4zMi0uMTctMTUuNDgtLjI2LS41MywwLTEuMDYsMC0xLjk5LDAsMS41OCwyLjEyLDIuOTEsMy45Niw0LjI5LDUuNzcsMTAuNTYsMTMuOTEsMjIuNDMsMjYuNTIsMzYuNjgsMzYuNzUsMTIuNTMsOC45OSwyNi4yLDE1LjQ3LDQxLjM0LDE4LjcsMTEuMDQsMi4zNSwyMi4wNiwzLjAyLDMzLjEtLjA0LDguNjMtMi4zOSwxNi42Mi01LjkyLDIyLjgzLTEyLjYsNS43NC02LjE5LDcuOS0xMy42Miw2LjQzLTIxLjg1LS44Ny00LjktNC4wNi04LjU4LTguMTktMTEuMjgtMi44MS0xLjg0LTUuOTItMi4wNy05LjExLS45Ny0yLjkyLDEuMDEtNS43NSwyLjE2LTguMDEsNC4zNi0zLjc0LDMuNjQtMy40Nyw5LjYxLjU2LDEyLjg5LDEuOTQsMS41NywzLjk2LDEuNzksNS44NS4xOSwxLjg2LTEuNTgsMi41LTMuNTUsNC4wOC00LjUxLjQyLS4yNi43OS0uMzYsMS4xNC0uMjYuNDEuMTIuNjMuNDkuNzIuNjZaTTIxMi42MSwxNzUuNjFjLS4wNC4xNi0uMDguMzMtLjEyLjQ5LDgsOS4yOCw2Ljk1LDIxLjUuNDQsMjkuMzEtNi4wMyw3LjIzLTE3LDkuNzYtMjUuODEsNS43MS01Ljg3LTIuNy05Ljg3LTcuMTMtMTEuOS0xMy4zLTIuMDMtNi4xNC0xLjA5LTEyLjAyLDEuODYtMTguMDEtMTcuNDUsNS42Mi0zMy4xOSwxMy45LTQ4Ljg5LDIzLjAxLjcyLjE5LDEuMDkuMywxLjQ2LjM5LDMuNzcuOTUsNy42LDEuNzQsMTEuMzEsMi44Nyw3LjkxLDIuNDEsMTUuNzYsNS4wMywyMy42NSw3LjUsOS4yOCwyLjkxLDE4LjgyLDQuNTQsMjguNSw1LjI3LDEwLjUzLjc5LDIxLjAxLjUsMzEuNDEtMS41MiwxMC42OS0yLjA4LDIwLjczLTUuOTIsMzAuNDctMTAuNzMsNi43MS0zLjMxLDEzLjM5LTYuNzYsMjAuNjMtOC44Ni40NC0uMTMuODctLjI5LDEuNTYtLjUyLS41Ny0uMjQtLjg3LS4zOC0xLjE4LS41LTcuOTQtMi45My0xNS44OC01Ljg4LTIzLjgzLTguNzktOC41NC0zLjEyLTE3LjAzLTYuNDEtMjUuNjctOS4yMy00LjQ5LTEuNDctOS4yNy0yLjA5LTEzLjkxLTMuMDlaIj48L3BhdGg+CiAgICAgIDxwYXRoIGZpbGw9InVybCgjaHBiLWdvbGQtYikiIGQ9Ik0yMDAuNywxNDEuNzVjMTMuMTYtLjIzLDI1LjgzLDIuNjEsMzguMzcsNi4xMywxMC42OCwzLDIxLjI4LDYuMjgsMzEuOTQsOS4zNiw5LjQ0LDIuNzMsMTguOTMsNS4yNiwyOC43MSw2LjYxLDE0LjIyLDEuOTUsMjcuODIsMCw0MC45LTUuOTMsNi42Mi0zLDEyLjk4LTYuNDUsMTkuMTEtMTAuMzUuNTMtLjM0LDEuMDYtLjcyLDEuNjQtLjk1LjM5LS4xNi44OC0uMDksMS4zMi0uMTMtLjEyLjQyLS4xMy45NS0uMzksMS4yMy0xLjAzLDEuMS0yLjEyLDIuMTQtMy4yMSwzLjE4LTYuMzIsNi4wMS0xMi43MywxMS44OS0yMC4zNSwxNi4zLTguMzMsNC44Mi0xNy4zLDcuNDYtMjYuODYsOC4xNC0xMC42OC43Ni0yMS4wNy0xLjA3LTMxLjI4LTMuOTQtMTIuNDYtMy41LTI0Ljg0LTcuMjgtMzcuMjgtMTAuODQtMTMuMzMtMy44MS0yNi44OC02LjM4LTQwLjc5LTYuODMtMTcuMDYtLjU2LTMzLjEyLDMuMDktNDcuODgsMTEuNjUtOC4yLDQuNzYtMTYuMDMsMTAuMTUtMjQuMDYsMTUuMjEtMy43NCwyLjM2LTcuMzUsNS4wNC0xMS4zNiw2LjgtNS40MSwyLjM4LTExLjAzLDQuNDUtMTcuMDMsNC45NC0yLjM0LjE5LTQuNTctLjI2LTYuNDktMS43LTMtMi4yNi0zLjUtNi4wNS0xLjIzLTkuMDIsMS45OS0yLjYxLDQuNy00LjA0LDcuODMtNC43MiwyLjUyLS41NCw1LjA1LTEuMDUsNy41OS0xLjQ5LDcuNzgtMS4zNSwxNC41NS00Ljk4LDIxLjE5LTkuMDYsNy41OC00LjY1LDE1LjE4LTkuMzYsMjMuMTItMTMuMzYsMTYuNDUtOC4yOCwzMC43NS0xMS4xOSw0Ni41MS0xMS4yM1oiPjwvcGF0aD4KICAgICAgPHBhdGggZmlsbD0iaHNsYSg0MCwgNTMlLCAxMCUsIDEuMDApIiBkPSJNMTgxLjkzLDE5NC40OWMtLjM1LS4zLTMuMjMtMi44MS0zLjA0LTYuODQuMTUtMy4yNSwyLjItNS4yNywyLjY2LTUuNy4zNS0uMzEsMS4xMy0uOTEsMi4yOC0xLjE0LjgtLjE2LDEuNDgtLjA4LDEuOSwwLDEuMDMuMjUsMi42My44NCwzLjgsMi4yOCwyLjEsMi41OSwxLjk3LDYuODktLjU0LDEwLjU2LS4zNi40MS0xLjE5LDEuMjItMi41LDEuNi0yLjMyLjY3LTQuMjUtLjU2LTQuNTYtLjc2WiI+PC9wYXRoPgogICAgPC9nPgogIDwvZz4KPC9zdmc+" alt="" style="height:28px;width:auto;display:block;opacity:.85">
-    © 2026 Horus Ping Booster
+
+<section class="section section--contacts" id="contacts">
+  <div class="section__head section__head--center" data-reveal="0">
+    <div class="eyebrow">КОНТАКТЫ</div>
+    <h2 class="h2">Мы на связи</h2>
+    <p class="lead">Остались вопросы или нужна помощь? Напишите, поможем.</p>
   </div>
-  <div>Сделано для свободного интернета</div>
+
+  <div class="grid grid--contacts">
+    <a class="card card--hover contact" data-reveal="0" href="https://t.me/horusping">
+      <div class="contact__kind">TELEGRAM</div>
+      <div class="contact__value">@horusping</div>
+      <div class="contact__note">Техподдержка и вопросы по оплате. Отвечаем обычно в течение часа.</div>
+    </a>
+    <a class="card card--hover contact" data-reveal="1" href="mailto:horusping@gmail.com">
+      <div class="contact__kind">EMAIL</div>
+      <div class="contact__value contact__value--break">horusping@gmail.com</div>
+      <div class="contact__note">Техподдержка, вопросы по оплате и официальные запросы.</div>
+    </a>
+    <a class="card card--hover contact" data-reveal="2" href="https://vk.com/horus_ping">
+      <div class="contact__kind">VK</div>
+      <div class="contact__value">vk.com/horus_ping</div>
+      <div class="contact__note">Новости сервиса и техподдержка.</div>
+    </a>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer__brand">
+    <img class="footer__logo" src="logo-gold.svg" alt="">
+    © 2026 Horus VPN
+  </div>
+  <nav class="footer__docs" aria-label="Документы">
+    <a href="docs/terms-of-use.html">Пользовательское соглашение</a>
+    <a href="docs/offer.html">Публичная оферта</a>
+    <a href="docs/privacy.html">Политика конфиденциальности</a>
+    <a href="docs/terms.html">Тарифы и оплата</a>
+    <a href="docs/refund.html">Возврат средств</a>
+  </nav>
+  <div>Поддержка: <a href="mailto:horusping@gmail.com">horusping@gmail.com</a> · <a href="https://t.me/horusping">@horusping</a></div>
+  <div class="footer__code">Код проверки: PLAT</div>
 </footer>
-</div>
-</div>
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;accentColor&quot;: {&quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#F0C46A&quot;, &quot;options&quot;: [&quot;#F0C46A&quot;, &quot;#8FD9E8&quot;, &quot;#C7A6F5&quot;, &quot;#F2A6A0&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Оформление&quot;}, &quot;priceMonthly&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 199, &quot;min&quot;: 10, &quot;max&quot;: 5000, &quot;unit&quot;: &quot;₽&quot;, &quot;section&quot;: &quot;Цены&quot;}, &quot;price3m&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 499, &quot;min&quot;: 10, &quot;max&quot;: 9999, &quot;unit&quot;: &quot;₽&quot;, &quot;section&quot;: &quot;Цены&quot;}}">
-class Component extends DCLogic {
-  static detectOS() {
-    try {
-      const ua = navigator.userAgent || '';
-      if (/android/i.test(ua)) return 'android';
-      if (/iphone|ipad|ipod/i.test(ua)) return 'ios';
-      if (/macintosh|mac os/i.test(ua)) return 'mac';
-      if (/win/i.test(ua)) return 'windows';
-    } catch (e) {}
-    return 'other';
-  }
-  static formatSize(bytes) {
-    if (!bytes || bytes < 0) return '';
-    const mb = bytes / 1048576;
-    if (mb >= 1024) return (mb / 1024).toFixed(1).replace('.', ',') + ' ГБ';
-    if (mb >= 10) return Math.round(mb) + ' МБ';
-    if (mb >= 1) return mb.toFixed(1).replace('.', ',') + ' МБ';
-    return Math.max(1, Math.round(bytes / 1024)) + ' КБ';
-  }
-  // Файлы отдаёт наш же nginx: /download/… — зеркало последнего релиза
-  // (nginx/sync-releases.sh). Ссылки статичные и версии не содержат, поэтому
-  // работают и без JS; /download/latest.json нужен только ради версии и
-  // размеров. key совпадает с ключами в манифесте.
-  static FILES = [
-    { key: 'win-msi',        group: 'windows', href: '/download/Horus-win-x64.msi',           name: 'Установщик · .msi',       hint: 'Windows 10 и 11 · x64' },
-    { key: 'win-zip',        group: 'windows', href: '/download/Horus-win-x64-portable.zip',  name: 'Портативная версия · .zip', hint: 'Без установки · x64' },
-    { key: 'android-arm64',  group: 'android', href: '/download/Horus-android-arm64-v8a.apk', name: 'APK · arm64-v8a',         hint: 'Почти все телефоны' },
-    { key: 'android-x86_64', group: 'android', href: '/download/Horus-android-x86_64.apk',    name: 'APK · x86_64',            hint: 'Эмуляторы и планшеты на x86' },
-    { key: 'sha256sums',     group: 'checks',  href: '/download/SHA256SUMS.txt',              name: 'SHA256SUMS.txt',          hint: 'Контрольные суммы сборок' }
-  ];
-  static PRIMARY = {
-    'win-msi':       { label: 'Скачать для Windows', sub: 'Установщик · .msi' },
-    'android-arm64': { label: 'Скачать для Android', sub: 'APK · arm64-v8a' }
-  };
-  static GROUPS = [
-    { key: 'windows', title: 'WINDOWS' },
-    { key: 'android', title: 'ANDROID' },
-    { key: 'checks',  title: 'ПРОВЕРКА ФАЙЛОВ' }
-  ];
-  state = { months: 1, os: Component.detectOS(), filesOpen: false, release: null };
-  deviceRef = React.createRef();
-  sidePhoneRef = React.createRef();
-  orbARef = React.createRef();
-  orbBRef = React.createRef();
-  orbCRef = React.createRef();
-  componentDidMount() {
-    // Манифест зеркала: версия и размеры. Не дошёл — кнопки всё равно рабочие.
-    fetch('/download/latest.json', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((rel) => { if (rel && Array.isArray(rel.files)) this.setState({ release: rel }); })
-      .catch(() => {});
-    this.onKeyDown = (e) => {
-      if (e.key === 'Escape' && this.state.filesOpen) this.setState({ filesOpen: false });
-    };
-    window.addEventListener('keydown', this.onKeyDown);
-    this.reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    this.cur = 0; this.tgt = window.scrollY || 0;
-    this.onScroll = () => { this.tgt = window.scrollY || 0; };
-    window.addEventListener('scroll', this.onScroll, { passive: true });
-    if (!this.reduced) {
-      const loop = () => {
-        this.cur += (this.tgt - this.cur) * 0.09;
-        if (Math.abs(this.tgt - this.cur) < 0.05) this.cur = this.tgt;
-        this.applyScroll();
-        this.raf = requestAnimationFrame(loop);
-      };
-      this.raf = requestAnimationFrame(loop);
-    } else {
-      const s = this.sidePhoneRef.current;
-      if (s) { s.style.opacity = '1'; s.style.transform = 'none'; }
-      const d = this.deviceRef.current;
-      if (d) d.style.transform = 'none';
-    }
-    this.setupReveals();
-  }
-  applyScroll() {
-    const vh = window.innerHeight || 800;
-    const p = Math.max(0, Math.min(1, this.cur / (vh * 0.85)));
-    const d = this.deviceRef.current;
-    if (d) d.style.transform = 'rotateY(' + (-22 + p * 26).toFixed(2) + 'deg) rotateX(' + (7 - p * 9).toFixed(2) + 'deg) translateY(' + (p * 46).toFixed(1) + 'px) scale(' + (1 + p * 0.05).toFixed(3) + ')';
-    const s = this.sidePhoneRef.current;
-    if (s) {
-      s.style.opacity = String(Math.min(1, p * 1.7));
-      s.style.transform = 'translate3d(' + ((1 - p) * 90).toFixed(1) + 'px, ' + ((1 - p) * 50).toFixed(1) + 'px, 0) rotate(' + (8 - p * 4).toFixed(2) + 'deg)';
-    }
-    if (this.orbARef.current) this.orbARef.current.style.translate = '0 ' + (this.cur * -0.06).toFixed(1) + 'px';
-    if (this.orbBRef.current) this.orbBRef.current.style.translate = '0 ' + (this.cur * 0.08).toFixed(1) + 'px';
-    if (this.orbCRef.current) this.orbCRef.current.style.translate = '0 ' + (this.cur * -0.04).toFixed(1) + 'px';
-  }
-  setupReveals() {
-    if (this.reduced) return;
-    const vh = window.innerHeight || 800;
-    const els = Array.from(document.querySelectorAll('[data-reveal]'));
-    const hidden = [];
-    els.forEach((el) => {
-      const r = el.getBoundingClientRect();
-      if (r.top > vh * 0.92) {
-        const n = parseInt(el.getAttribute('data-reveal'), 10) || 0;
-        el.style.opacity = '0';
-        el.style.transform = 'translateY(30px)';
-        el.style.transition = 'opacity .7s ease ' + (n * 90) + 'ms, transform .8s cubic-bezier(.22,.61,.36,1) ' + (n * 90) + 'ms';
-        hidden.push(el);
-      }
-    });
-    if (hidden.length) {
-      this.io = new IntersectionObserver((ents) => {
-        ents.forEach((en) => {
-          if (en.isIntersecting) {
-            en.target.style.opacity = '1';
-            en.target.style.transform = 'translateY(0)';
-            this.io.unobserve(en.target);
-          }
-        });
-      }, { threshold: 0.12 });
-      hidden.forEach((el) => this.io.observe(el));
-    }
-  }
-  componentWillUnmount() {
-    if (this.raf) cancelAnimationFrame(this.raf);
-    if (this.onScroll) window.removeEventListener('scroll', this.onScroll);
-    if (this.onKeyDown) window.removeEventListener('keydown', this.onKeyDown);
-    if (this.io) this.io.disconnect();
-  }
-  priceFor(m) {
-    const pm = this.props.priceMonthly ?? 199;
-    const p3 = this.props.price3m ?? 499;
-    if (m <= 1) return pm;
-    if (m >= 3) return p3;
-    return Math.round(pm * 2 * 0.95);
-  }
-  renderVals() {
-    const m = this.state.months;
-    const pm = this.props.priceMonthly ?? 199;
-    const total = this.priceFor(m);
-    const full = pm * m;
-    const saveAmt = full - total;
-    const savePct = full > 0 ? Math.round((saveAmt / full) * 100) : 0;
-    const words = ['1 месяц', '2 месяца', '3 месяца'];
-    const os = this.state.os;
-    // Пока манифест не пришёл — показываем весь список; после него оставляем
-    // только то, что реально лежит в зеркале.
-    const rel = this.state.release;
-    const mirrored = {};
-    if (rel) rel.files.forEach((f) => { mirrored[f.key] = f; });
-    const files = Component.FILES
-      .filter((f) => !rel || mirrored[f.key])
-      .map((f) => {
-        const m = mirrored[f.key];
-        return {
-          key: f.key,
-          group: f.group,
-          name: f.name,
-          hint: f.hint,
-          href: (m && m.url) || f.href,
-          size: m ? Component.formatSize(m.size) : ''
-        };
-      });
-    const fileGroups = Component.GROUPS
-      .map((g) => ({ title: g.title, items: files.filter((f) => f.group === g.key) }))
-      .filter((g) => g.items.length > 0);
-    const primaryKey = os === 'android' ? 'android-arm64' : 'win-msi';
-    const primaryFile = files.filter((f) => f.key === primaryKey)[0] || files[0];
-    const primaryMeta = (primaryFile && Component.PRIMARY[primaryFile.key]) || null;
-    const primary = primaryFile ? [{
-      href: primaryFile.href,
-      label: primaryMeta ? primaryMeta.label : 'Скачать приложение',
-      sub: [primaryMeta ? primaryMeta.sub : primaryFile.name, primaryFile.size].filter(Boolean).join(' · ')
-    }] : [];
-    const monthOptions = [1, 2, 3].map((n) => ({
-      label: n + ' мес',
-      color: n === m ? '#F3D48E' : 'rgba(239,234,246,.45)',
-      onPick: () => this.setState({ months: n })
-    }));
-    return {
-      accent: this.props.accentColor ?? '#F0C46A',
-      months: m,
-      fillPct: (((m - 1) / 2) * 100) + '%',
-      total: total,
-      monthsWord: words[m - 1],
-      perMonthLabel: m > 1 ? ('≈ ' + Math.round(total / m) + ' ₽ в месяц') : 'все функции включены',
-      hasSavings: m > 1 && saveAmt > 0,
-      savePct: savePct,
-      saveAmt: saveAmt,
-      onSlider: (e) => this.setState({ months: Number(e.target.value) }),
-      monthOptions: monthOptions,
-      showLaptop: os === 'windows' || os === 'mac' || os === 'other',
-      showHeroPhone: os === 'android' || os === 'ios',
-      primaryButtons: primary,
-      allFilesSub: 'Windows и Android',
-      versionLabel: rel && rel.version ? 'Версия ' + rel.version : '',
-      fileGroups: fileGroups,
-      filesOpen: this.state.filesOpen,
-      // См. #hpb-hero в стилях: пока список открыт, шапку надо поднять над
-      // секциями ниже, иначе они перекрывают панель.
-      heroClass: this.state.filesOpen ? 'is-files-open' : '',
-      toggleFiles: () => this.setState({ filesOpen: !this.state.filesOpen }),
-      closeFiles: () => this.setState({ filesOpen: false }),
-      deviceRef: this.deviceRef,
-      sidePhoneRef: this.sidePhoneRef,
-      orbARef: this.orbARef,
-      orbBRef: this.orbBRef,
-      orbCRef: this.orbCRef
-    };
-  }
-}
-</script>
+
 </body>
 </html>

@@ -1,0 +1,84 @@
+/* Личный кабинет и подключение из браузера.
+   Оболочка (шапка, футер, кнопки, карточки, .state) — в style.css. */
+
+.acc-main{position:relative;z-index:1;flex:1;width:100%;max-width:980px;margin:0 auto;
+  padding:clamp(28px,5vh,52px) clamp(18px,4vw,40px) clamp(48px,8vh,80px)}
+.acc-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
+  gap:16px;margin-bottom:clamp(24px,4vw,36px)}
+.acc-head .h2{margin:0}
+.nav__link.is-here{color:var(--accent-l);background:rgba(240,196,106,.1)}
+.nav__logout{padding:9px 12px;border-radius:9px;font-size:14.5px;font-weight:600;
+  color:rgba(239,234,246,.75)}
+.nav__logout:hover{color:#FFF;background:rgba(255,255,255,.06)}
+
+.acc-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.acc-grid + .acc-grid{margin-top:16px}
+
+.tile__kind{font-size:12px;font-weight:800;letter-spacing:.18em;
+  color:rgba(239,234,246,.5);margin-bottom:12px}
+.tile__value{font-family:var(--display);font-size:22px;font-weight:600;color:var(--text);
+  line-height:1.25;overflow-wrap:anywhere}
+.tile__value--accent{color:var(--accent-l)}
+.tile__note{margin-top:8px;font-size:13.5px;color:rgba(239,234,246,.55);text-wrap:pretty}
+.tile__wide{grid-column:1/-1}
+
+.badge{display:inline-flex;align-items:center;gap:7px;border-radius:99px;padding:5px 12px;
+  font-size:12.5px;font-weight:800;letter-spacing:.04em}
+.badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
+.badge--ok{background:rgba(126,217,167,.12);color:#8FE0B4}
+.badge--warn{background:rgba(242,166,160,.12);color:var(--danger-t)}
+.badge--idle{background:rgba(255,255,255,.06);color:rgba(239,234,246,.6)}
+
+.bar{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:10px}
+.bar__fill{height:100%;border-radius:99px;background:var(--accent);transition:width .4s ease}
+.bar__fill--busy{background:var(--danger)}
+
+.srv{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:14px 16px;
+  border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)}
+.srv + .srv{margin-top:10px}
+.srv__place{flex:1;min-width:160px}
+.srv__name{font-weight:700;font-size:15px}
+.srv__where{font-size:13px;color:rgba(239,234,246,.55)}
+.srv__load{width:min(180px,100%)}
+.srv__pct{font-size:12.5px;font-weight:700;color:rgba(239,234,246,.6)}
+.srv__here{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--accent-l)}
+
+.acc-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
+.btn--wide{width:auto;padding:0 26px}
+.btn--quiet{display:flex;align-items:center;justify-content:center;min-height:58px;
+  padding:0 24px;border-radius:16px;background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.16);color:var(--text);
+  font-weight:800;font-size:16px;transition:border-color .25s ease,background .25s ease}
+.btn--quiet:hover:not(:disabled){border-color:rgba(240,196,106,.5);background:rgba(240,196,106,.07);color:var(--text)}
+.btn--quiet:disabled{opacity:.5;cursor:default}
+
+/* ── Подключение из браузера ───────────────────────────────────────────── */
+.conn-steps{counter-reset:step;margin:0 0 26px;padding:0;list-style:none;
+  display:grid;gap:10px}
+.conn-steps li{position:relative;padding-left:38px;font-size:15px;
+  color:rgba(239,234,246,.72);text-wrap:pretty}
+.conn-steps li::before{counter-increment:step;content:counter(step);
+  position:absolute;left:0;top:-1px;width:26px;height:26px;border-radius:50%;
+  display:grid;place-items:center;font:800 13px var(--font);
+  color:var(--accent-l);background:rgba(240,196,106,.1);
+  border:1px solid rgba(240,196,106,.3)}
+
+.secret{position:relative;margin-top:10px}
+.secret__box{width:100%;min-height:96px;max-height:220px;overflow:auto;
+  padding:14px 16px;border-radius:14px;background:rgba(11,5,18,.6);
+  border:1px solid rgba(255,255,255,.12);color:var(--text);
+  font:600 13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.secret__box--link{min-height:0;white-space:nowrap;overflow-x:auto}
+.secret__row{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.chip{padding:10px 16px;min-height:44px;border-radius:11px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);
+  color:var(--text);font:700 13.5px var(--font);text-decoration:none;
+  display:inline-flex;align-items:center;gap:8px}
+.chip:hover{border-color:rgba(240,196,106,.5);background:rgba(240,196,106,.07);color:var(--text)}
+.chip.is-done{border-color:rgba(126,217,167,.5);color:#8FE0B4}
+
+.warn{margin-top:22px;padding:16px 18px;border-radius:14px;
+  background:rgba(240,196,106,.07);border:1px solid rgba(240,196,106,.25);
+  font-size:14px;color:rgba(239,234,246,.75);text-wrap:pretty}
+.warn b{color:var(--accent-l)}

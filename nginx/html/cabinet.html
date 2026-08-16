@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Личный кабинет — Horus VPN</title>
+<link rel="icon" type="image/svg+xml" href="logo-gold.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/account.css">
+<script type="module" src="js/cabinet.js"></script>
+</head>
+<body>
+
+<div class="orbs" aria-hidden="true">
+  <div class="orb orb--a"></div>
+  <div class="orb orb--b orb--bottom"></div>
+</div>
+
+<nav class="nav">
+  <a class="brand" href="index.html">
+    <img class="brand__logo" src="logo-gold.svg" alt="Horus">
+    <span class="brand__word">HORUS</span>
+  </a>
+  <div class="nav__links">
+    <a class="nav__link is-here" href="cabinet.html">Кабинет</a>
+    <a class="nav__link" href="connect.html">Подключение</a>
+    <button class="nav__link link-btn nav__logout" id="logout" type="button">Выйти</button>
+  </div>
+</nav>
+
+<main class="acc-main">
+
+  <section id="state-loading" class="state is-active">
+    <div class="checking">
+      <div class="spinner" role="status" aria-label="Загружаем данные"></div>
+      <p>Загружаем ваш кабинет…</p>
+    </div>
+  </section>
+
+  <section id="state-error" class="state">
+    <div class="acc-head">
+      <div>
+        <div class="eyebrow">КАБИНЕТ</div>
+        <h1 class="h2">Не удалось загрузить</h1>
+      </div>
+    </div>
+    <p class="lead" id="error-text">Проверьте соединение и попробуйте ещё раз.</p>
+    <div class="acc-actions">
+      <button class="btn btn--primary btn--wide" id="retry" type="button">Повторить</button>
+      <a class="btn btn--quiet" href="login.html">Войти заново</a>
+    </div>
+  </section>
+
+  <section id="state-ready" class="state">
+    <div class="acc-head">
+      <div>
+        <div class="eyebrow">КАБИНЕТ</div>
+        <h1 class="h2" id="greeting">Аккаунт</h1>
+      </div>
+      <a class="btn btn--quiet" href="connect.html">Подключиться из браузера</a>
+    </div>
+
+    <div class="acc-grid">
+      <div class="card tile tile__wide">
+        <div class="tile__kind">ПОДПИСКА</div>
+        <div class="tile__value tile__value--accent" id="sub-state">—</div>
+        <div class="tile__note" id="sub-note"></div>
+        <div class="acc-actions">
+          <a class="btn btn--primary btn--wide" id="renew" href="index.html#pricing">Продлить подписку</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="acc-grid">
+      <div class="card tile">
+        <div class="tile__kind">АККАУНТ</div>
+        <div class="tile__value" id="acc-username">—</div>
+        <div class="tile__note" id="acc-email"></div>
+        <div class="tile__note" id="acc-verified"></div>
+      </div>
+      <div class="card tile">
+        <div class="tile__kind">ВАШ IP</div>
+        <div class="tile__value" id="acc-ip">—</div>
+        <div class="tile__note" id="acc-ipnote"></div>
+      </div>
+      <div class="card tile">
+        <div class="tile__kind">ТЕКУЩИЙ СЕРВЕР</div>
+        <div class="tile__value" id="acc-server">—</div>
+        <div class="tile__note" id="acc-servernote"></div>
+      </div>
+    </div>
+
+    <div class="acc-grid">
+      <div class="card tile tile__wide">
+        <div class="tile__kind">СЕРВЕРЫ ПО НАГРУЗКЕ</div>
+        <div id="servers"></div>
+        <div class="tile__note" id="servers-note"></div>
+      </div>
+    </div>
+
+    <div class="acc-grid">
+      <div class="card tile tile__wide">
+        <div class="tile__kind">БЕЗОПАСНОСТЬ</div>
+        <div class="tile__note" style="margin-top:0">Одна подписка — до 5 устройств. Если доступ мог попасть к посторонним, закройте все сессии кроме текущей: на других устройствах потребуется войти заново.</div>
+        <div class="acc-actions">
+          <button class="btn btn--quiet" id="logout-others" type="button" data-label="Закрыть другие сессии">Закрыть другие сессии</button>
+        </div>
+        <p class="msg msg--error" id="sec-msg" role="alert"></p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer__brand">
+    <img class="footer__logo" src="logo-gold.svg" alt="">
+    © 2026 Horus VPN
+  </div>
+  <nav class="footer__docs" aria-label="Документы">
+    <a href="docs/terms-of-use.html">Пользовательское соглашение</a>
+    <a href="docs/offer.html">Публичная оферта</a>
+    <a href="docs/privacy.html">Политика конфиденциальности</a>
+    <a href="docs/terms.html">Тарифы и оплата</a>
+    <a href="docs/refund.html">Возврат средств</a>
+  </nav>
+  <div>Поддержка: <a href="mailto:horusping@gmail.com">horusping@gmail.com</a> · <a href="https://t.me/horusping">@horusping</a></div>
+  <div class="footer__code">Код проверки: PLAT</div>
+</footer>
+
+</body>
+</html>

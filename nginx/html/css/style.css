@@ -1,0 +1,278 @@
+/* Horus Ping Booster — общая оболочка сайта.
+   Здесь всё, что переиспользуют все страницы: фон, шапка, футер, кнопки,
+   поля, карточки, типографика. Постраничное — в css/<страница>.css */
+
+:root{
+  --bg:#0B0512;
+  --ink:#1A0C26;              /* текст на золоте */
+  --text:#EFEAF6;
+  --accent:#F0C46A;
+  --accent-l:#F3D48E;
+  --danger:#F2A6A0;
+  --danger-t:#F6C3BF;
+  --ok:#7ED9A7;
+  --line:rgba(255,255,255,.07);
+  --card-bg:rgba(255,255,255,.035);
+  --card-line:rgba(255,255,255,.08);
+  --font:'Manrope','Segoe UI',system-ui,sans-serif;
+  --display:'Unbounded','Manrope',system-ui,sans-serif;
+  --page-x:clamp(18px,4vw,40px);
+}
+
+*{box-sizing:border-box}
+/* Класс с display: побеждает UA-правило [hidden]{display:none} — вернём атрибуту силу */
+[hidden]{display:none!important}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+
+body{
+  margin:0;min-height:100vh;position:relative;overflow-x:clip;
+  display:flex;flex-direction:column;
+  font-family:var(--font);font-size:16.5px;line-height:1.6;
+  color:var(--text);-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(900px 620px at 88% -6%, rgba(92,42,120,.30), rgba(11,5,18,0) 62%),
+    radial-gradient(760px 540px at -12% 26%, rgba(61,24,80,.34), rgba(11,5,18,0) 62%),
+    var(--bg);
+}
+
+a{color:var(--accent)}
+a:hover{color:#F7DA9B}
+::selection{background:var(--accent);color:var(--ink)}
+
+/* ── Фоновые пятна ─────────────────────────────────────────────────────── */
+.orbs{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.orb{position:absolute;border-radius:50%}
+.orb--a{top:-140px;right:-100px;width:540px;height:540px;filter:blur(70px);
+  background:radial-gradient(circle at 35% 35%, rgba(126,60,165,.5), rgba(11,5,18,0) 70%);
+  animation:hp-pulse 9s ease-in-out infinite}
+.orb--b{top:920px;left:-160px;width:640px;height:640px;filter:blur(80px);
+  background:radial-gradient(circle at 60% 40%, rgba(240,196,106,.13), rgba(11,5,18,0) 70%)}
+.orb--c{top:2100px;right:-120px;width:560px;height:560px;filter:blur(80px);
+  background:radial-gradient(circle at 40% 40%, rgba(96,44,126,.42), rgba(11,5,18,0) 70%)}
+.orb--bottom{top:auto;bottom:-220px;left:-170px;width:620px;height:620px}
+
+/* ── Шапка ─────────────────────────────────────────────────────────────── */
+.nav{
+  position:sticky;top:0;z-index:200;display:flex;align-items:center;gap:14px;
+  flex-wrap:wrap;padding:13px clamp(16px,4vw,40px);
+  background:rgba(11,5,18,.72);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--text)}
+.brand__logo{height:30px;width:auto;display:block;filter:drop-shadow(0 2px 10px rgba(240,196,106,.35))}
+.brand__word{font-family:var(--display);font-weight:700;font-size:15.5px;letter-spacing:.05em}
+.nav__links{display:flex;gap:2px;flex-wrap:nowrap;margin-left:auto;align-items:center}
+.nav__link{
+  color:rgba(239,234,246,.75);text-decoration:none;font-size:14.5px;font-weight:600;
+  padding:9px 12px;border-radius:9px;
+}
+.nav__link:hover{color:#FFF;background:rgba(255,255,255,.06)}
+
+/* ── Кнопки ────────────────────────────────────────────────────────────── */
+.btn{font-family:var(--font);cursor:pointer;text-decoration:none;border:none}
+
+.btn--nav{
+  margin-left:10px;background:var(--accent);color:var(--ink);font-weight:800;font-size:14.5px;
+  padding:11px 18px;border-radius:11px;box-shadow:inset 0 1px 0 rgba(255,255,255,.45);
+  transition:transform .2s ease;
+}
+.btn--nav:hover{transform:translateY(-1px);color:var(--ink)}
+
+.btn--primary{
+  display:flex;align-items:center;justify-content:center;width:100%;min-height:58px;
+  border-radius:16px;background:var(--accent);color:var(--ink);
+  font-weight:800;font-size:17px;
+  box-shadow:0 14px 40px rgba(240,196,106,.25), inset 0 1px 0 rgba(255,255,255,.5);
+  transition:transform .25s ease,box-shadow .25s ease;
+}
+.btn--primary:hover:not(:disabled){transform:translateY(-2px);color:var(--ink);
+  box-shadow:0 20px 55px rgba(240,196,106,.35), inset 0 1px 0 rgba(255,255,255,.5)}
+.btn--primary:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none}
+
+.btn--hero{
+  display:flex;flex-direction:column;justify-content:center;min-height:58px;
+  padding:10px 26px;border-radius:14px;background:var(--accent);
+  box-shadow:0 14px 40px rgba(240,196,106,.22), inset 0 1px 0 rgba(255,255,255,.5);
+  transition:transform .25s ease,box-shadow .25s ease;
+}
+.btn--hero:hover{transform:translateY(-3px);
+  box-shadow:0 20px 50px rgba(240,196,106,.32), inset 0 1px 0 rgba(255,255,255,.5)}
+.btn--hero b{font-weight:800;font-size:15.5px;color:var(--ink)}
+.btn--hero span{font-size:12px;font-weight:700;color:rgba(26,12,38,.62)}
+
+.btn--ghost{
+  display:flex;flex-direction:column;justify-content:center;min-height:58px;
+  padding:10px 22px;border-radius:14px;background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.16);text-align:left;
+  transition:border-color .25s ease,background .25s ease;
+}
+.btn--ghost:hover{border-color:rgba(240,196,106,.55);background:rgba(240,196,106,.07)}
+.btn--ghost b{font-weight:800;font-size:15.5px;color:var(--text)}
+.btn--ghost span{font-size:12px;font-weight:700;color:rgba(239,234,246,.5)}
+
+/* ── Типографика ───────────────────────────────────────────────────────── */
+.eyebrow{font-size:12.5px;font-weight:800;letter-spacing:.22em;color:var(--accent-l);margin-bottom:14px}
+.h1{font-family:var(--display);font-weight:800;font-size:clamp(33px,5.1vw,60px);
+  line-height:1.08;letter-spacing:-.01em;margin:22px 0 18px}
+.h2{font-family:var(--display);font-weight:700;font-size:clamp(26px,3.6vw,42px);
+  line-height:1.15;letter-spacing:-.01em;margin:0 0 14px}
+.h3{font-family:var(--display);font-weight:700;font-size:clamp(24px,4vw,31px);
+  line-height:1.16;letter-spacing:-.01em;margin:0 0 12px}
+.lead{margin:0;color:rgba(239,234,246,.66);font-size:clamp(15.5px,1.3vw,17.5px);text-wrap:pretty}
+.lead--card{font-size:15.5px;margin:0 0 26px}
+.muted{color:rgba(239,234,246,.55)}
+
+.pill{
+  display:inline-flex;align-items:center;gap:9px;background:rgba(240,196,106,.08);
+  border:1px solid rgba(240,196,106,.28);border-radius:99px;padding:7px 14px;
+  font-size:13px;font-weight:700;color:var(--accent-l);
+}
+.pill__dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+  animation:hp-pulse 2.4s ease-in-out infinite}
+
+.bullets{display:flex;flex-wrap:wrap;gap:18px;color:rgba(239,234,246,.55);
+  font-size:13.5px;font-weight:600}
+.bullets li{display:flex;align-items:center;gap:7px;list-style:none}
+.bullets{margin:0;padding:0}
+.bullets li::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none}
+
+/* ── Поверхности ───────────────────────────────────────────────────────── */
+.card{background:var(--card-bg);border:1px solid var(--card-line);border-radius:18px;padding:26px 24px}
+.card--hover{transition:transform .35s ease,border-color .35s ease,background .35s ease}
+.card--hover:hover{transform:translateY(-5px);border-color:rgba(240,196,106,.35);
+  background:rgba(240,196,106,.05)}
+
+.panel{
+  background:linear-gradient(170deg,rgba(74,32,96,.32),rgba(26,12,38,.6));
+  border:1px solid rgba(240,196,106,.22);border-radius:26px;
+  box-shadow:0 30px 80px rgba(0,0,0,.45);
+}
+
+.disc{
+  width:84px;height:84px;margin:6px auto 22px;border-radius:50%;
+  border:1px solid var(--accent);background:linear-gradient(135deg,#2A1540,#160A24);
+  display:grid;place-items:center;box-shadow:0 0 44px rgba(240,196,106,.16);
+}
+.disc__check{font-size:34px;line-height:1;color:var(--accent)}
+.disc--neutral{border-color:rgba(255,255,255,.16);
+  background:linear-gradient(135deg,#241335,#160A24);box-shadow:none}
+.disc__diamond{width:17px;height:17px;border:2px solid var(--accent-l);transform:rotate(45deg)}
+
+/* ── Формы ─────────────────────────────────────────────────────────────── */
+.field{margin:0}
+.field + .field{margin-top:18px}
+.field__label{display:block;font-size:13.5px;font-weight:700;
+  color:rgba(239,234,246,.78);margin:0 0 8px}
+.field__row{position:relative}
+
+.input{
+  width:100%;min-height:54px;padding:14px 16px;border-radius:14px;
+  background:rgba(11,5,18,.55);border:1px solid rgba(255,255,255,.12);
+  color:var(--text);font:600 16px/1.4 var(--font);outline:none;
+  transition:border-color .2s ease,box-shadow .2s ease;
+}
+.input--toggle{padding-right:116px}
+.input--code{text-align:center;letter-spacing:.42em;font:800 24px/1.4 var(--font)}
+.input::placeholder{color:rgba(239,234,246,.32);letter-spacing:normal;font-weight:600;font-size:16px}
+.input:focus{border-color:rgba(240,196,106,.55);box-shadow:0 0 0 3px rgba(240,196,106,.14)}
+.input[aria-invalid="true"]{border-color:rgba(242,166,160,.65)}
+
+.toggle{
+  position:absolute;top:0;right:0;height:100%;padding:0 16px;
+  display:flex;align-items:center;justify-content:center;
+  background:none;border:none;cursor:pointer;color:rgba(239,234,246,.5);
+  font:800 12px/1 var(--font);letter-spacing:.06em;
+}
+.toggle:hover{color:var(--accent)}
+
+.hint{margin:18px 0 0;font-size:13px;color:rgba(239,234,246,.45)}
+
+.msg{margin:18px 0 0;padding:13px 16px;border-radius:13px;font-size:14px;font-weight:600;display:none}
+.msg.is-shown{display:block}
+.msg--error{background:rgba(242,166,160,.1);border:1px solid rgba(242,166,160,.35);color:var(--danger-t)}
+.msg--ok{background:rgba(240,196,106,.1);border:1px solid rgba(240,196,106,.35);color:var(--accent-l)}
+
+/* ── Состояния экрана (один контейнер, несколько секций) ───────────────── */
+.state{display:none}
+.state.is-active{display:block}
+.state--center{text-align:center}
+
+.spinner{
+  width:30px;height:30px;border-radius:50%;
+  border:3px solid rgba(240,196,106,.2);border-top-color:var(--accent);
+  animation:hp-spin .8s linear infinite;
+}
+
+/* ── Одна карточка по центру страницы: сброс пароля, вход, подключение ─── */
+.center-main{
+  position:relative;z-index:1;flex:1;display:flex;align-items:center;justify-content:center;
+  padding:clamp(28px,7vh,70px) clamp(16px,4vw,40px);
+}
+.center-stage{position:relative;width:100%;max-width:470px;display:grid;place-items:center}
+.center-ring{position:absolute;aspect-ratio:1/1;border-radius:50%;pointer-events:none}
+.center-ring--dashed{width:min(620px,148%);border:1px dashed rgba(240,196,106,.17)}
+.center-ring--solid{width:min(470px,112%);border:1px solid rgba(255,255,255,.055)}
+.center-card{position:relative;width:100%;padding:clamp(26px,5vw,42px)}
+
+.checking{display:flex;flex-direction:column;align-items:center;gap:16px;padding:22px 0 18px}
+.checking p{margin:0;font-size:14.5px;font-weight:600;color:rgba(239,234,246,.55)}
+
+.form-col{display:flex;flex-direction:column}
+.form-col .btn--primary{margin-top:24px}
+
+/* ── Переключатель разделов внутри карточки ────────────────────────────── */
+.tabs{display:flex;gap:4px;padding:4px;margin:0 0 24px;border-radius:14px;
+  background:rgba(11,5,18,.45);border:1px solid rgba(255,255,255,.08)}
+.tab{flex:1;min-height:42px;border:1px solid transparent;border-radius:10px;background:none;
+  cursor:pointer;font:800 14px var(--font);color:rgba(239,234,246,.55);
+  transition:color .2s ease,background .2s ease,border-color .2s ease}
+.tab:hover{color:var(--text)}
+.tab.is-on{background:rgba(240,196,106,.1);border-color:rgba(240,196,106,.3);color:var(--accent-l)}
+
+.link-btn{background:none;border:none;padding:0;cursor:pointer;text-decoration:none;
+  font:700 13.5px var(--font);color:var(--accent)}
+.link-btn:hover:not(:disabled){color:#F7DA9B}
+.link-btn:disabled{color:rgba(239,234,246,.35);cursor:default}
+
+.row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.row--top{margin-top:14px}
+.note{font-size:13px;color:rgba(239,234,246,.45)}
+
+/* ── Футер ─────────────────────────────────────────────────────────────── */
+.footer{
+  position:relative;z-index:1;border-top:1px solid var(--line);
+  padding:26px var(--page-x);display:flex;flex-wrap:wrap;gap:14px;
+  align-items:center;justify-content:space-between;
+  color:rgba(239,234,246,.45);font-size:13px;
+}
+.footer__brand{display:flex;align-items:center;gap:10px}
+.footer__logo{height:20px;width:auto;display:block;opacity:.85}
+.footer__docs{display:flex;flex-wrap:wrap;gap:6px 18px}
+.footer__docs a{color:rgba(239,234,246,.6);text-decoration:none}
+.footer__docs a:hover{color:var(--accent)}
+/* Кодовое слово платёжной системы на время согласования кассы.
+   Стоит в футере каждой страницы — убрать после регистрации. */
+.footer__code{font-weight:800;letter-spacing:.16em;color:rgba(239,234,246,.35)}
+
+/* ── Появление при скролле (js/motion.js) ──────────────────────────────── */
+[data-reveal].is-hidden{opacity:0;transform:translateY(30px)}
+[data-reveal]{transition:opacity .7s ease,transform .8s cubic-bezier(.22,.61,.36,1)}
+
+@keyframes hp-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+@keyframes hp-pulse{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.9;transform:scale(1.07)}}
+@keyframes hp-spin{to{transform:rotate(360deg)}}
+
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *{animation-duration:2.4s!important;transition-duration:0s!important}
+}
+
+@media (max-width:680px){
+  .nav{padding:8px 12px;gap:8px}
+  .nav__link{display:none}
+  .nav__link.btn--nav{display:inline-block;margin-left:0;padding:10px 16px;font-size:13.5px}
+  /* Кабинет и подключение: выход и переходы между ними должны оставаться
+     доступными на телефоне — иначе со страницы под замком нет выхода. */
+  .nav__link.nav__logout,
+  .nav__links .nav__link.is-here{display:inline-block;padding:9px 10px;font-size:13.5px}
+}

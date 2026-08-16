@@ -4,294 +4,117 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Новый пароль — Horus Ping Booster</title>
+<title>Новый пароль — Horus VPN</title>
 <link rel="icon" type="image/svg+xml" href="/logo-gold.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
-<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-  *{box-sizing:border-box}
-  html{-webkit-text-size-adjust:100%}
-  body{
-    margin:0;min-height:100vh;display:flex;flex-direction:column;
-    font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-size:16.5px;line-height:1.6;
-    color:#EFEAF6;-webkit-font-smoothing:antialiased;
-    background:
-      radial-gradient(900px 620px at 88% -6%, rgba(92,42,120,.30), rgba(11,5,18,0) 62%),
-      radial-gradient(760px 540px at -12% 26%, rgba(61,24,80,.34), rgba(11,5,18,0) 62%),
-      #0B0512;
-  }
-  a{color:#F0C46A}
-  a:hover{color:#F7DA9B}
-  ::selection{background:#F0C46A;color:#1A0C26}
-
-  header{padding:16px clamp(16px,4vw,40px);border-bottom:1px solid rgba(255,255,255,.07)}
-  .brand{display:inline-flex;align-items:center;gap:11px;text-decoration:none;color:#EFEAF6}
-  .brand img{height:38px;width:auto;display:block;filter:drop-shadow(0 2px 10px rgba(240,196,106,.35))}
-  .brand span{font-family:'Unbounded',sans-serif;font-weight:700;font-size:15.5px;letter-spacing:.05em}
-
-  main{flex:1;display:flex;align-items:center;justify-content:center;padding:clamp(28px,7vh,70px) clamp(16px,4vw,40px)}
-
-  .card{
-    width:100%;max-width:470px;padding:clamp(26px,5vw,42px);border-radius:26px;
-    background:linear-gradient(170deg,rgba(74,32,96,.32),rgba(26,12,38,.6));
-    border:1px solid rgba(240,196,106,.22);box-shadow:0 30px 80px rgba(0,0,0,.45);
-  }
-  .eyebrow{font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#F3D48E;margin-bottom:14px}
-  h1{font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(23px,4vw,30px);
-     line-height:1.18;letter-spacing:-.01em;margin:0 0 12px}
-  .lead{margin:0 0 26px;color:rgba(239,234,246,.66);font-size:15.5px;text-wrap:pretty}
-
-  label{display:block;font-size:13.5px;font-weight:700;color:rgba(239,234,246,.78);margin:0 0 8px}
-  .field{margin-bottom:18px}
-  .field-row{position:relative}
-  input[type=password],input[type=text]{
-    width:100%;min-height:54px;padding:14px 52px 14px 16px;border-radius:14px;
-    background:rgba(11,5,18,.55);border:1px solid rgba(255,255,255,.12);
-    color:#EFEAF6;font:600 16px/1.4 'Manrope',sans-serif;outline:none;
-    transition:border-color .2s ease,box-shadow .2s ease;
-  }
-  input:focus{border-color:rgba(240,196,106,.55);box-shadow:0 0 0 3px rgba(240,196,106,.14)}
-  input[aria-invalid=true]{border-color:rgba(242,166,160,.65)}
-  .toggle{
-    position:absolute;top:0;right:0;height:100%;width:50px;display:flex;align-items:center;justify-content:center;
-    background:none;border:none;cursor:pointer;color:rgba(239,234,246,.5);font-size:12px;font-weight:800;
-    letter-spacing:.06em;font-family:'Manrope',sans-serif;
-  }
-  .toggle:hover{color:#F0C46A}
-  .hint{margin:-8px 0 18px;font-size:13px;color:rgba(239,234,246,.45)}
-
-  button.primary{
-    width:100%;min-height:58px;margin-top:6px;border:none;border-radius:16px;cursor:pointer;
-    background:#F0C46A;color:#1A0C26;font-family:'Manrope',sans-serif;font-weight:800;font-size:17px;
-    box-shadow:0 14px 40px rgba(240,196,106,.25), inset 0 1px 0 rgba(255,255,255,.5);
-    transition:transform .25s ease,box-shadow .25s ease;
-  }
-  button.primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 20px 55px rgba(240,196,106,.35), inset 0 1px 0 rgba(255,255,255,.5)}
-  button.primary:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none}
-
-  .msg{margin:18px 0 0;padding:13px 16px;border-radius:13px;font-size:14px;font-weight:600;display:none}
-  .msg.show{display:block}
-  .msg.error{background:rgba(242,166,160,.1);border:1px solid rgba(242,166,160,.35);color:#F6C3BF}
-  .msg.ok{background:rgba(240,196,106,.1);border:1px solid rgba(240,196,106,.35);color:#F3D48E}
-
-  .state{display:none}
-  .state.active{display:block}
-  .center{text-align:center}
-  .glyph{font-size:44px;line-height:1;margin-bottom:16px}
-  .muted{color:rgba(239,234,246,.55);font-size:14px}
-
-  .spinner{
-    width:26px;height:26px;margin:0 auto 16px;border-radius:50%;
-    border:3px solid rgba(240,196,106,.22);border-top-color:#F0C46A;animation:spin .8s linear infinite;
-  }
-  @keyframes spin{to{transform:rotate(360deg)}}
-  @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}button.primary{transition:none}}
-
-  footer{padding:22px clamp(16px,4vw,40px);border-top:1px solid rgba(255,255,255,.07);
-         color:rgba(239,234,246,.45);font-size:13px;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between}
-</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/reset.css">
+<script type="module" src="/js/reset.js"></script>
 </head>
 <body>
 
-<header>
+<div class="orbs" aria-hidden="true">
+  <div class="orb orb--a"></div>
+  <div class="orb orb--b orb--bottom"></div>
+</div>
+
+<nav class="nav">
   <a class="brand" href="/">
-    <img src="./logo-gold.svg" alt="Horus">
-    <span>HORUS</span>
+    <img class="brand__logo" src="/logo-gold.svg" alt="Horus">
+    <span class="brand__word">HORUS</span>
   </a>
-</header>
+  <div class="nav__links">
+    <a class="nav__link" href="/login.html">Войти</a>
+    <a class="nav__link" href="mailto:horusping@gmail.com">Поддержка</a>
+    <a class="nav__link btn btn--nav" href="/">На сайт</a>
+  </div>
+</nav>
 
-<main>
-  <div class="card">
+<main class="center-main">
+  <div class="center-stage">
+    <div class="center-ring center-ring--dashed" aria-hidden="true"></div>
+    <div class="center-ring center-ring--solid" aria-hidden="true"></div>
 
-    <!-- Проверяем ссылку -->
-    <section id="state-loading" class="state active center" aria-live="polite">
-      <div class="spinner" role="status" aria-label="Проверяем ссылку"></div>
-      <p class="muted" style="margin:0">Проверяем ссылку…</p>
-    </section>
+    <div class="panel center-card">
 
-    <!-- Форма нового пароля -->
-    <section id="state-form" class="state">
-      <div class="eyebrow">СБРОС ПАРОЛЯ</div>
-      <h1>Задайте новый пароль</h1>
-      <p class="lead">После сохранения вы выйдете со всех устройств — войдите заново с новым паролем.</p>
-
-      <form id="form" novalidate>
-        <div class="field">
-          <label for="password">Новый пароль</label>
-          <div class="field-row">
-            <input id="password" type="password" autocomplete="new-password" minlength="8" required
-                   placeholder="Минимум 8 символов">
-            <button type="button" class="toggle" data-target="password" aria-label="Показать пароль">ПОКАЗАТЬ</button>
-          </div>
+      <!-- Проверяем ссылку -->
+      <section id="state-loading" class="state is-active" aria-live="polite">
+        <div class="checking">
+          <div class="spinner" role="status" aria-label="Проверяем ссылку"></div>
+          <p>Проверяем ссылку…</p>
         </div>
+      </section>
 
-        <div class="field">
-          <label for="confirm">Повторите пароль</label>
-          <div class="field-row">
-            <input id="confirm" type="password" autocomplete="new-password" minlength="8" required
-                   placeholder="Ещё раз">
-            <button type="button" class="toggle" data-target="confirm" aria-label="Показать пароль">ПОКАЗАТЬ</button>
+      <!-- Форма нового пароля -->
+      <section id="state-form" class="state">
+        <div class="eyebrow">СБРОС ПАРОЛЯ</div>
+        <h1 class="h3">Задайте новый пароль</h1>
+        <p class="lead lead--card">После сохранения вы выйдете со всех устройств — войдите заново с новым паролем.</p>
+
+        <form class="form-col" id="form" novalidate>
+          <div class="field">
+            <label class="field__label" for="password">Новый пароль</label>
+            <div class="field__row">
+              <input class="input input--toggle" id="password" type="password" autocomplete="new-password" minlength="8" required
+                     placeholder="Минимум 8 символов" aria-invalid="false">
+              <button type="button" class="toggle" data-target="password" aria-label="Показать пароль">ПОКАЗАТЬ</button>
+            </div>
           </div>
-        </div>
 
-        <p class="hint">Не используйте пароль от почты или других сервисов.</p>
+          <div class="field">
+            <label class="field__label" for="confirm">Повторите пароль</label>
+            <div class="field__row">
+              <input class="input input--toggle" id="confirm" type="password" autocomplete="new-password" minlength="8" required
+                     placeholder="Ещё раз" aria-invalid="false">
+              <button type="button" class="toggle" data-target="confirm" aria-label="Показать пароль">ПОКАЗАТЬ</button>
+            </div>
+          </div>
 
-        <button id="submit" class="primary" type="submit">Сохранить пароль</button>
-      </form>
+          <p class="hint">Не используйте пароль от почты или других сервисов.</p>
 
-      <p id="form-msg" class="msg error" role="alert"></p>
-    </section>
+          <button id="submit" class="btn btn--primary" type="submit">Сохранить пароль</button>
+        </form>
 
-    <!-- Готово -->
-    <section id="state-done" class="state center">
-      <div class="glyph">✓</div>
-      <h1>Пароль обновлён</h1>
-      <p class="lead">Вернитесь в приложение Horus и войдите с новым паролем. Все прежние сессии закрыты.</p>
-      <a class="primary" href="/" style="display:flex;align-items:center;justify-content:center;text-decoration:none">На главную</a>
-    </section>
+        <p id="form-msg" class="msg msg--error" role="alert"></p>
+      </section>
 
-    <!-- Ссылка не годится -->
-    <section id="state-invalid" class="state center">
-      <div class="glyph">⌛</div>
-      <h1>Ссылка недействительна</h1>
-      <p class="lead" id="invalid-text">Ссылка для сброса пароля истекла или уже была использована. Запросите новую в приложении.</p>
-      <a class="primary" href="/" style="display:flex;align-items:center;justify-content:center;text-decoration:none">На главную</a>
-    </section>
+      <!-- Готово -->
+      <section id="state-done" class="state state--center">
+        <div class="disc" aria-hidden="true"><span class="disc__check">✓</span></div>
+        <h1 class="h3">Пароль обновлён</h1>
+        <p class="lead lead--card">Вернитесь в приложение Horus и войдите с новым паролем. Все прежние сессии закрыты.</p>
+        <a class="btn btn--primary" href="/">На главную</a>
+      </section>
 
+      <!-- Ссылка не годится -->
+      <section id="state-invalid" class="state state--center">
+        <div class="disc disc--neutral" aria-hidden="true"><div class="disc__diamond"></div></div>
+        <h1 class="h3">Ссылка недействительна</h1>
+        <p class="lead lead--card" id="invalid-text">Ссылка для сброса пароля истекла или уже была использована. Запросите новую в приложении.</p>
+        <a class="btn btn--primary" href="/">На главную</a>
+      </section>
+
+    </div>
   </div>
 </main>
 
-<footer>
-  <div>© 2026 Horus Ping Booster</div>
-  <div>Нужна помощь? <a href="mailto:support@horusping.app">support@horusping.app</a></div>
+<footer class="footer">
+  <div class="footer__brand">
+    <img class="footer__logo" src="/logo-gold.svg" alt="">
+    © 2026 Horus VPN
+  </div>
+  <nav class="footer__docs" aria-label="Документы">
+    <a href="/docs/terms-of-use.html">Пользовательское соглашение</a>
+    <a href="/docs/offer.html">Публичная оферта</a>
+    <a href="/docs/privacy.html">Политика конфиденциальности</a>
+    <a href="/docs/terms.html">Тарифы и оплата</a>
+    <a href="/docs/refund.html">Возврат средств</a>
+  </nav>
+  <div>Поддержка: <a href="mailto:horusping@gmail.com">horusping@gmail.com</a> · <a href="https://t.me/horusping">@horusping</a></div>
+  <div class="footer__code">Код проверки: PLAT</div>
 </footer>
-
-<script>
-(function () {
-  "use strict";
-
-  var token = new URLSearchParams(location.search).get("token") || "";
-
-  var states  = { loading: byId("state-loading"), form: byId("state-form"), done: byId("state-done"), invalid: byId("state-invalid") };
-  var form    = byId("form");
-  var pass    = byId("password");
-  var confirm = byId("confirm");
-  var submit  = byId("submit");
-  var msg     = byId("form-msg");
-
-  function byId(id) { return document.getElementById(id); }
-
-  function show(name) {
-    Object.keys(states).forEach(function (key) {
-      states[key].classList.toggle("active", key === name);
-    });
-  }
-
-  function fail(text) {
-    if (text) byId("invalid-text").textContent = text;
-    show("invalid");
-  }
-
-  function say(text, kind) {
-    msg.textContent = text;
-    msg.className = "msg show " + (kind || "error");
-  }
-
-  function clearSay() { msg.className = "msg"; }
-
-  // "Слишком много запросов" — покажем, через сколько можно повторить.
-  function rateLimitText(response) {
-    var after = parseInt(response.headers.get("Retry-After") || "", 10);
-    if (!after) return "Слишком много попыток. Попробуйте позже.";
-    var minutes = Math.ceil(after / 60);
-    return "Слишком много попыток. Повторите через " + (after < 60 ? after + " с." : minutes + " мин.");
-  }
-
-  // ── Показать/скрыть пароль ────────────────────────────────────────────────
-  Array.prototype.forEach.call(document.querySelectorAll(".toggle"), function (btn) {
-    btn.addEventListener("click", function () {
-      var input = byId(btn.getAttribute("data-target"));
-      var hidden = input.type === "password";
-      input.type = hidden ? "text" : "password";
-      btn.textContent = hidden ? "СКРЫТЬ" : "ПОКАЗАТЬ";
-      btn.setAttribute("aria-label", hidden ? "Скрыть пароль" : "Показать пароль");
-      input.focus();
-    });
-  });
-
-  // ── Проверяем ссылку до того, как человек начнёт печатать ────────────────
-  if (!token) {
-    fail("В ссылке нет кода восстановления. Откройте ссылку из письма целиком.");
-  } else {
-    fetch("/auth/reset-check?token=" + encodeURIComponent(token), { headers: { "Accept": "application/json" } })
-      .then(function (r) {
-        if (r.status === 429) { fail(rateLimitText(r)); return null; }
-        return r.ok ? r.json() : null;
-      })
-      .then(function (data) {
-        if (!data) return;
-        if (data.status === "valid") { show("form"); pass.focus(); }
-        else fail();
-      })
-      .catch(function () {
-        fail("Не удалось проверить ссылку. Проверьте соединение и попробуйте ещё раз.");
-      });
-  }
-
-  // ── Отправка нового пароля ───────────────────────────────────────────────
-  form.addEventListener("submit", function (event) {
-    event.preventDefault();
-    clearSay();
-
-    pass.setAttribute("aria-invalid", "false");
-    confirm.setAttribute("aria-invalid", "false");
-
-    if (pass.value.length < 8) {
-      pass.setAttribute("aria-invalid", "true");
-      say("Пароль должен быть не короче 8 символов.");
-      pass.focus();
-      return;
-    }
-
-    if (pass.value !== confirm.value) {
-      confirm.setAttribute("aria-invalid", "true");
-      say("Пароли не совпадают.");
-      confirm.focus();
-      return;
-    }
-
-    submit.disabled = true;
-    submit.textContent = "Сохраняем…";
-
-    fetch("/auth/reset-confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ token: token, password: pass.value })
-    })
-      .then(function (r) {
-        if (r.ok) { show("done"); return; }
-
-        if (r.status === 429) { say(rateLimitText(r)); return; }
-
-        return r.json().catch(function () { return null; }).then(function (body) {
-          if (body && body.code === "invalid_token") {
-            fail();   // ссылку успели использовать или она истекла, пока заполняли форму
-            return;
-          }
-          say((body && body.message) || (body && body.Message) || "Не удалось сохранить пароль. Попробуйте ещё раз.");
-        });
-      })
-      .catch(function () {
-        say("Сеть недоступна. Проверьте соединение и попробуйте ещё раз.");
-      })
-      .then(function () {
-        submit.disabled = false;
-        submit.textContent = "Сохранить пароль";
-      });
-  });
-})();
-</script>
 
 </body>
 </html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Подключение — Horus VPN</title>
+<link rel="icon" type="image/svg+xml" href="logo-gold.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/account.css">
+<script type="module" src="js/connect.js"></script>
+</head>
+<body>
+
+<div class="orbs" aria-hidden="true">
+  <div class="orb orb--a"></div>
+  <div class="orb orb--b orb--bottom"></div>
+</div>
+
+<nav class="nav">
+  <a class="brand" href="index.html">
+    <img class="brand__logo" src="logo-gold.svg" alt="Horus">
+    <span class="brand__word">HORUS</span>
+  </a>
+  <div class="nav__links">
+    <a class="nav__link" href="cabinet.html">Кабинет</a>
+    <a class="nav__link is-here" href="connect.html">Подключение</a>
+    <button class="nav__link link-btn nav__logout" id="logout" type="button">Выйти</button>
+  </div>
+</nav>
+
+<main class="acc-main">
+
+  <div class="acc-head">
+    <div>
+      <div class="eyebrow">ПОДКЛЮЧЕНИЕ</div>
+      <h1 class="h2">Без установки приложения</h1>
+    </div>
+    <a class="btn btn--quiet" href="cabinet.html">В кабинет</a>
+  </div>
+
+  <div class="acc-grid">
+    <div class="card tile tile__wide">
+      <p class="lead lead--card">Нажмите «Подключить» — мы выберем наименее загруженный сервер, закрепим за вами место и выдадим ссылки подписки. Их нужно один раз добавить в клиент на устройстве: подходит для iPhone, iPad и любой системы, где приложение Horus не установлено.</p>
+
+      <ol class="conn-steps">
+        <li>Нажмите «Подключить» — место на сервере закрепится за вашим аккаунтом.</li>
+        <li>Скопируйте ссылку подписки — основную (VLESS) или запасную (Hysteria2).</li>
+        <li>Добавьте её в клиент, поддерживающий этот протокол, и включите соединение.</li>
+      </ol>
+
+      <section id="state-idle" class="state is-active">
+        <div class="acc-actions" style="margin-top:0">
+          <button class="btn btn--primary btn--wide" id="connect" type="button" data-label="Подключить">Подключить</button>
+        </div>
+        <p class="msg msg--error" id="idle-msg" role="alert"></p>
+      </section>
+
+      <section id="state-ready" class="state">
+        <div class="tile__kind" style="margin-top:4px">ОСНОВНАЯ ССЫЛКА · VLESS</div>
+        <div class="secret">
+          <pre class="secret__box secret__box--link" id="link">—</pre>
+          <div class="secret__row">
+            <button class="chip" id="copy-link" type="button" data-label="Скопировать ссылку">Скопировать ссылку</button>
+            <a class="chip" id="open-link" href="#">Открыть в клиенте</a>
+          </div>
+        </div>
+
+        <div class="tile__kind" style="margin-top:24px">ЗАПАСНАЯ ССЫЛКА · HYSTERIA2</div>
+        <div class="secret">
+          <pre class="secret__box secret__box--link" id="link-hy2">—</pre>
+          <div class="secret__row">
+            <button class="chip" id="copy-hy2" type="button" data-label="Скопировать ссылку">Скопировать ссылку</button>
+            <a class="chip" id="open-hy2" href="#">Открыть в клиенте</a>
+          </div>
+        </div>
+
+        <div class="secret__row" style="margin-top:20px">
+          <button class="chip" id="download-config" type="button" data-label="Скачать обе ссылки">Скачать обе ссылки</button>
+          <button class="chip" id="refresh" type="button" data-label="Обновить">Обновить</button>
+        </div>
+
+        <div class="warn">
+          <b>Ссылки личные.</b> Они открывают доступ к вашей подписке — не публикуйте их и не пересылайте. Если ссылка утекла, смените пароль в приложении: это закроет все сессии.
+        </div>
+      </section>
+
+      <section id="state-blocked" class="state">
+        <div class="tile__value" id="blocked-title">Подписка неактивна</div>
+        <div class="tile__note" id="blocked-note">Подключение доступно, пока действует подписка.</div>
+        <div class="acc-actions">
+          <a class="btn btn--primary btn--wide" href="index.html#pricing">Оформить подписку</a>
+          <a class="btn btn--quiet" href="cabinet.html">В кабинет</a>
+        </div>
+      </section>
+    </div>
+  </div>
+
+</main>
+
+<footer class="footer">
+  <div class="footer__brand">
+    <img class="footer__logo" src="logo-gold.svg" alt="">
+    © 2026 Horus VPN
+  </div>
+  <nav class="footer__docs" aria-label="Документы">
+    <a href="docs/terms-of-use.html">Пользовательское соглашение</a>
+    <a href="docs/offer.html">Публичная оферта</a>
+    <a href="docs/privacy.html">Политика конфиденциальности</a>
+    <a href="docs/terms.html">Тарифы и оплата</a>
+    <a href="docs/refund.html">Возврат средств</a>
+  </nav>
+  <div>Поддержка: <a href="mailto:horusping@gmail.com">horusping@gmail.com</a> · <a href="https://t.me/horusping">@horusping</a></div>
+  <div class="footer__code">Код проверки: PLAT</div>
+</footer>
+
+</body>
+</html>

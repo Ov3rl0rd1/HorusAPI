@@ -77,7 +77,12 @@ version="${tag#v}"
 tag_dir="$(printf '%s' "$tag" | tr -c 'A-Za-z0-9._-' '_')"
 dest="$ROOT/releases/$tag_dir"
 
-if [ -f "$dest/.complete" ] && [ "$(readlink "$ROOT/current" 2>/dev/null || true)" = "releases/$tag_dir" ]; then
+# Skip only when the mirror is complete *and* actually reachable through
+# `current`. Testing a file _through_ the symlink proves the target still
+# exists, so a dangling or stale link re-mirrors instead of serving nothing.
+if [ -f "$dest/.complete" ] &&
+   [ -f "$ROOT/current/.complete" ] &&
+   [ "$(readlink "$ROOT/current" 2>/dev/null || true)" = "releases/$tag_dir" ]; then
     log "$tag already mirrored"
     exit 0
 fi
@@ -177,16 +182,31 @@ touch "$tmp/.complete"
 # ── Publish: rename into place, then flip the symlink ─────────
 rm -rf "$dest"
 mv "$tmp" "$dest"
-ln -sfn "releases/$tag_dir" "$ROOT/.current.new"
-mv -f "$ROOT/.current.new" "$ROOT/current"
+
+# Flip `current` with `ln -sfn`, never with `mv`. When `current` already exists
+# and points at a directory, `mv` follows it and drops the new link *inside*
+# that directory instead of replacing it — the flip silently does nothing, the
+# cleanup below then deletes the release the stale link still points at, and
+# /download/ serves nothing until the next run finds the link dangling.
+# `ln -sfn` replaces the link itself (-n: don't follow it, -f: unlink first).
+if [ -e "$ROOT/current" ] && [ ! -L "$ROOT/current" ]; then
+    # A real directory here predates the symlink layout — clear it out.
+    rm -rf "$ROOT/current"
+fi
+ln -sfn "releases/$tag_dir" "$ROOT/current"
 
 # ── Drop everything the site no longer serves ─────────────────
+# Never remove what `current` resolves to, however it got there.
+live="$(readlink "$ROOT/current" 2>/dev/null || true)"
 for old in "$ROOT"/releases/*; do
-    if [ -d "$old" ] && [ "$old" != "$dest" ]; then
+    if [ -d "$old" ] && [ "$old" != "$dest" ] &&
+       [ "releases/$(basename "$old")" != "$live" ]; then
         log "  removing old mirror $(basename "$old")"
         rm -rf "$old"
     fi
 done
+# Stray links the previous `mv`-based flip left inside a release directory.
+rm -f "$dest/.current.new"
 rm -rf "$ROOT"/.tmp-*
 
 log "now serving $tag"
