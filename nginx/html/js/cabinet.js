@@ -2,8 +2,6 @@ import { whoAmI, bestServers, logoutOthers } from './endpoints.js';
 import { requireSession, clearSession } from './session.js';
 import { byId } from './util.js';
 
-if (requireSession('login.html')) start();
-
 const states = { loading: byId('state-loading'), error: byId('state-error'), ready: byId('state-ready') };
 function show(name) {
   Object.keys(states).forEach(function (k) { states[k].classList.toggle('is-active', k === name); });
@@ -179,3 +177,7 @@ async function start() {
     show('error');
   }
 }
+
+// Запускаем последним: start() читает states и show(), а они объявлены через
+// const/function ниже по файлу — вызов сверху падал бы в temporal dead zone.
+if (requireSession('login.html')) start();
