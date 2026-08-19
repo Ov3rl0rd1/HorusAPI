@@ -2,7 +2,7 @@ import { connectConfig } from './endpoints.js';
 import { requireSession, clearSession } from './session.js';
 import { byId } from './util.js';
 
-requireSession('login.html');
+requireSession('/login');
 
 const states = { idle: byId('state-idle'), ready: byId('state-ready'), blocked: byId('state-blocked') };
 function show(name) {
@@ -11,17 +11,17 @@ function show(name) {
 
 byId('logout').addEventListener('click', function () {
   clearSession();
-  location.replace('login.html');
+  location.replace('/login');
 });
 
 let config = null;
 
 // GET /servers/connect отдаёт готовые ссылки под ключами ApiConsts:
-// { "VLESS": "vless://…", "HY2": "hysteria2://…" }. Сервер сам выбирает узел,
+// { "HY2": "hysteria2://…", "VLESS": "vless://…" }. Сервер сам выбирает узел,
 // поэтому id не передаём. Ключи читаем терпимо — на случай, если появится
 // camelCase-вариант.
 function links(cfg) {
-  if (!cfg) return { vless: '', hy2: '' };
+  if (!cfg) return { hy2: '', vless: '' };
   const pick = function (keys) {
     for (let i = 0; i < keys.length; i++) {
       const v = cfg[keys[i]];
@@ -30,8 +30,8 @@ function links(cfg) {
     return '';
   };
   return {
-    vless: pick(['VLESS', 'vless', 'vlessLink']),
-    hy2: pick(['HY2', 'hy2', 'hysteria', 'hysteriaLink'])
+    hy2: pick(['HY2', 'hy2', 'hysteria', 'hysteriaLink']),
+    vless: pick(['VLESS', 'vless', 'vlessLink'])
   };
 }
 
@@ -62,7 +62,7 @@ async function copy(text, button) {
   }
 }
 
-// Одна пара «строка + кнопки». Нет ссылки — прячем блок целиком.
+// Одна пара «строка + кнопки». Нет ссылки — прячем кнопки.
 function renderLink(boxId, openId, copyId, value) {
   const box = byId(boxId);
   const open = byId(openId);
@@ -74,9 +74,14 @@ function renderLink(boxId, openId, copyId, value) {
 }
 
 function render() {
-  const { vless, hy2 } = links(config);
-  renderLink('link', 'open-link', 'copy-link', vless);
-  renderLink('link-hy2', 'open-hy2', 'copy-hy2', hy2);
+  const both = links(config);
+  renderLink('link', 'open-link', 'copy-link', both.hy2);
+  renderLink('link-vless', 'open-vless', 'copy-vless', both.vless);
+
+  // Инструкции подставляют ссылку в свои блоки (js/guides.js). Все описанные
+  // там клиенты работают по Hysteria2, поэтому шлём именно её.
+  window.dispatchEvent(new CustomEvent('horus:link', { detail: both.hy2 }));
+
   show('ready');
 }
 
@@ -89,7 +94,7 @@ async function fetchConfig(button) {
     config = await connectConfig();
     render();
   } catch (err) {
-    if (err.isAuth) { clearSession(); location.replace('login.html'); return; }
+    if (err.isAuth) { clearSession(); location.replace('/login'); return; }
     // 403 — подписка кончилась, 404 — свободных серверов нет
     if (err.status === 403 || err.status === 400) {
       byId('blocked-title').textContent = 'Подписка неактивна';
@@ -116,16 +121,16 @@ async function fetchConfig(button) {
 byId('connect').addEventListener('click', function (e) { fetchConfig(e.currentTarget); });
 byId('refresh').addEventListener('click', function (e) { fetchConfig(e.currentTarget); });
 byId('copy-link').addEventListener('click', function (e) { copy(byId('link').textContent, e.currentTarget); });
-byId('copy-hy2').addEventListener('click', function (e) { copy(byId('link-hy2').textContent, e.currentTarget); });
+byId('copy-vless').addEventListener('click', function (e) { copy(byId('link-vless').textContent, e.currentTarget); });
 
 byId('download-config').addEventListener('click', function (e) {
-  const { vless, hy2 } = links(config);
+  const both = links(config);
   const text = [
     '# Horus VPN — ссылки подписки',
     '# Ссылки личные, не публикуйте их.',
     '',
-    vless ? '# VLESS (основной)\n' + vless : '',
-    hy2 ? '\n# Hysteria2 (запасной)\n' + hy2 : ''
+    both.hy2 ? '# Hysteria2 (основной)\n' + both.hy2 : '',
+    both.vless ? '\n# VLESS (запасной)\n' + both.vless : ''
   ].filter(Boolean).join('\n');
 
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });

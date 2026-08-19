@@ -41,6 +41,6 @@ export function isSignedIn() { return !!getSessionKey(); }
 // Для страниц под замком: нет сессии — уводим на вход.
 export function requireSession(loginUrl) {
   if (isSignedIn()) return true;
-  location.replace(loginUrl || 'login.html');
+  location.replace(loginUrl || '/login');
   return false;
 }

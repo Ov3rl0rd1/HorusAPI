@@ -2,7 +2,7 @@ import { login, register, verifyEmail, resendCode, requestPasswordReset } from '
 import { saveSession, isSignedIn } from './session.js';
 import { byId, qsa, queryParam } from './util.js';
 
-const AFTER_LOGIN = 'cabinet.html';   // личный кабинет
+const AFTER_LOGIN = '/cabinet';   // личный кабинет
 const MIN_LENGTH = 8;
 const RESEND_COOLDOWN = 60;           // секунд до повторной отправки кода
 

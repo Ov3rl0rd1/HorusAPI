@@ -274,10 +274,11 @@ a:hover{color:#F7DA9B}
 
 @media (max-width:680px){
   .nav{padding:8px 12px;gap:8px}
-  .nav__link{display:none}
-  .nav__link.btn--nav{display:inline-block;margin-left:0;padding:10px 16px;font-size:13.5px}
-  /* Кабинет и подключение: выход и переходы между ними должны оставаться
-     доступными на телефоне — иначе со страницы под замком нет выхода. */
-  .nav__link.nav__logout,
-  .nav__links .nav__link.is-here{display:inline-block;padding:9px 10px;font-size:13.5px}
+  /* На телефоне убираем только якоря разделов лендинга — вход в кабинет,
+     переход к подключению и выход нужны именно здесь. */
+  .nav__link--jump{display:none}
+  .brand__word{display:none}
+  .nav__links{gap:0;flex-wrap:wrap;justify-content:flex-end}
+  .nav__link{padding:9px 9px;font-size:13.5px}
+  .nav__link.btn--nav{display:inline-block;margin-left:6px;padding:10px 14px;font-size:13.5px}
 }

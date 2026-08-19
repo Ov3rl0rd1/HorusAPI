@@ -9,7 +9,7 @@ function show(name) {
 
 byId('logout').addEventListener('click', function () {
   clearSession();
-  location.replace('login.html');
+  location.replace('/login');
 });
 byId('retry').addEventListener('click', start);
 
@@ -149,7 +149,7 @@ others.addEventListener('click', async function () {
     msg.textContent = 'Готово. На других устройствах нужно войти заново.';
     msg.className = 'msg msg--ok is-shown';
   } catch (err) {
-    if (err.isAuth) { clearSession(); location.replace('login.html'); return; }
+    if (err.isAuth) { clearSession(); location.replace('/login'); return; }
     msg.textContent = err.isNetwork ? 'Сеть недоступна. Попробуйте ещё раз.' : (err.message || 'Не удалось закрыть сессии.');
     msg.className = 'msg msg--error is-shown';
   } finally {
@@ -170,7 +170,7 @@ async function start() {
     renderCurrentServer(me, list);
     show('ready');
   } catch (err) {
-    if (err.isAuth) { clearSession(); location.replace('login.html'); return; }
+    if (err.isAuth) { clearSession(); location.replace('/login'); return; }
     byId('error-text').textContent = err.isNetwork
       ? 'Сеть недоступна. Проверьте соединение и попробуйте ещё раз.'
       : (err.message || 'Сервер ответил ошибкой. Попробуйте позже.');
@@ -180,4 +180,4 @@ async function start() {
 
 // Запускаем последним: start() читает states и show(), а они объявлены через
 // const/function ниже по файлу — вызов сверху падал бы в temporal dead zone.
-if (requireSession('login.html')) start();
+if (requireSession('/login')) start();
