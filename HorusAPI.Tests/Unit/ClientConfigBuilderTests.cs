@@ -1,3 +1,4 @@
+using System.Text;
 using HorusAPI.Models;
 using HorusAPI.Services;
 
@@ -6,7 +7,10 @@ namespace HorusAPI.Tests.Unit;
 public class ClientConfigBuilderTests
 {
     private static ServerRow Server() => new(
-        server_id:            1,
+        server_id:           1,
+        name:                "Germany 1",
+        country:             "DE",
+        city:                "Frankfurt",
         host:                "node1.example.com",
         auth_password:       "authpass",
         reality_public_key:  "PUBKEY123",
@@ -24,29 +28,64 @@ public class ClientConfigBuilderTests
         agent_version:       "1.0.0");
 
     [Fact]
-    public void MainVless_embeds_identity_endpoint_and_reality_params()
+    public void VlessLinks_embed_identity_endpoint_and_reality_params()
     {
         var uuid = Guid.NewGuid();
 
-        string link = ClientConfigBuilder.MainVless(Server(), uuid);
+        string link = ClientConfigBuilder.VlessLinks(Server(), uuid)[0];
 
         Assert.StartsWith($"vless://{uuid}@node1.example.com:443?", link);
         Assert.Contains("security=reality", link);
         Assert.Contains("pbk=PUBKEY123", link);
         Assert.Contains("sni=www.microsoft.com", link);
-        Assert.EndsWith("#MainVLESS", link);
+        Assert.Contains("sid=aa", link);          // first short id
+        Assert.Contains("Horus-DE", link);        // country tag
     }
 
     [Fact]
-    public void MainHysteria_embeds_identity_port_and_obfs()
+    public void Hysteria2Link_embeds_identity_port_and_obfs()
     {
         var uuid = Guid.NewGuid();
 
-        string link = ClientConfigBuilder.MainHysteria(Server(), uuid);
+        string link = ClientConfigBuilder.Hysteria2Link(Server(), uuid);
 
         Assert.StartsWith($"hysteria2://{uuid}@node1.example.com:8443,20000-30000/?", link);
         Assert.Contains("obfs=salamander", link);
         Assert.Contains("obfs-password=hobfs", link);
-        Assert.EndsWith("#MainHystria", link);
+        Assert.Contains("Horus-DE", link);
+    }
+
+    [Fact]
+    public void Subscription_is_base64_of_the_links()
+    {
+        var uuid = Guid.NewGuid();
+
+        string sub = ClientConfigBuilder.Subscription(Server(), uuid);
+        string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(sub));
+
+        Assert.Contains("vless://", decoded);
+        Assert.Contains("hysteria2://", decoded);
+    }
+
+    [Fact]
+    public void OlcRtc_is_null_without_a_provider_and_populated_with_one()
+    {
+        var uuid = Guid.NewGuid();
+
+        Assert.Null(ClientConfigBuilder.OlcRtc(Server(), uuid));
+
+        var withRoom = Server() with
+        {
+            olcrtc_provider  = "webrtc",
+            olcrtc_transport = "tcp",
+            olcrtc_room_id   = "room-1",
+            olcrtc_room_key  = "key-1"
+        };
+        var olc = ClientConfigBuilder.OlcRtc(withRoom, uuid);
+
+        Assert.NotNull(olc);
+        Assert.Equal(uuid.ToString(), olc!.uuid);
+        Assert.Equal("webrtc", olc.provider);
+        Assert.Equal("node1.example.com", olc.host);
     }
 }

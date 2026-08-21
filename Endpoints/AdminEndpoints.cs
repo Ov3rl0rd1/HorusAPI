@@ -83,48 +83,78 @@ public static class AdminEndpoints
         .Produces<ApiError>(404)
         .WithSummary("Remove a VPN server");
 
-        // Set user subscription
+        // Set user subscription. This is the "purchase" step: it reserves a slot on a
+        // node. If every node is full the grant is refused (409 no_capacity) so the buy
+        // flow can't complete — "you can't buy a subscription when there are no seats".
         group.MapPut("/users/{username}/subscription", async (
             [FromRoute] string username,
             [FromBody]  SetSubscriptionRequest req,
             IAdminServerService svc,
-            INodeNotifier notifier) =>
+            IReservationService reservation,
+            IVpnServerService   servers,
+            INodeNotifier       notifier) =>
         {
+            User? user;
+            try { user = await svc.GetByUsernameAsync(username); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            if (user is null) return Results.NotFound(new ApiError($"User {username} not found."));
+
+            ReserveResult res;
+            try { res = await reservation.EnsureReservedAsync(user.id); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            if (res.status == ReserveStatus.NoCapacity)
+                return Results.Json(new ApiError("No free slots — cannot grant a subscription.", "no_capacity"), statusCode: 409);
+
             bool updated;
             try { updated = await svc.SetSubscriptionAsync(username, req.expires_at.ToUniversalTime()); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
+            if (!updated) return Results.NotFound(new ApiError($"User {username} not found."));
 
-            if (!updated)
-                return Results.NotFound(new ApiError($"User {username} not found."));
-
-            return Results.NoContent();
-        })
-        .Produces(204)
-        .Produces<ApiError>(404)
-        .WithSummary("Set or extend a user's subscription expiry");
-
-        // Cancel user subscription
-        group.MapDelete("/users/{username}/subscription", async (
-            [FromRoute] string username,
-            IAdminServerService svc,
-            INodeNotifier notifier) =>
-        {
-            bool updated;
-            try { updated = await svc.ClearSubscriptionAsync(username); }
-            catch { return Results.Problem("Database error.", statusCode: 503); }
-
-            if (!updated)
-                return Results.NotFound(new ApiError($"User {username} not found."));
-            else
+            if (res.newlyReserved)
             {
-                // TODO
-                //notifier.RemoveUserAsync();
+                ServerRow? server = await servers.GetConnectDataAsync(res.serverId!.Value);
+                if (server is not null)
+                    await notifier.AddUserAsync(new NodeTarget(server.host, server.auth_password), user.vpn_uuid.ToString());
             }
 
             return Results.NoContent();
         })
         .Produces(204)
         .Produces<ApiError>(404)
-        .WithSummary("Cancel a user's subscription (set expires_at to null)");
+        .Produces<ApiError>(409)
+        .WithSummary("Grant/extend a subscription and reserve a node slot (409 no_capacity when full)");
+
+        // Cancel user subscription: clears expiry AND frees the reserved slot + de-provisions the node.
+        group.MapDelete("/users/{username}/subscription", async (
+            [FromRoute] string username,
+            IAdminServerService svc,
+            IReservationService reservation,
+            IVpnServerService   servers,
+            INodeNotifier       notifier) =>
+        {
+            User? user;
+            try { user = await svc.GetByUsernameAsync(username); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            if (user is null) return Results.NotFound(new ApiError($"User {username} not found."));
+
+            int? previous;
+            try { previous = await reservation.ReleaseAsync(user.id); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            try { await svc.ClearSubscriptionAsync(username); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            if (previous is int oldId)
+            {
+                ServerRow? old = await servers.GetConnectDataAsync(oldId);
+                if (old is not null)
+                    await notifier.RemoveUserAsync(new NodeTarget(old.host, old.auth_password), user.vpn_uuid.ToString());
+            }
+
+            return Results.NoContent();
+        })
+        .Produces(204)
+        .Produces<ApiError>(404)
+        .WithSummary("Cancel a subscription: clear expiry, free the reserved slot, de-provision the node");
     }
 }

@@ -1,83 +1,97 @@
 using HorusAPI.Models;
 using HorusAPI.Services;
 using HorusAPI.Services.Auth_Handler;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace HorusAPI.Endpoints;
 
+/// <summary>
+/// Server <b>selection</b> (distinct from connection): list candidates to TCP-ping, and
+/// reserve/move the caller onto one. Both require the app session header. Rendering the
+/// actual links lives in <see cref="ConnectEndpoints"/>.
+/// </summary>
 public static class ServerEndpoints
 {
     public static void MapServerEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/servers")
-            .WithTags("Servers")
-            .RequireAuthorization()
-            .RequireRateLimiting(RateLimitPolicies.Session);
-
-
-        group.MapGet("/best", async (IVpnServerService svc) =>
+        // Candidate nodes for the client to TCP-ping (least-loaded w/ capacity, one per country).
+        app.MapGet("/servers", async (IVpnServerService svc) =>
         {
-            IEnumerable<BestServerItem> servers;
-            try { servers = await svc.GetBestServersAsync(); }
+            IEnumerable<PingCandidate> servers;
+            try { servers = await svc.GetPingCandidatesAsync(); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
             return Results.Ok(servers);
         })
-        .Produces<IEnumerable<BestServerItem>>(200)
-        .WithSummary("List best available VPN servers (sorted by load, has capacity)");
+        .RequireAuthorization()
+        .RequireRateLimiting(RateLimitPolicies.Session)
+        .WithTags("Servers")
+        .Produces<IEnumerable<PingCandidate>>(200)
+        .WithSummary("Candidate nodes to TCP-ping: least-loaded with capacity, one per country");
 
-        group.MapGet("/connect", async (
-            HttpContext        ctx,
-            IVpnServerService  svc,
-            IConfiguration     cfg,
-            INodeNotifier notifier) =>
+        // Reserve / move the caller onto a node (auto-picks least-loaded when server_id omitted).
+        app.MapPost("/servers/select", async (
+            [FromBody] SelectServerRequest? req,
+            HttpContext         ctx,
+            IReservationService reservation,
+            IVpnServerService   svc,
+            INodeNotifier       notifier,
+            IMemoryCache        cache,
+            ILogger<Program>    log) =>
         {
-            User? user = ctx.Items[ApiConsts.UserHttpContext] as User;
+            if (ctx.Items[ApiConsts.UserHttpContext] is not User user)
+                return Results.Unauthorized();
 
-            DateTime? subExp = user?.expires_at;
-            if (subExp != null && subExp <= DateTime.UtcNow)
-                return Results.Json(new ApiError("Subscription expired."), statusCode: 403);
+            if (IsExpired(user))
+                return Results.Json(new ApiError("Subscription expired.", "subscription_expired"), statusCode: 403);
 
-            ServerRow? server;
-            try 
-            {
-                server = await svc.ChooseServerAsync(user!);
-
-                if (server is null)
-                    return Results.NotFound(new ApiError("No available servers."));
-
-                await svc.BindUserAsync(user!.id, server.server_id);
-
-                string? email = user?.email;
-                
-                await notifier.AddUserAsync(new NodeTarget(server.host, server.auth_password), email!, user!.vpn_uuid.ToString());
-            }
+            ReserveResult res;
+            try { res = await reservation.SelectAsync(user.id, req?.server_id); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
-            string? username = user?.username;
+            if (res.status == ReserveStatus.NotFound)
+                return Results.NotFound(new ApiError("Server not found or inactive.", "server_not_found"));
+            if (res.status == ReserveStatus.NoCapacity)
+                return Results.Json(new ApiError("No free slots on the requested server.", "no_capacity"), statusCode: 409);
 
-            if (string.IsNullOrWhiteSpace(username))
-                return Results.Unauthorized();
+            await ReprovisionAsync(res, user.vpn_uuid.ToString(), svc, notifier);
+            SessionCacheOps.EvictSessions(cache, user.sessions);   // current_server_id changed
 
-            string? session = ctx.User.GetSessionKey();
+            ServerRow? server = await svc.GetConnectDataAsync(res.serverId!.Value);
+            if (server is null) return Results.Problem("Server unavailable.", statusCode: 503);
 
-            if (string.IsNullOrWhiteSpace(session))
-                return Results.Unauthorized();
-
-
-            string mainVless = ClientConfigBuilder.MainVless(server, user.vpn_uuid);
-            string mainHystria = ClientConfigBuilder.MainHysteria(server, user.vpn_uuid);
-
-            var vars = new Dictionary<string, string?>
-            {
-                [ApiConsts.VLESS_LINK]          = mainVless,
-                [ApiConsts.HYSTERIA_LINK]       = mainHystria,
-            };
-
-            return Results.Json(vars);
+            log.LogInformation("User {UserId} bound to server {ServerId}", user.id, server.server_id);
+            return Results.Ok(new BoundServer(server.server_id, server.name, server.country, server.city, server.host));
         })
-        .Produces<JsonContent>(200)
-        .Produces<ApiError>(400)
+        .RequireAuthorization()
+        .RequireRateLimiting(RateLimitPolicies.Session)
+        .WithTags("Servers")
+        .Produces<BoundServer>(200)
+        .Produces(401)
         .Produces<ApiError>(403)
         .Produces<ApiError>(404)
-        .WithSummary("Get rendered Hysteria2 config for a specific VPN server");
+        .Produces<ApiError>(409)
+        .WithSummary("Reserve or move the caller to a node (auto-picks least-loaded when server_id is omitted)");
+    }
+
+    /// <summary>Access gate: a set expiry in the past blocks; NULL = never expires (free/admin).</summary>
+    internal static bool IsExpired(User u) => u.expires_at.HasValue && u.expires_at.Value <= DateTime.UtcNow;
+
+    /// <summary>Best-effort node sync after a binding change: drop the old node, add the new one.</summary>
+    internal static async Task ReprovisionAsync(ReserveResult res, string uuid, IVpnServerService svc, INodeNotifier notifier)
+    {
+        if (res.previousServerId is int oldId)
+        {
+            ServerRow? old = await svc.GetConnectDataAsync(oldId);
+            if (old is not null)
+                await notifier.RemoveUserAsync(new NodeTarget(old.host, old.auth_password), uuid);
+        }
+
+        if (res.newlyReserved || res.previousServerId is not null)
+        {
+            ServerRow? srv = await svc.GetConnectDataAsync(res.serverId!.Value);
+            if (srv is not null)
+                await notifier.AddUserAsync(new NodeTarget(srv.host, srv.auth_password), uuid);
+        }
     }
 }

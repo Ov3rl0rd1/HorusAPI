@@ -33,6 +33,7 @@ public partial class Program
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<IVpnServerService, VpnServerService>();
         builder.Services.AddScoped<IAdminServerService, AdminServerService>();
+        builder.Services.AddScoped<IReservationService, ReservationService>();
         builder.Services.AddScoped<INodeService, NodeService>();
         builder.Services.AddScoped<INodeNotifier, NodeNotifier>();
         builder.Services.AddScoped<IAccountService, AccountService>();
@@ -85,6 +86,7 @@ public partial class Program
         // Endpoints
         app.MapAuthEndpoints();
         app.MapServerEndpoints();
+        app.MapConnectEndpoints();
         app.MapAdminEndpoints();
         app.MapNodeAuthEndpoints();
         app.MapWhoAmIEndpoints();

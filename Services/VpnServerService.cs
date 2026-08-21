@@ -6,50 +6,43 @@ namespace HorusAPI.Services;
 
 public interface IVpnServerService
 {
-    Task<IEnumerable<ServerListItem>> GetAvailableServersAsync();
-    Task<IEnumerable<BestServerItem>> GetBestServersAsync();
-    Task<ServerRow?>                GetConnectDataAsync(int serverId);
-    Task<ServerRow?> ChooseServerAsync(User user);
-    Task BindUserAsync(int userId, int serverId);
+    /// <summary>Candidate nodes for the client to TCP-ping: least-loaded with free capacity, one per country.</summary>
+    Task<IEnumerable<PingCandidate>> GetPingCandidatesAsync();
+
+    /// <summary>Everything needed to render a user's links for one node (+ its shared secret).</summary>
+    Task<ServerRow?> GetConnectDataAsync(int serverId);
 }
 
-[DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
+[DapperAot]   // hot read path — compile-time materializers, no reflection
 public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log) : IVpnServerService
 {
     // Column list backing a ServerRow — `id` is aliased to the record's `server_id`.
     private const string ConnectColumns =
-        "id AS server_id, host, auth_password, reality_public_key, reality_short_ids, reality_server_name, " +
-        "reality_dest, vless_port, hysteria_port, obfs_password, hop, " +
+        "id AS server_id, name, country, city, host, auth_password, " +
+        "reality_public_key, reality_short_ids, reality_server_name, reality_dest, " +
+        "vless_port, hysteria_port, obfs_password, hop, " +
         "olcrtc_provider, olcrtc_transport, olcrtc_room_id, olcrtc_room_key, agent_version";
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
-    public async Task<IEnumerable<ServerListItem>> GetAvailableServersAsync()
+    public async Task<IEnumerable<PingCandidate>> GetPingCandidatesAsync()
     {
+        // One row per country (the least-loaded node there that still has a slot),
+        // then the whole list ordered least-loaded first.
         const string sql = """
-            SELECT id, name, country, city, host,
-                   current_load, max_clients, is_active
-            FROM vpn_servers
-            WHERE is_active = true
-            ORDER BY current_load ASC, max_clients
+            SELECT id, country, city, host, current_load, reserved_count, max_clients
+            FROM (
+                SELECT DISTINCT ON (country)
+                       id, country, city, host, current_load, reserved_count, max_clients
+                FROM vpn_servers
+                WHERE is_active AND reserved_count < max_clients
+                ORDER BY country, reserved_count ASC, id
+            ) c
+            ORDER BY reserved_count ASC, country
             """;
 
         await using var conn = Connect();
-        return await conn.QueryAsync<ServerListItem>(sql);
-    }
-
-    public async Task<IEnumerable<BestServerItem>> GetBestServersAsync()
-    {
-        const string sql = """
-            SELECT id, name, country, city, host, current_load, max_clients
-            FROM vpn_servers
-            WHERE is_active = true AND current_load < max_clients
-            ORDER BY current_load ASC
-            LIMIT 2
-            """;
-
-        await using var conn = Connect();
-        return await conn.QueryAsync<BestServerItem>(sql);
+        return await conn.QueryAsync<PingCandidate>(sql);
     }
 
     public async Task<ServerRow?> GetConnectDataAsync(int serverId)
@@ -67,44 +60,13 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
             ServerRow? row = await conn.QuerySingleOrDefaultAsync<ServerRow>(sql, new { ServerId = serverId });
 
             if (row is null)
-            {
                 log.LogWarning("Server {ServerId} not found or inactive", serverId);
-                return null;
-            }
 
             return row;
         }
         catch (Exception ex)
         {
             log.LogError(ex, "DB error fetching connect data for server {ServerId}", serverId);
-            throw;
-        }
-    }
-
-    public async Task<ServerRow?> ChooseServerAsync(User user)
-    {
-        if (user.current_server_id.HasValue)
-            return await GetConnectDataAsync(user.current_server_id.Value);
-
-        return await GetConnectDataAsync((await GetBestServersAsync()).First().id);
-    }
-
-    public async Task BindUserAsync(int userId, int serverId)
-    {
-        const string sql = """
-            UPDATE users
-            SET current_server_id = @ServerId
-            WHERE id = @UserId AND is_active = true
-            """;
-
-        try
-        {
-            await using var conn = Connect();
-            await conn.ExecuteAsync(sql, new { UserId = userId, ServerId = serverId });
-        }
-        catch (Exception ex)
-        {
-            log.LogError(ex, "DB error fetching connect data for server {userId}", userId);
             throw;
         }
     }

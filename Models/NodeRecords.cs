@@ -22,8 +22,10 @@ public record NodeRegisterRequest(
 
 public record NodeRegisterResponse(int server_id);
 
-/// <summary>A connect/disconnect observation reported by a node.</summary>
-public record NodeUserEvent(string email, string type, string reason, DateTimeOffset at);
+/// <summary>A connect/disconnect observation reported by a node. Users are identified
+/// by their <c>vpn_uuid</c> (the same id used in the client's inbound entry).</summary>
+public record NodeUserEvent(string uuid, string type, string reason, DateTimeOffset at);
 
-/// <summary>POST /node/events — batched online telemetry from a node.</summary>
+/// <summary>POST /node/events — batched online telemetry from a node. <c>online_count</c>
+/// is the live connected count (drives vpn_servers.current_load).</summary>
 public record NodeEventsRequest(int provisioned_count, int online_count, NodeUserEvent[] events);

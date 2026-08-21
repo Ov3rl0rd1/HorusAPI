@@ -1,5 +1,7 @@
 using Dapper;
 using HorusAPI.Models;
+using HorusAPI.Services.Auth_Handler;
+using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 using System.Security.Cryptography;
 
@@ -17,10 +19,15 @@ public interface IUserService
     Task<string?> CreateSession(int userId);
     Task<CreateUserResult> CreateUserAsync(string username, string password, string email);
     Task ClearOtherSessionsAsync(string username, string currentSession);
+
+    /// <summary>Resolves a session token → user (cache first, then DB). Used by /connect,
+    /// which is anonymous at the framework level so it can accept the token from the
+    /// header (app) or the ?key= query (third-party subscription URL).</summary>
+    Task<User?> ResolveSessionAsync(string sessionKey);
 }
 
 [DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
-public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserService
+public class UserService(IConfiguration cfg, IMemoryCache cache, ILogger<UserService> log) : IUserService
 {
     private static string GenerateSession(int userId)
     {
@@ -132,6 +139,45 @@ public class UserService(IConfiguration cfg, ILogger<UserService> log) : IUserSe
             log.LogError(ex, "DB error during CreateUser for {Username}", username);
             throw;
         }
+    }
+
+    public async Task<User?> ResolveSessionAsync(string sessionKey)
+    {
+        if (string.IsNullOrEmpty(sessionKey)) return null;
+
+        string cacheKey = SessionAuthHandler.SESSION_CACHE_PREFIX + sessionKey;
+        if (cache.TryGetValue(cacheKey, out User? cached)) return cached;
+
+        // Token is "{userId}.{secret}" — the id narrows the row before the GIN match.
+        string[] parts = sessionKey.Split('.');
+        if (parts.Length != 2 || !int.TryParse(parts[0], out int uid)) return null;
+
+        const string sql = """
+            SELECT * FROM users
+            WHERE id = @Uid AND sessions @> ARRAY[@Key]::varchar(64)[]
+            LIMIT 1
+            """;
+
+        User? user;
+        try
+        {
+            await using var conn = Connect();
+            user = await conn.QuerySingleOrDefaultAsync<User>(sql, new { Uid = uid, Key = sessionKey });
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "DB error resolving session");
+            throw;
+        }
+
+        if (user is not null)
+            cache.Set(cacheKey, user, new MemoryCacheEntryOptions
+            {
+                Size = 1,
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+            });
+
+        return user;
     }
 
     public async Task ClearOtherSessionsAsync(string username, string currentSession)

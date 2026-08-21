@@ -11,7 +11,7 @@ public class AuthorizationTests(ApiFixture fixture) : IntegrationTest(fixture)
     public async Task Servers_require_a_session()
     {
         RequireDb();
-        var res = await Client().GetWithAsync("/servers/best", TestData.NewIp(), session: null);
+        var res = await Client().GetWithAsync("/servers", TestData.NewIp(), session: null);
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
     }
 
@@ -22,7 +22,7 @@ public class AuthorizationTests(ApiFixture fixture) : IntegrationTest(fixture)
         var client = Client();
         var (_, _, session) = await RegisterVerifiedUserAsync(client);
 
-        var res = await client.GetWithAsync("/servers/best", TestData.NewIp(), session);
+        var res = await client.GetWithAsync("/servers", TestData.NewIp(), session);
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
     }
 

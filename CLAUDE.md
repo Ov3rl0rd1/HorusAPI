@@ -51,12 +51,25 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 | Group | Auth | Purpose |
 |---|---|---|
 | `/auth` | anonymous | login, register, verify, resend-code, reset-request, reset-check, reset-confirm, logout-others |
-| `/servers` | `X-Session-Key` | list, best, connect (rendered config) |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, subscription management |
+| `GET /servers` | `X-Session-Key` | ping candidates: least-loaded-with-capacity, one per country ([ServerEndpoints](Endpoints/ServerEndpoints.cs)) |
+| `POST /servers/select` | `X-Session-Key` | reserve/move the caller to a node (auto-picks when `server_id` omitted) |
+| `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, subscription (grant = reserve slot, cancel = release) |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
-`/node` **is** mapped in [Program.cs](Program.cs) now; nginx routes `auth|servers|admin|health|node|whoami` (see [nginx/locations.conf](nginx/locations.conf)).
+`/node` is mapped in [Program.cs](Program.cs); nginx routes `auth|servers|admin|health|node|whoami` (see [nginx/locations.conf](nginx/locations.conf)) — `/servers/connect` rides the `servers` route, distinct from the site's own `/connect` **page**.
+
+### Server selection, binding & slot reservation
+
+The connection model is split into **selection** and **connection**, and every user is bound to exactly one node. See [docs/connection-model.md](docs/connection-model.md) — the contract the app + node teams build against.
+
+- **Identity**: `users.vpn_uuid` is the stable per-user id (VLESS `id` + node client label). It never changes; only its server binding moves.
+- **Binding = reservation**: `users.current_server_id` is the reserved slot; `vpn_servers.reserved_count` counts bound users and is what capacity is measured on (`reserved_count = max_clients` → full). `vpn_servers.current_load` is now the *live* online count from node telemetry (display only).
+- [ReservationService](Services/ReservationService.cs) (classic Dapper, **not** `[DapperAot]`) owns reserve/move/release in a single transaction with `FOR UPDATE SKIP LOCKED`, so parallel purchases can't oversell. `EnsureReservedAsync` auto-picks; `SelectAsync` binds/moves; `ReleaseAsync` frees. Node (de)provisioning + session-cache eviction ([SessionCacheOps](Services/Auth Handler/SessionCacheOps.cs)) are done by the caller *after* the commit.
+- **Purchase**: admin `PUT …/subscription` reserves first → `409 no_capacity` when every node is full (so a subscription can't be sold with no seats). `DELETE …/subscription` releases the slot + de-provisions the node.
+- **`/connect` is node-free on the hot path**: provisioning happens at reserve/select; a normal connect reads one row and builds strings. The node persists its user set and reconciles xray from it on restart.
+- **Node protocol is keyed by `vpn_uuid`** (not e-mail): control `POST /users {uuid}` / `DELETE /users/{uuid}`; telemetry `/node/events` events carry `uuid`, and `online_count` drives `current_load`.
 
 ### Landing page & client downloads (nginx only — the API is not involved)
 
@@ -115,15 +128,19 @@ Codes are stored as `sha256("{userId}:{code}")` in `email_verifications` (one ro
 
 ### Database
 
-PostgreSQL. Schema in [init.sql](init.sql) (note: `init.sql` is behind the code — the services read `vpn_servers.protocol/hop/obfs_type/obfs_password/auth_password/masquerade_url`, which the committed schema does not yet declare). Key columns:
+PostgreSQL. Schema in [init.sql](init.sql). Key columns:
 - `users.is_admin BOOLEAN` — drives the `Role = "Admin"` claim
 - `users.email_verified BOOLEAN` — gate for login; created `FALSE`, flipped by `/auth/verify`. Idempotent upgrade backfills pre-existing rows as `TRUE` (grandfathered) then resets the default to `FALSE`
-- `users.expires_at TIMESTAMPTZ` — nullable; NULL = subscription never expires; enforced at auth time in `SessionAuthHandler`
+- `users.expires_at TIMESTAMPTZ` — nullable; NULL = never expires (free/admin); a past value blocks access (`403 subscription_expired`)
+- `users.vpn_uuid UUID` — stable per-user identity (VLESS id + node label); unique index `idx_users_vpn_uuid`; backfilled + `NOT NULL` on upgrade
+- `users.current_server_id INT` — the node the user is bound to (their reserved slot); NULL = unbound
 - `users.sessions VARCHAR(64)[]` — bounded to 10 entries; cleared via `ClearOtherSessionsAsync` and wiped on password reset
 - unique partial index `users_email_lower_key` on `lower(email)` (where non-empty) — one account per address; `CreateUserAsync` maps its `23505` to email-taken
 - `email_verifications` (PK `user_id`) / `password_resets` (PK `token_hash`) — hashed single-purpose secret rows, FK `ON DELETE CASCADE`
-- `vpn_servers.protocol` — protocol selector per server (Hysteria2 today; xray-core planned, see below)
-- `vpn_servers.auth_password` — per-server secret; today embedded in the rendered config, also intended as the node-agent shared secret (`X-API-PASSWORD`)
+- `vpn_servers.reserved_count INT` — bound-user count; capacity is measured on this (`= max_clients` → full). `idx_servers_available (country, reserved_count) WHERE is_active` backs selection
+- `vpn_servers.current_load INT` — live online count from `/node/events` (display only, not capacity)
+- `vpn_servers.auth_password` — per-node shared secret, sent to the agent as `X-API-PASSWORD`
+- `vpn_servers.reality_*` / `olcrtc_*` / ports — reported by the node via `/node/register`
 - `vpn_servers.masquerade_url` — optional target for admin ping; falls back to `https://{host}`
 
 ### Authorization / config rendering
@@ -132,9 +149,9 @@ PostgreSQL. Schema in [init.sql](init.sql) (note: `init.sql` is behind the code 
 - Socks5 defaults for config rendering: `Socks5:Port/Username/Password` in `appsettings.json`
 - `/servers/{id}/connect` checks a `subscription_expires_at` claim, but `SessionAuthHandler` does not currently emit that claim — subscription expiry is effectively enforced at auth time instead
 
-### Planned: xray-core migration
+### xray-core node model (central side implemented)
 
-Migrating nodes from Hysteria2 to xray-core (VLESS, likely Reality). Key constraint: **xray-core has no per-connection HTTP auth backend** like Hysteria2's `auth.http` — clients are identified by a UUID in the inbound `clients` array, mutated at runtime only via Xray's gRPC HandlerService (`AddInboundUser`/`RemoveInboundUser`). Intended design: a thin **node agent** beside Xray on each node, called by the central API over HTTPS (authenticated with `vpn_servers.auth_password` as `X-API-PASSWORD` — the `ApiConsts` node-agent constants already exist), translating add/remove-user calls into local Xray gRPC and persisting the user set for restart reconciliation. A new `users.vpn_uuid` becomes the per-user identity; `ConfigRenderer` stays (only the template + vars change to a VLESS link / Xray JSON); reconciliation reuses the parallel fan-out in `AdminServerService`.
+The central-API side of the xray model is **in place** (see the selection/binding section above and [docs/connection-model.md](docs/connection-model.md)): `users.vpn_uuid` is the per-user identity, the node agent is called over HTTPS (auth `vpn_servers.auth_password` = `X-API-PASSWORD`) with `POST /users {uuid}` / `DELETE /users/{uuid}`, and links are built by [ClientConfigBuilder](Services/ClientConfigBuilder.cs) (VLESS/Reality + Hysteria2 + olcRTC object; base64 subscription for third-party). **Node-side work** (translate add/remove-user into Xray gRPC `AddInboundUser`/`RemoveInboundUser`, persist the user set, reconcile on restart, keep olcRTC room params current) is the node team's, tracked in the same doc.
 
 ### Data access
 
@@ -144,4 +161,5 @@ Migrating nodes from Hysteria2 to xray-core (VLESS, likely Reality). Key constra
 - `DefaultTypeMap.MatchNamesWithUnderscores = true` is set once in [Program.cs](Program.cs), so snake_case columns map to members ignoring underscores/case — no per-column aliases needed (except where the member name genuinely differs, e.g. `ServerRow.server_id` still needs `id AS server_id`).
 - Map straight to the result type — `conn.QueryAsync<T>(sql)` — never `QueryAsync` (dynamic) + a hand-written `.Select(r => new T(...))` projection.
 - Large column lists live in a `private const string …Columns` next to the query (e.g. `VpnServerService.ConnectColumns`, `AdminServerService.AdminColumns`).
-- **Dapper.AOT** generates command/materializer code at compile time (compile-time column↔member diagnostics, no reflection). Opted in **per class** with `[DapperAot]` on `VpnServerService`, `AdminServerService`, `UserService`, `SessionAuthHandler`; interceptors are enabled via `<InterceptorsNamespaces>` in the csproj. `AccountService` and `NodeService` are deliberately **left classic** (no attribute): AccountService reads the `sessions` array as `string[]` (the analyzer's DAP037 rejects a scalar array — it reads via the `User` type instead) and its reset flow behaved differently under generated interceptors; NodeService has a dynamic-tuple query. Note the analyzer runs project-wide regardless of opt-in, so a scalar array read anywhere still trips DAP037.
+- **Dapper.AOT** generates command/materializer code at compile time (compile-time column↔member diagnostics, no reflection). Opted in **per class** with `[DapperAot]` on `VpnServerService`, `AdminServerService`, `UserService`, `SessionAuthHandler`; interceptors are enabled via `<InterceptorsNamespaces>` in the csproj. `AccountService`, `NodeService`, and `ReservationService` are deliberately **left classic** (no attribute): AccountService reads the `sessions` array as `string[]` (DAP037 rejects a scalar array — it reads via the `User` type instead); NodeService’s events are simple executes; **ReservationService uses explicit transactions + `FOR UPDATE`**, which is safest on classic Dapper. Note the analyzer runs project-wide regardless of opt-in, so a scalar array read anywhere still trips DAP037.
+- The `Dapper.AOT` package ships a **runtime** assembly the generated interceptors call into — reference it normally (do **not** `PrivateAssets=all`, or `dotnet publish` drops `Dapper.AOT.dll` and every intercepted query throws `FileNotFoundException`). The `DAP005` notice it raises in the test project is silenced there via `<NoWarn>`.

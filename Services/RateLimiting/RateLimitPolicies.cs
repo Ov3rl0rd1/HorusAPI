@@ -31,6 +31,9 @@ public static class RateLimitPolicies
 
     /// <summary>Node agent sync, partitioned per node credential.</summary>
     public const string Node = "node";
+
+    /// <summary>/connect (anonymous; session in header or ?key=), partitioned per token.</summary>
+    public const string Connect = "connect";
 }
 
 public static class RateLimitSetup
@@ -50,6 +53,7 @@ public static class RateLimitSetup
     private const int SessionPerUserPerMinute = 120;
     private const int AdminPerUserPerMinute = 60;
     private const int NodePerNodePerMinute = 300;
+    private const int ConnectPerTokenPerMinute = 60;   // subscription URLs are polled; generous per token
 
     public static void AddHorusRateLimiting(this IServiceCollection services)
     {
@@ -113,6 +117,15 @@ public static class RateLimitSetup
                 RateLimitPartition.GetFixedWindowLimiter($"node:{NodeKey(ctx)}", _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = NodePerNodePerMinute,
+                    Window      = TimeSpan.FromMinutes(1),
+                    QueueLimit  = 0
+                }));
+
+            // /connect is anonymous (session in header or ?key=), so key on the token.
+            options.AddPolicy<string>(RateLimitPolicies.Connect, ctx =>
+                RateLimitPartition.GetFixedWindowLimiter($"connect:{ConnectKey(ctx)}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = ConnectPerTokenPerMinute,
                     Window      = TimeSpan.FromMinutes(1),
                     QueueLimit  = 0
                 }));
@@ -209,5 +222,16 @@ public static class RateLimitSetup
         return string.IsNullOrEmpty(password)
             ? $"anon:{ClientKey(ctx)}"
             : password.GetHashCode(StringComparison.Ordinal).ToString(NumberFormatInfo.InvariantInfo);
+    }
+
+    /// <summary>Per-token key for /connect: session id prefix from the header or the ?key= query.</summary>
+    private static string ConnectKey(HttpContext ctx)
+    {
+        string? token = ctx.Request.Headers[ApiConsts.SESSION_HEADER].FirstOrDefault();
+        if (string.IsNullOrEmpty(token)) token = ctx.Request.Query["key"].FirstOrDefault();
+        if (string.IsNullOrEmpty(token)) return $"anon:{ClientKey(ctx)}";
+
+        int dot = token.IndexOf('.');
+        return dot > 0 ? token[..dot] : $"anon:{ClientKey(ctx)}";
     }
 }

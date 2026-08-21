@@ -42,11 +42,19 @@ export const logoutOthers = () => post('/auth/logout-others', {});
 export const whoAmI = () => get('/whoami');
 
 // ── Servers ───────────────────────────────────────────────────────────────
-// 200 BestServerItem[] { id, name, country, city, host, current_load, max_clients }
-export const bestServers = () => get('/servers/best');
+// 200 PingCandidate[] { id, country, city, host, current_load, reserved_count, max_clients }
+// Наименее загруженные узлы со свободными местами, по одному на страну — для TCP-пинга.
+export const serverCandidates = () => get('/servers');
+export const bestServers = serverCandidates;   // старое имя, чтобы не трогать импорт cabinet.js
 
-// 200 { VLESS, HY2 } — готовые ссылки подписки · 400/403/404 ApiError
-// Сервер сам выбирает узел и привязывает к нему пользователя, id не передаём.
+// Зарезервировать/сменить узел. Пусто или { server_id: null } → автоподбор.
+// 200 BoundServer { id, name, country, city, host } · 403/404/409 ApiError
+export const selectServer = (serverId) => post('/servers/select', { server_id: serverId ?? null });
+
+// GET /servers/connect с заголовком X-Session-Key (наше приложение/сайт) →
+// 200 { server:{id,name,country,city,host}, vless:[…], hysteria2, olcrtc:{…}|null }
+// 403 subscription_expired · 409 no_capacity. (Сторонние клиенты дергают тот же
+// путь c ?key=… и получают base64-подписку text/plain — это не для сайта.)
 export const connectConfig = () => get('/servers/connect');
 
 // ── Health ────────────────────────────────────────────────────────────────

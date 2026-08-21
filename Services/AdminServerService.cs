@@ -14,6 +14,7 @@ public interface IAdminServerService
     Task<IEnumerable<PingResult>> PingAllServersAsync();
     Task<bool> SetSubscriptionAsync(string username, DateTime expiresAt);
     Task<bool> ClearSubscriptionAsync(string username);
+    Task<User?> GetByUsernameAsync(string username);
 }
 
 [DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
@@ -134,9 +135,18 @@ public class AdminServerService(
         }
     }
 
+    public async Task<User?> GetByUsernameAsync(string username)
+    {
+        const string sql = "SELECT * FROM users WHERE username = @Username LIMIT 1";
+        await using var conn = Connect();
+        return await conn.QuerySingleOrDefaultAsync<User>(sql, new { Username = username });
+    }
+
     private void UpdateUserCache(User user)
     {
-        foreach (var e in user.sessions)
-            cache.Set(SessionAuthHandler.SESSION_CACHE_PREFIX + e, user);
+        foreach (var e in user.sessions ?? [])
+            cache.Set(SessionAuthHandler.SESSION_CACHE_PREFIX + e,
+                      user,
+                      new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1) });
     }
 }

@@ -16,23 +16,16 @@ byId('logout').addEventListener('click', function () {
 
 let config = null;
 
-// GET /servers/connect отдаёт готовые ссылки под ключами ApiConsts:
-// { "HY2": "hysteria2://…", "VLESS": "vless://…" }. Сервер сам выбирает узел,
-// поэтому id не передаём. Ключи читаем терпимо — на случай, если появится
-// camelCase-вариант.
+// GET /servers/connect (с заголовком сессии) отдаёт JSON нового формата:
+// { server:{…}, vless:[ "vless://…" ], hysteria2:"hysteria2://…", olcrtc:{…}|null }.
+// Сайт показывает копируемые vless/hysteria2; olcrtc — только для приложения, тут игнор.
 function links(cfg) {
   if (!cfg) return { hy2: '', vless: '' };
-  const pick = function (keys) {
-    for (let i = 0; i < keys.length; i++) {
-      const v = cfg[keys[i]];
-      if (typeof v === 'string' && v.indexOf('://') > 0) return v;
-    }
-    return '';
-  };
-  return {
-    hy2: pick(['HY2', 'hy2', 'hysteria', 'hysteriaLink']),
-    vless: pick(['VLESS', 'vless', 'vlessLink'])
-  };
+  const hy2 = typeof cfg.hysteria2 === 'string' && cfg.hysteria2.indexOf('://') > 0 ? cfg.hysteria2 : '';
+  const vless = Array.isArray(cfg.vless)
+    ? (cfg.vless.find(function (v) { return typeof v === 'string' && v.indexOf('://') > 0; }) || '')
+    : '';
+  return { hy2: hy2, vless: vless };
 }
 
 function flash(button, text) {
@@ -89,20 +82,21 @@ async function fetchConfig(button) {
   const msg = byId('idle-msg');
   msg.className = 'msg msg--error';
   button.disabled = true;
-  button.textContent = 'Резервируем место…';
+  button.textContent = 'Получаем ссылки…';
   try {
     config = await connectConfig();
     render();
   } catch (err) {
     if (err.isAuth) { clearSession(); location.replace('/login'); return; }
-    // 403 — подписка кончилась, 404 — свободных серверов нет
+    // 403 — подписка неактивна/истекла
     if (err.status === 403 || err.status === 400) {
       byId('blocked-title').textContent = 'Подписка неактивна';
       byId('blocked-note').textContent = err.message || 'Подключение доступно, пока действует подписка.';
       show('blocked');
       return;
     }
-    if (err.status === 404) {
+    // 409 no_capacity — свободных мест нет ни на одном сервере
+    if (err.status === 409 || err.status === 404) {
       byId('blocked-title').textContent = 'Свободных серверов нет';
       byId('blocked-note').textContent = err.message || 'Все серверы заняты. Попробуйте через несколько минут или напишите в поддержку.';
       show('blocked');

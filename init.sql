@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
     country        VARCHAR(64)  NOT NULL,
     city           VARCHAR(64)  NOT NULL,
     host           VARCHAR(256) NOT NULL,
-    current_load   INTEGER      NOT NULL DEFAULT 0,   -- reused as the online-user count
+    current_load   INTEGER      NOT NULL DEFAULT 0,   -- live online count, reported by node telemetry (/node/events)
+    reserved_count INTEGER      NOT NULL DEFAULT 0,   -- slots held by bound users (current_server_id); capacity is measured on THIS
     max_clients    INTEGER      NOT NULL DEFAULT 5,
     is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
 
@@ -91,6 +92,14 @@ CREATE INDEX IF NOT EXISTS idx_servers_auth_pw   ON vpn_servers(auth_password);
 CREATE INDEX IF NOT EXISTS idx_users_current_server ON users(current_server_id);
 CREATE INDEX IF NOT EXISTS idx_password_resets_user  ON password_resets(user_id);
 
+-- Server selection: least-loaded-with-capacity, per country. Partial on active nodes.
+CREATE INDEX IF NOT EXISTS idx_servers_available
+    ON vpn_servers(country, reserved_count) WHERE is_active;
+
+-- vpn_uuid is the per-user identity used on nodes and in every link; node telemetry
+-- (/node/events) maps uuid → user through this unique index.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_vpn_uuid ON users(vpn_uuid);
+
 -- One account per address, and the index behind case-insensitive e-mail lookups:
 -- /auth/verify, /auth/reset-request, and single-field /auth/login (username OR email)
 -- all resolve users via lower(email), which this index serves. Partial so the legacy
@@ -102,6 +111,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key
 --  Idempotent upgrades for pre-existing databases (safe to re-run)
 -- ============================================================================
 ALTER TABLE users ADD COLUMN IF NOT EXISTS vpn_uuid UUID;
+-- Older rows got vpn_uuid with no default — backfill, then make it mandatory/unique.
+UPDATE users SET vpn_uuid = gen_random_uuid() WHERE vpn_uuid IS NULL;
+ALTER TABLE users ALTER COLUMN vpn_uuid SET DEFAULT gen_random_uuid();
+ALTER TABLE users ALTER COLUMN vpn_uuid SET NOT NULL;
+
+-- Slot accounting: the number of users bound to a node (their reserved slot).
+ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS reserved_count INTEGER NOT NULL DEFAULT 0;
+-- Rebuild reserved_count from the actual bindings (safe to re-run).
+UPDATE vpn_servers s
+SET reserved_count = COALESCE(c.n, 0)
+FROM (SELECT id FROM vpn_servers) sid
+LEFT JOIN (SELECT current_server_id AS id, COUNT(*) AS n
+           FROM users WHERE current_server_id IS NOT NULL
+           GROUP BY current_server_id) c ON c.id = sid.id
+WHERE s.id = sid.id;
 
 -- Accounts that already existed predate email confirmation, so they are
 -- grandfathered in as verified (DEFAULT TRUE backfills them); every account
