@@ -16,6 +16,7 @@ public sealed class ApiFixture : IAsyncLifetime
     public string SkipReason => _postgres.SkipReason;
     public string ConnectionString => _postgres.ConnectionString;
     public RecordingEmailSender Email => Factory!.Email;
+    public FakePaymentProvider Payments => Factory!.Payments;
 
     public HttpClient NewClient() => Factory!.CreateClient();
 

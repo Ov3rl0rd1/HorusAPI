@@ -156,10 +156,183 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_disconnect_at     TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_disconnect_reason VARCHAR(16);
 
 -- ============================================================================
+--  Billing: plans, subscriptions (source of access truth), payments, promos
+--  ---------------------------------------------------------------------------
+--  Access model: a user has access iff they are an admin OR they hold a live
+--  subscription. `subscriptions` is the source of truth; `users.expires_at` is a
+--  denormalised cache recomputed from it (the hot auth path reads only the cache).
+--  MONEY: every `amount` column is WHOLE RUBLES (integer), matching Platega's
+--  `amount` unit — there is no minor-unit (kopeck) conversion anywhere.
+-- ============================================================================
+
+-- Tariff catalogue. Seeded manually by the operator (ships empty on purpose).
+--   kind='recurring' → Platega paymentMethod 6 subscription (auto-renews).
+--   kind='one_time'  → single payment granting interval_unit*interval_count of access.
+--   is_public=false  → "для своих": hidden, only visible/buyable with a plan_grant.
+CREATE TABLE IF NOT EXISTS plans (
+    id             SERIAL PRIMARY KEY,
+    code           VARCHAR(64)  NOT NULL UNIQUE,
+    title          VARCHAR(128) NOT NULL,
+    tier           VARCHAR(16)  NOT NULL DEFAULT 'standard',   -- 'standard' | 'insider'
+    kind           VARCHAR(16)  NOT NULL,                       -- 'recurring' | 'one_time'
+    interval_unit  VARCHAR(8)   NOT NULL DEFAULT 'month',       -- 'day'|'week'|'month'|'year'
+    interval_count INT          NOT NULL DEFAULT 1,
+    amount         INT          NOT NULL,                       -- whole rubles per charge/purchase
+    currency       VARCHAR(3)   NOT NULL DEFAULT 'RUB',
+    is_public      BOOLEAN      NOT NULL DEFAULT TRUE,
+    is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Access to a non-public plan for a specific user (the "для своих" grant).
+CREATE TABLE IF NOT EXISTS plan_grants (
+    id          SERIAL PRIMARY KEY,
+    user_id     INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id     INT         NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    granted_by  INT         REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ,                                    -- NULL = never expires
+    UNIQUE (user_id, plan_id)
+);
+
+-- The source of access truth. One row per subscription/purchase/comp grant.
+--   status: 'pending'  checkout created, not yet paid (no access)
+--           'active'   paying and current (access)
+--           'past_due' a recurring charge failed; access lives until current_period_end
+--           'canceled' auto-renew off (or user/admin canceled); access until current_period_end
+--           'failed'   never activated (bind attempt failed at provider) — no access
+--           'comp'     free service grant (access until current_period_end, usually far future)
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id                   SERIAL PRIMARY KEY,
+    user_id              INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id              INT         REFERENCES plans(id) ON DELETE SET NULL,  -- NULL for manual comp
+    provider             VARCHAR(32) NOT NULL DEFAULT 'manual',               -- 'platega' | 'manual'
+    provider_ref         VARCHAR(128),                                        -- Platega subscriptionId (recurring)
+    kind                 VARCHAR(16) NOT NULL,                                -- 'recurring'|'one_time'|'comp'
+    status               VARCHAR(16) NOT NULL,
+    current_period_end   TIMESTAMPTZ,                                         -- access end; NULL until activated
+    cancel_at_period_end BOOLEAN     NOT NULL DEFAULT FALSE,
+    server_id            INT         REFERENCES vpn_servers(id) ON DELETE SET NULL,  -- reserved slot
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
+-- One local subscription per provider subscription id (dedup + webhook correlation).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_provider_ref
+    ON subscriptions(provider_ref) WHERE provider_ref IS NOT NULL;
+-- Reconciliation sweeps look up "stuck" subscriptions by status.
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
+
+-- Promo codes (percent-off; schema left extensible via `kind`).
+CREATE TABLE IF NOT EXISTS promo_codes (
+    id              SERIAL PRIMARY KEY,
+    code            VARCHAR(64) NOT NULL,
+    kind            VARCHAR(16) NOT NULL DEFAULT 'percent',     -- only 'percent' today
+    percent_off     SMALLINT    NOT NULL,                       -- 1..100
+    max_redemptions INT,                                        -- NULL = unlimited (total)
+    redeemed_count  INT         NOT NULL DEFAULT 0,
+    per_user_limit  INT         DEFAULT 1,                      -- NULL = unlimited per user
+    plan_id         INT         REFERENCES plans(id) ON DELETE CASCADE,  -- NULL = any plan
+    starts_at       TIMESTAMPTZ,
+    ends_at         TIMESTAMPTZ,
+    is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_promo_codes_code ON promo_codes(lower(code));
+
+-- Pending slot reservation held during checkout, before payment confirms. The slot
+-- is charged to vpn_servers.reserved_count the moment the hold is taken (so capacity
+-- accounting stays entirely on reserved_count — candidate/select queries are unchanged);
+-- a background sweeper releases holds whose expires_at has passed. At most one live
+-- hold per user.
+CREATE TABLE IF NOT EXISTS slot_holds (
+    id          SERIAL PRIMARY KEY,
+    user_id     INT         NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    server_id   INT         NOT NULL REFERENCES vpn_servers(id) ON DELETE CASCADE,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_slot_holds_expires ON slot_holds(expires_at);
+
+-- A checkout intent and its outcome.
+--   status: 'created'|'pending'|'confirmed'|'canceled'|'failed'|'refunded'|'chargebacked'
+CREATE TABLE IF NOT EXISTS payments (
+    id              SERIAL PRIMARY KEY,
+    user_id         INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id         INT         REFERENCES plans(id) ON DELETE SET NULL,
+    subscription_id INT         REFERENCES subscriptions(id) ON DELETE SET NULL,
+    provider        VARCHAR(32) NOT NULL,
+    provider_ref    VARCHAR(128),                              -- subscriptionId (recurring) / transactionId (one_time)
+    kind            VARCHAR(16) NOT NULL,                      -- 'recurring'|'one_time'
+    amount          INT         NOT NULL,                      -- whole rubles actually charged (after discount)
+    currency        VARCHAR(3)  NOT NULL DEFAULT 'RUB',
+    promo_code_id   INT         REFERENCES promo_codes(id) ON DELETE SET NULL,
+    discount        INT         NOT NULL DEFAULT 0,            -- whole rubles taken off
+    status          VARCHAR(16) NOT NULL,
+    hold_id         INT         REFERENCES slot_holds(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_provider_ref ON payments(provider_ref);
+
+-- One row per recurring charge (Platega Id is unique per charge → idempotency key).
+CREATE TABLE IF NOT EXISTS subscription_charges (
+    id              SERIAL PRIMARY KEY,
+    subscription_id INT         NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+    provider_txn_id VARCHAR(128) NOT NULL UNIQUE,
+    amount          INT         NOT NULL,
+    status          VARCHAR(16) NOT NULL,                      -- 'confirmed'|'canceled'|'chargebacked'
+    charged_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    next_charge_at  TIMESTAMPTZ
+);
+
+-- Admin-initiated refunds (support-only; see AdminEndpoints).
+CREATE TABLE IF NOT EXISTS refunds (
+    id              SERIAL PRIMARY KEY,
+    payment_id      INT         NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+    admin_id        INT         REFERENCES users(id) ON DELETE SET NULL,
+    amount          INT         NOT NULL,
+    status          VARCHAR(16) NOT NULL,                      -- 'requested'|'accepted'|'manual_required'|'failed'
+    provider_result TEXT,
+    reason          VARCHAR(256),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Raw webhook log + idempotency guard. provider_event_id is a synthesised dedup key
+-- ("{kind}:{primaryId}:{status}") because Platega reuses Id across a subscription's
+-- lifecycle events. Re-processing is also safe by construction; this is the fast path + audit.
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id                SERIAL PRIMARY KEY,
+    provider          VARCHAR(32)  NOT NULL,
+    provider_event_id VARCHAR(160) NOT NULL,
+    kind              VARCHAR(48),
+    received_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    processed_at      TIMESTAMPTZ,
+    raw               JSONB,
+    error             TEXT,
+    UNIQUE (provider, provider_event_id)
+);
+
+CREATE TABLE IF NOT EXISTS promo_redemptions (
+    id            SERIAL PRIMARY KEY,
+    promo_code_id INT         NOT NULL REFERENCES promo_codes(id) ON DELETE CASCADE,
+    user_id       INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    payment_id    INT         REFERENCES payments(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_promo_redemptions_code_user ON promo_redemptions(promo_code_id, user_id);
+
+-- ============================================================================
 --  First-run
 --  1) POST /auth/register  {"username":"admin","password":"…","email":"…"}
 --  2) UPDATE users SET is_admin = TRUE WHERE username = 'admin';
 --  3) Add a node with POST /admin/servers, setting auth_password to that node's
 --     NODE_API_PASSWORD. The node fills in the reality_*/olcrtc_* columns itself
 --     when its agent calls POST /node/register.
+--  4) Seed at least one tariff (the catalogue ships empty), e.g.:
+--       INSERT INTO plans (code, title, kind, interval_unit, interval_count, amount)
+--       VALUES ('monthly', 'Месяц', 'recurring', 'month', 1, 199);
+--     A "для своих" tariff is the same row with is_public = FALSE, made buyable per
+--     user via POST /admin/users/{username}/grant.
 -- ============================================================================

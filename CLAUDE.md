@@ -54,11 +54,13 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 | `GET /servers` | `X-Session-Key` | ping candidates: least-loaded-with-capacity, one per country ([ServerEndpoints](Endpoints/ServerEndpoints.cs)) |
 | `POST /servers/select` | `X-Session-Key` | reserve/move the caller to a node (auto-picks when `server_id` omitted) |
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, subscription (grant = reserve slot, cancel = release) |
+| `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel` ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
+| `POST /payments/{provider}/webhook` | **anonymous** (secret checked in-adapter, idempotent) | payment provider callbacks |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
-`/node` is mapped in [Program.cs](Program.cs); nginx routes `auth|servers|admin|health|node|whoami` (see [nginx/locations.conf](nginx/locations.conf)) — `/servers/connect` rides the `servers` route, distinct from the site's own `/connect` **page**.
+`/node` is mapped in [Program.cs](Program.cs); nginx routes `auth|servers|admin|health|node|whoami|billing|payments` (see [nginx/locations.conf](nginx/locations.conf)) — `/servers/connect` rides the `servers` route, distinct from the site's own `/connect` **page**. Billing/subscriptions are documented in [docs/payments.md](docs/payments.md).
 
 ### Server selection, binding & slot reservation
 
@@ -70,6 +72,23 @@ The connection model is split into **selection** and **connection**, and every u
 - **Purchase**: admin `PUT …/subscription` reserves first → `409 no_capacity` when every node is full (so a subscription can't be sold with no seats). `DELETE …/subscription` releases the slot + de-provisions the node.
 - **`/connect` is node-free on the hot path**: provisioning happens at reserve/select; a normal connect reads one row and builds strings. The node persists its user set and reconciles xray from it on restart.
 - **Node protocol is keyed by `vpn_uuid`** (not e-mail): control `POST /users {uuid}` / `DELETE /users/{uuid}`; telemetry `/node/events` events carry `uuid`, and `online_count` drives `current_load`.
+
+### Billing, subscriptions & access model ([Services/Billing](Services/Billing), [docs/payments.md](docs/payments.md))
+
+Access is an **entitlement**, not the old NULL check. A user has access iff `is_admin OR
+expires_at > now()`; `users.expires_at` is a **cache** recomputed from the `subscriptions`
+table (source of truth) by [EntitlementService](Services/Billing/EntitlementService.cs). The
+gate lives in [AccessPolicy](Services/Billing/AccessPolicy.cs) (`ServerEndpoints.IsExpired` and
+`/servers/connect` call it). **A NULL/past `expires_at` now means "no active subscription"** —
+a freshly registered non-admin user has no access until they buy (this closed the old
+"NULL = free forever" hole). Money is **whole rubles** everywhere (no minor units).
+
+- **Provider abstraction**: the core talks only to [`IPaymentProvider`](Services/Billing/PaymentContracts.cs) + normalised types; [PlategaProvider](Services/Billing/PlategaProvider.cs) is the only adapter (chosen in `Program.AddPaymentProvider`). The webhook decoder `PlategaWebhook.Parse` is pure and unit-tested — it folds Platega's three callback shapes into one `PaymentEvent`.
+- **[BillingService](Services/Billing/BillingService.cs)** is the money engine: checkout, cancel, idempotent webhook handling (`webhook_events`), refund. Classic Dapper + explicit transactions; node (de)provisioning + session-cache eviction run **after** commit, like the reservation flows.
+- **[PlanService](Services/Billing/PlanService.cs)** owns the catalogue/promo/grants: plans a user may buy (public + granted non-public "для своих"), promo validation, and admin grant/comp/promo-CRUD.
+- **Capacity holds**: checkout charges a seat to `vpn_servers.reserved_count` immediately via `slot_holds` (TTL `Payments:HoldMinutes`), so a full fleet fails the buy *before* payment. [ReservationService](Services/ReservationService.cs) gained `HoldSlotAsync`/`ConfirmHoldAsync`/`ReleaseHoldAsync`/`SweepExpiredHoldsAsync`; because a hold uses the same `reserved_count`, every existing candidate/select/pick query is unchanged. [BillingSweeperService](Services/Billing/BillingSweeperService.cs) (hosted) releases expired holds + fails stale pending payments.
+- **Promo caveat**: promos are percent-off, first-charge-only → they apply to **one-time** buys; a promo on a recurring plan is refused (`promo_not_applicable`) because Platega recurring charges a fixed amount every period.
+- **Provider reconciliation** (polling for missed webhooks) is a documented follow-up, not yet implemented.
 
 ### Landing page & client downloads (nginx only — the API is not involved)
 
@@ -105,7 +124,7 @@ Codes are stored as `sha256("{userId}:{code}")` in `email_verifications` (one ro
 `AddHorusRateLimiting()` registers named policies + a `GlobalLimiter` chain; `UseForwardedHeaders` runs **before** `UseRateLimiter` so partitions key on the real client IP (IPv6 bucketed by /64). Rejections return `429 code=rate_limited` with `Retry-After`.
 
 - **Mail routes** (register, resend-code, reset-request; tagged `RateLimitPolicies.Email`) carry all four spec'd layers: per-IP 3/min + 15/hour (global chain, gated by `IsMailRoute` reading endpoint metadata), global 500/hour (the named `email` policy), and **per-account 3/hour per e-mail** via the singleton `IAccountRateLimiter` applied inside the handlers — the layer that survives IP rotation (targeted-harassment defence). The per-account quota is charged uniformly on the anti-enumeration routes (resend/reset) but only on actual send for register (so username-taken retries don't burn it).
-- **Other policies**: `login` (sliding 15/5min per IP), `verify` (10/min per IP, guards code/token guessing — the DB attempt counter is the real defence), `session` (120/min per user, keyed off the id prefix of the session token since the limiter runs pre-auth), `admin` (60/min per admin), `node` (300/min per node credential). A 120/min per-IP baseline covers every route including static 404s.
+- **Other policies**: `login` (sliding 15/5min per IP), `verify` (10/min per IP, guards code/token guessing — the DB attempt counter is the real defence), `session` (120/min per user, keyed off the id prefix of the session token since the limiter runs pre-auth), `admin` (60/min per admin), `node` (300/min per node credential), `connect` (60/min per token), `billing` (20/min per user), `webhook` (240/min per IP — generous so a provider's legit retries are never throttled; the shared secret, not the limiter, is the gate). A 120/min per-IP baseline covers every route including static 404s.
 
 ### Services (all Dapper + NpgsqlConnection, injected via interfaces)
 
@@ -114,6 +133,7 @@ Codes are stored as `sha256("{userId}:{code}")` in `email_verifications` (one ro
 - `VpnServerService` — available servers, best servers (capacity-filtered), connect data
 - `AdminServerService` — full server CRUD, parallel HTTP HEAD ping (named `"ping"` HttpClient), subscription set/clear
 - `ConfigRenderer` (static) — two-pass template renderer: resolves `#???varname…#???` conditional blocks first, then `#varname` substitutions
+- **Billing** ([Services/Billing](Services/Billing)) — `IEntitlementService` (recompute the `expires_at` cache), `IPlanService` (catalogue/promo/grants/comp), `IBillingService` (checkout/cancel/webhook/refund + hold sweep), `IPaymentProvider`→`PlategaProvider` (pluggable acquirer), `BillingSweeperService` (hosted). All classic Dapper (transactions); `PlategaWebhook`/`AccessPolicy`/`Pricing` are pure + unit-tested
 
 ### Config template language (`ApiConsts.CONFIG_TEMPLATE`)
 
@@ -143,11 +163,22 @@ PostgreSQL. Schema in [init.sql](init.sql). Key columns:
 - `vpn_servers.reality_*` / `olcrtc_*` / ports — reported by the node via `/node/register`
 - `vpn_servers.masquerade_url` — optional target for admin ping; falls back to `https://{host}`
 
+Billing tables (all amounts **whole rubles**; see [docs/payments.md](docs/payments.md)):
+- `plans` — tariff catalogue (`code`, `kind` recurring/one_time, `interval_*`, `amount`, `is_public`). Ships empty; seeded by the operator
+- `plan_grants` — a user's access to a non-public plan ("для своих")
+- `subscriptions` — **source of access truth**; `status` (pending/active/past_due/canceled/failed/comp), `current_period_end`, `provider_ref`, `server_id`. `users.expires_at` is recomputed from this
+- `payments` — checkout intents + outcome; `provider_ref` correlates webhooks; `hold_id` → `slot_holds`
+- `subscription_charges` — one row per recurring charge (`provider_txn_id` unique = idempotency)
+- `refunds` — admin-initiated refunds
+- `webhook_events` — raw callbacks + idempotency guard (`provider`, `provider_event_id` unique)
+- `promo_codes` / `promo_redemptions` — percent promos + per-user redemption tracking
+- `slot_holds` — pending checkout slot reservation (one per user, TTL); counted in `vpn_servers.reserved_count`
+
 ### Authorization / config rendering
 
 - Admin policy `"AdminOnly"` requires `ClaimTypes.Role = "Admin"`, added when `user.is_admin = true`
 - Socks5 defaults for config rendering: `Socks5:Port/Username/Password` in `appsettings.json`
-- `/servers/{id}/connect` checks a `subscription_expires_at` claim, but `SessionAuthHandler` does not currently emit that claim — subscription expiry is effectively enforced at auth time instead
+- Access/subscription expiry is enforced by [AccessPolicy](Services/Billing/AccessPolicy.cs) reading `users.expires_at` (the entitlement cache) — `ServerEndpoints.IsExpired` and `/servers/connect` both gate on it; admins bypass. See the billing section above
 
 ### xray-core node model (central side implemented)
 

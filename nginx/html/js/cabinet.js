@@ -1,6 +1,6 @@
-import { whoAmI, bestServers, logoutOthers } from './endpoints.js';
+import { whoAmI, serverCandidates, logoutOthers } from './endpoints.js';
 import { requireSession, clearSession } from './session.js';
-import { byId } from './util.js';
+import { byId, plural } from './util.js';
 
 const states = { loading: byId('state-loading'), error: byId('state-error'), ready: byId('state-ready') };
 function show(name) {
@@ -27,8 +27,7 @@ function subscriptionView(expiresAt) {
     return { state: 'Подписка истекла', note: 'Срок закончился ' + date + '. Продлите, чтобы снова подключаться.', cta: 'Продлить подписку' };
   }
   const days = Math.ceil(left / DAY);
-  const word = days % 10 === 1 && days % 100 !== 11 ? 'день'
-    : [2, 3, 4].indexOf(days % 10) >= 0 && [12, 13, 14].indexOf(days % 100) < 0 ? 'дня' : 'дней';
+  const word = plural(days, ['день', 'дня', 'дней']);
   return {
     state: 'Активна ещё ' + days + ' ' + word,
     note: 'Действует до ' + date + ' · до 5 устройств одновременно',
@@ -62,11 +61,12 @@ function renderAccount(me) {
 }
 
 // ── Серверы ───────────────────────────────────────────────────────────────
+// В загрузку узла входят и занятые, и зарезервированные места.
 function loadPercent(server) {
   const max = Number(server.max_clients) || 0;
-  const now = Number(server.current_load) || 0;
   if (!max) return null;
-  return Math.max(0, Math.min(100, Math.round((now / max) * 100)));
+  const used = (Number(server.current_load) || 0) + (Number(server.reserved_count) || 0);
+  return Math.max(0, Math.min(100, Math.round((used / max) * 100)));
 }
 
 function renderServers(list, currentServerId) {
@@ -85,7 +85,7 @@ function renderServers(list, currentServerId) {
     place.className = 'srv__place';
     const name = document.createElement('div');
     name.className = 'srv__name';
-    name.textContent = s.name || s.host || ('Сервер ' + s.id);
+    name.textContent = [s.city, s.country].filter(Boolean).join(', ') || s.host || ('Сервер ' + s.id);
     const where = document.createElement('div');
     where.className = 'srv__where';
     where.textContent = [s.city, s.country].filter(Boolean).join(', ');
@@ -133,8 +133,10 @@ function renderCurrentServer(me, list) {
     note.textContent = 'Запустите приложение или подключитесь из браузера.';
     return;
   }
-  value.textContent = found ? (found.name || found.host) : 'Сервер ' + me.currentServerId;
-  note.textContent = found ? [found.city, found.country].filter(Boolean).join(', ') : '';
+  value.textContent = found
+    ? ([found.city, found.country].filter(Boolean).join(', ') || found.host)
+    : 'Сервер ' + me.currentServerId;
+  note.textContent = found ? found.host : 'Подробности — на странице подключения.';
 }
 
 // ── Закрыть другие сессии ─────────────────────────────────────────────────
@@ -164,7 +166,7 @@ async function start() {
   try {
     const me = await whoAmI();
     // список серверов не критичен: кабинет открываем и без него
-    const list = await bestServers().catch(function () { return []; });
+    const list = await serverCandidates().catch(function () { return []; });
     renderAccount(me);
     renderServers(list, me.currentServerId);
     renderCurrentServer(me, list);
@@ -178,6 +180,6 @@ async function start() {
   }
 }
 
-// Запускаем последним: start() читает states и show(), а они объявлены через
-// const/function ниже по файлу — вызов сверху падал бы в temporal dead zone.
+// Вызов только после объявления всего, что нужно start(): иначе states и
+// функции ещё в TDZ и кабинет висит на спиннере.
 if (requireSession('/login')) start();

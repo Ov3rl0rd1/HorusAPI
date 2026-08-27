@@ -2,6 +2,7 @@ using Dapper;
 using HorusAPI.Endpoints;
 using HorusAPI.Services;
 using HorusAPI.Services.Auth_Handler;
+using HorusAPI.Services.Billing;
 using Microsoft.AspNetCore.HttpOverrides;
 
 // Rate limiting is layered — see Services/RateLimiting/RateLimitPolicies.cs:
@@ -34,10 +35,17 @@ public partial class Program
         builder.Services.AddScoped<IVpnServerService, VpnServerService>();
         builder.Services.AddScoped<IAdminServerService, AdminServerService>();
         builder.Services.AddScoped<IReservationService, ReservationService>();
+        builder.Services.AddScoped<IEntitlementService, EntitlementService>();
         builder.Services.AddScoped<INodeService, NodeService>();
         builder.Services.AddScoped<INodeNotifier, NodeNotifier>();
         builder.Services.AddScoped<IAccountService, AccountService>();
         builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+
+        // Billing: catalogue/promo/grants, the payment engine, and the pluggable provider.
+        builder.Services.AddScoped<IPlanService, PlanService>();
+        builder.Services.AddScoped<IBillingService, BillingService>();
+        AddPaymentProvider(builder);
+        builder.Services.AddHostedService<BillingSweeperService>();
 
         AddPingClient(builder);
 
@@ -88,6 +96,7 @@ public partial class Program
         app.MapServerEndpoints();
         app.MapConnectEndpoints();
         app.MapAdminEndpoints();
+        app.MapBillingEndpoints();
         app.MapNodeAuthEndpoints();
         app.MapWhoAmIEndpoints();
 
@@ -119,6 +128,30 @@ public partial class Program
         {
             client.Timeout = TimeSpan.FromSeconds(5);
         });
+    }
+
+    // The acquirer is chosen by config (Payments:Provider); only Platega ships today.
+    // Everything provider-specific is behind IPaymentProvider, so adding one is a new
+    // adapter + a branch here.
+    private static void AddPaymentProvider(WebApplicationBuilder builder)
+    {
+        string baseUrl = builder.Configuration["Payments:Platega:BaseUrl"] ?? "https://app.platega.io/";
+        if (!baseUrl.EndsWith('/')) baseUrl += "/";
+
+        builder.Services.AddHttpClient("platega", client =>
+        {
+            client.BaseAddress = new Uri(baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+
+        string provider = builder.Configuration["Payments:Provider"] ?? "platega";
+        switch (provider.ToLowerInvariant())
+        {
+            case "platega":
+            default:
+                builder.Services.AddScoped<IPaymentProvider, PlategaProvider>();
+                break;
+        }
     }
 
     private static void ConfigureForwarding(WebApplicationBuilder? builder)

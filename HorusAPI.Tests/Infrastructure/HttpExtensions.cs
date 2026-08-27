@@ -13,9 +13,17 @@ public static class HttpExtensions
         this HttpClient client, string url, object body, string ip, string? session = null)
         => client.SendAsync(Build(HttpMethod.Post, url, ip, session, body));
 
+    public static Task<HttpResponseMessage> PutJsonAsync(
+        this HttpClient client, string url, object body, string ip, string? session = null)
+        => client.SendAsync(Build(HttpMethod.Put, url, ip, session, body));
+
     public static Task<HttpResponseMessage> GetWithAsync(
         this HttpClient client, string url, string ip, string? session)
         => client.SendAsync(Build(HttpMethod.Get, url, ip, session, body: null));
+
+    public static Task<HttpResponseMessage> DeleteWithAsync(
+        this HttpClient client, string url, string ip, string? session)
+        => client.SendAsync(Build(HttpMethod.Delete, url, ip, session, body: null));
 
     private static HttpRequestMessage Build(HttpMethod method, string url, string ip, string? session, object? body)
     {

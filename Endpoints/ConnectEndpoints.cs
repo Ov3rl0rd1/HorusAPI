@@ -34,7 +34,8 @@ public static class ConnectEndpoints
                              && !string.IsNullOrEmpty(headerVal);
             string? token = viaHeader ? headerVal.ToString() : ctx.Request.Query["key"].FirstOrDefault();
 
-            if (string.IsNullOrEmpty(token)) return Results.Unauthorized();
+            if (string.IsNullOrEmpty(token)) 
+                return Results.Unauthorized();
 
             User? user;
             try { user = await users.ResolveSessionAsync(token); }

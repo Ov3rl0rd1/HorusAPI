@@ -34,6 +34,13 @@ public static class RateLimitPolicies
 
     /// <summary>/connect (anonymous; session in header or ?key=), partitioned per token.</summary>
     public const string Connect = "connect";
+
+    /// <summary>Checkout / billing actions, partitioned per user (creating payments is expensive).</summary>
+    public const string Billing = "billing";
+
+    /// <summary>Provider webhooks (anonymous; secret checked in-handler), partitioned per IP —
+    /// generous so legitimate provider retries are never throttled.</summary>
+    public const string Webhook = "webhook";
 }
 
 public static class RateLimitSetup
@@ -54,6 +61,8 @@ public static class RateLimitSetup
     private const int AdminPerUserPerMinute = 60;
     private const int NodePerNodePerMinute = 300;
     private const int ConnectPerTokenPerMinute = 60;   // subscription URLs are polled; generous per token
+    private const int BillingPerUserPerMinute = 20;    // enough for browsing + a few checkout attempts
+    private const int WebhookPerIpPerMinute = 240;     // never throttle a provider's legit retries
 
     public static void AddHorusRateLimiting(this IServiceCollection services)
     {
@@ -126,6 +135,24 @@ public static class RateLimitSetup
                 RateLimitPartition.GetFixedWindowLimiter($"connect:{ConnectKey(ctx)}", _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = ConnectPerTokenPerMinute,
+                    Window      = TimeSpan.FromMinutes(1),
+                    QueueLimit  = 0
+                }));
+
+            // Billing: per user (limiter runs pre-auth, so key off the session token id prefix).
+            options.AddPolicy<string>(RateLimitPolicies.Billing, ctx =>
+                RateLimitPartition.GetFixedWindowLimiter($"billing:{UserKey(ctx)}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = BillingPerUserPerMinute,
+                    Window      = TimeSpan.FromMinutes(1),
+                    QueueLimit  = 0
+                }));
+
+            // Provider webhooks: per IP, generous — the secret check (not the limiter) is the gate.
+            options.AddPolicy<string>(RateLimitPolicies.Webhook, ctx =>
+                RateLimitPartition.GetFixedWindowLimiter($"webhook:{ClientKey(ctx)}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = WebhookPerIpPerMinute,
                     Window      = TimeSpan.FromMinutes(1),
                     QueueLimit  = 0
                 }));

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using HorusAPI.Models;
 using HorusAPI.Services;
+using HorusAPI.Services.Billing;
 
 namespace HorusAPI.Endpoints;
 
@@ -83,13 +84,15 @@ public static class AdminEndpoints
         .Produces<ApiError>(404)
         .WithSummary("Remove a VPN server");
 
-        // Set user subscription. This is the "purchase" step: it reserves a slot on a
-        // node. If every node is full the grant is refused (409 no_capacity) so the buy
-        // flow can't complete — "you can't buy a subscription when there are no seats".
+        // Grant/extend a COMP (free, service) subscription. This is the manual "purchase":
+        // it reserves a node slot (409 no_capacity when the fleet is full) and writes a
+        // comp subscription row (the entitlement source of truth), so access survives the
+        // access-cache recompute. For paid tariffs a user checks out via /billing.
         group.MapPut("/users/{username}/subscription", async (
             [FromRoute] string username,
             [FromBody]  SetSubscriptionRequest req,
             IAdminServerService svc,
+            IPlanService        plans,
             IReservationService reservation,
             IVpnServerService   servers,
             INodeNotifier       notifier) =>
@@ -105,10 +108,8 @@ public static class AdminEndpoints
             if (res.status == ReserveStatus.NoCapacity)
                 return Results.Json(new ApiError("No free slots — cannot grant a subscription.", "no_capacity"), statusCode: 409);
 
-            bool updated;
-            try { updated = await svc.SetSubscriptionAsync(username, req.expires_at.ToUniversalTime()); }
+            try { await plans.CompAsync(username, req.expires_at.ToUniversalTime()); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
-            if (!updated) return Results.NotFound(new ApiError($"User {username} not found."));
 
             if (res.newlyReserved)
             {
@@ -122,12 +123,14 @@ public static class AdminEndpoints
         .Produces(204)
         .Produces<ApiError>(404)
         .Produces<ApiError>(409)
-        .WithSummary("Grant/extend a subscription and reserve a node slot (409 no_capacity when full)");
+        .WithSummary("Grant/extend a comp subscription and reserve a node slot (409 no_capacity when full)");
 
-        // Cancel user subscription: clears expiry AND frees the reserved slot + de-provisions the node.
+        // Revoke a comp subscription: expire manual grants, free the reserved slot, de-provision.
+        // Paid (provider) subscriptions are untouched here — use the refund endpoint for those.
         group.MapDelete("/users/{username}/subscription", async (
             [FromRoute] string username,
             IAdminServerService svc,
+            IPlanService        plans,
             IReservationService reservation,
             IVpnServerService   servers,
             INodeNotifier       notifier) =>
@@ -138,10 +141,11 @@ public static class AdminEndpoints
             if (user is null) return Results.NotFound(new ApiError($"User {username} not found."));
 
             int? previous;
-            try { previous = await reservation.ReleaseAsync(user.id); }
-            catch { return Results.Problem("Database error.", statusCode: 503); }
-
-            try { await svc.ClearSubscriptionAsync(username); }
+            try
+            {
+                await plans.RevokeCompAsync(username);
+                previous = await reservation.ReleaseAsync(user.id);
+            }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
             if (previous is int oldId)
@@ -155,6 +159,100 @@ public static class AdminEndpoints
         })
         .Produces(204)
         .Produces<ApiError>(404)
-        .WithSummary("Cancel a subscription: clear expiry, free the reserved slot, de-provision the node");
+        .WithSummary("Revoke comp access: expire manual grants, free the reserved slot, de-provision the node");
+
+        // ── Grants & comp (для своих) ──────────────────────────────────────────────
+
+        // Grant a user access to a non-public ("для своих") plan so they can buy it.
+        group.MapPost("/users/{username}/grant", async (
+            [FromRoute] string username,
+            [FromBody]  GrantBody req,
+            HttpContext ctx,
+            IPlanService plans) =>
+        {
+            if (ctx.Items[ApiConsts.UserHttpContext] is not User admin) return Results.Unauthorized();
+            if (string.IsNullOrWhiteSpace(req?.plan_code))
+                return Results.BadRequest(new ApiError("plan_code is required."));
+
+            bool ok;
+            try { ok = await plans.GrantAsync(admin.id, username, req.plan_code.Trim(), req.expires_at); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return ok ? Results.NoContent() : Results.NotFound(new ApiError("User or plan not found."));
+        })
+        .Produces(204)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(404)
+        .WithSummary("Grant a user access to a non-public plan (для своих).");
+
+        // ── Refunds (support only) ──────────────────────────────────────────────────
+
+        group.MapPost("/payments/{id:int}/refund", async (
+            [FromRoute] int id,
+            [FromBody]  RefundBody? req,
+            HttpContext ctx,
+            IBillingService billing) =>
+        {
+            if (ctx.Items[ApiConsts.UserHttpContext] is not User admin) return Results.Unauthorized();
+
+            RefundResult res;
+            try { res = await billing.RefundAsync(admin.id, id, req ?? new RefundBody(null, null)); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return res.Status switch
+            {
+                RefundStatusResult.Ok             => Results.Ok(new { status = "refunded", detail = res.Detail }),
+                RefundStatusResult.ManualRequired => Results.Ok(new { status = "manual_required", detail = res.Detail }),
+                RefundStatusResult.PaymentNotFound=> Results.NotFound(new ApiError("Payment not found.", "payment_not_found")),
+                RefundStatusResult.NotRefundable  => Results.BadRequest(new ApiError($"Not refundable ({res.Detail}).", "not_refundable")),
+                _                                 => Results.Json(new ApiError("Payment provider error.", "provider_error"), statusCode: 502),
+            };
+        })
+        .Produces(200)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(404)
+        .Produces<ApiError>(502)
+        .WithSummary("Refund a payment (revokes access on success).");
+
+        group.MapGet("/payments", async ([FromQuery] string? user, IPlanService plans) =>
+        {
+            try { return Results.Ok(await plans.ListPaymentsAsync(user)); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+        })
+        .Produces<IReadOnlyList<PaymentRow>>(200)
+        .WithSummary("List payments (optionally filtered by ?user=username).");
+
+        // ── Promo codes ─────────────────────────────────────────────────────────────
+
+        group.MapGet("/promocodes", async (IPlanService plans) =>
+        {
+            try { return Results.Ok(await plans.ListPromosAsync()); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+        })
+        .Produces<IReadOnlyList<PromoRow>>(200)
+        .WithSummary("List promo codes.");
+
+        group.MapPost("/promocodes", async ([FromBody] PromoUpsertBody req, IPlanService plans) =>
+        {
+            if (req is null || string.IsNullOrWhiteSpace(req.code) || req.percent_off is <= 0 or > 100)
+                return Results.BadRequest(new ApiError("code and percent_off (1–100) are required."));
+            bool ok;
+            try { ok = await plans.CreatePromoAsync(req); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return ok ? Results.Created($"/admin/promocodes", new { code = req.code }) : Results.BadRequest(new ApiError("Invalid promo (bad plan_code?)."));
+        })
+        .Produces(201)
+        .Produces<ApiError>(400)
+        .WithSummary("Create a percent-off promo code.");
+
+        group.MapDelete("/promocodes/{code}", async ([FromRoute] string code, IPlanService plans) =>
+        {
+            bool ok;
+            try { ok = await plans.DeactivatePromoAsync(code); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return ok ? Results.NoContent() : Results.NotFound(new ApiError("Promo code not found."));
+        })
+        .Produces(204)
+        .Produces<ApiError>(404)
+        .WithSummary("Deactivate a promo code.");
     }
 }
