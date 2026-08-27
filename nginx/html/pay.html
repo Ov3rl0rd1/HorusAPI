@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Оплата (тест) — Horus VPN</title>
+<title>Подписка и оплата — Horus VPN</title>
 <link rel="icon" type="image/svg+xml" href="/logo-gold.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
 <link rel="stylesheet" href="/css/account.css">
+<link rel="stylesheet" href="/css/pay.css">
 <script type="module" src="/js/pay.js"></script>
 </head>
 <body>
@@ -36,26 +37,26 @@
 
   <div class="acc-head">
     <div>
-      <div class="eyebrow">ОПЛАТА · ТЕСТ</div>
-      <h1 class="h2">Тестовая страница оплаты</h1>
+      <div class="eyebrow">ПОДПИСКА</div>
+      <h1 class="h2">Оплата и продление</h1>
     </div>
     <a class="btn btn--quiet" href="/cabinet">В кабинет</a>
   </div>
 
-  <!-- Текущая подписка -->
   <div class="acc-grid">
     <div class="card tile tile__wide">
       <div class="tile__kind">ТЕКУЩАЯ ПОДПИСКА</div>
-      <div class="tile__value tile__value--accent" id="sub-state">—</div>
+      <div id="sub-badge"></div>
+      <div class="tile__value tile__value--accent" id="sub-state">Проверяем…</div>
       <div class="tile__note" id="sub-note"></div>
-      <div class="acc-actions">
-        <button class="btn btn--quiet" id="cancel-btn" type="button" hidden data-label="Отменить автопродление">Отменить автопродление</button>
+      <div class="acc-actions" id="sub-actions" hidden>
+        <a class="btn btn--quiet" id="sub-connect" href="/connect" hidden>Перейти к подключению</a>
+        <button class="btn btn--quiet" id="cancel-btn" type="button" hidden data-label="Отключить автопродление">Отключить автопродление</button>
       </div>
-      <p class="msg" id="return-msg" role="status" style="margin-top:12px"></p>
+      <p class="msg" id="sub-msg" role="status"></p>
     </div>
   </div>
 
-  <!-- Выбор тарифа -->
   <div class="acc-grid">
     <div class="card tile tile__wide">
       <div class="tile__kind">ВЫБЕРИТЕ ТАРИФ</div>
@@ -67,26 +68,56 @@
         </div>
       </section>
 
+      <section id="state-error" class="state">
+        <div class="tile__value">Тарифы не загрузились</div>
+        <div class="tile__note" id="error-text">Сервер не ответил. Попробуйте ещё раз.</div>
+        <div class="acc-actions">
+          <button class="btn btn--quiet" id="retry" type="button">Повторить</button>
+        </div>
+      </section>
+
       <section id="state-empty" class="state">
-        <p class="tile__note" style="margin-top:0">Нет доступных тарифов. Засейте таблицу <code>plans</code> в БД
-          (см. <code>docs/payments.md</code>), затем обновите страницу.</p>
+        <div class="tile__value">Пока нет доступных тарифов</div>
+        <div class="tile__note">Для вашего аккаунта не открыто ни одного варианта оплаты.
+          Напишите в поддержку — <a href="https://t.me/horusping">@horusping</a> — и мы разберёмся.</div>
       </section>
 
       <section id="state-plans" class="state">
-        <div class="srv-list" id="plan-list"></div>
+        <div class="pay-seg" id="kind-seg" role="tablist" aria-label="Вид оплаты" hidden>
+          <button class="pay-seg__btn is-on" id="kind-recurring" type="button" role="tab" aria-selected="true">Подписка</button>
+          <button class="pay-seg__btn" id="kind-onetime" type="button" role="tab" aria-selected="false">Разовая оплата</button>
+        </div>
 
-        <label class="tile__kind" for="promo" style="display:block;margin-top:18px">ПРОМОКОД (необязательно, только для разовых)</label>
-        <input id="promo" type="text" autocomplete="off" spellcheck="false"
-               placeholder="PROMO"
-               style="width:100%;max-width:280px;margin-top:8px;padding:12px 14px;border-radius:12px;
-                      background:rgba(11,5,18,.5);border:1px solid rgba(255,255,255,.14);color:var(--text);
-                      font:600 14px var(--font)">
+        <p class="lead lead--card" id="kind-note"></p>
+
+        <div class="plans" id="plan-list" role="radiogroup" aria-label="Тарифы"></div>
+
+        <div class="pay-promo" id="promo-wrap" hidden>
+          <label class="tile__kind" for="promo">ПРОМОКОД</label>
+          <input class="pay-promo__input" id="promo" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Если есть" aria-describedby="promo-note">
+          <p class="pay-legal" id="promo-note">Скидка считается на стороне банка и будет видна в форме оплаты.</p>
+        </div>
+
+        <div class="pay-sum">
+          <div class="pay-sum__what">
+            <div class="tile__kind">К ОПЛАТЕ</div>
+            <div class="pay-sum__line" id="sum-line">Выберите тариф</div>
+          </div>
+          <div class="pay-sum__total" id="sum-total">—</div>
+        </div>
 
         <div class="acc-actions">
           <button class="btn btn--primary btn--wide" id="pay-btn" type="button" disabled data-label="Перейти к оплате">Перейти к оплате</button>
         </div>
+
         <p class="msg msg--error" id="pay-msg" role="alert"></p>
+
+        <p class="pay-legal">Оплата картой на стороне платёжного провайдера — данные карты на наши серверы не попадают.
+          Нажимая «Перейти к оплате», вы принимаете <a href="/docs/offer">оферту</a> и
+          <a href="/docs/terms">условия тарифов</a>. Возврат — по <a href="/docs/refund">правилам возврата</a>.</p>
       </section>
+
     </div>
   </div>
 
@@ -97,7 +128,15 @@
     <img class="footer__logo" src="/logo-gold.svg" alt="">
     © 2026 Horus VPN
   </div>
+  <nav class="footer__docs" aria-label="Документы">
+    <a href="/docs/terms-of-use">Пользовательское соглашение</a>
+    <a href="/docs/offer">Публичная оферта</a>
+    <a href="/docs/privacy">Политика конфиденциальности</a>
+    <a href="/docs/terms">Тарифы и оплата</a>
+    <a href="/docs/refund">Возврат средств</a>
+  </nav>
   <div>Поддержка: <a href="mailto:horusping@gmail.com">horusping@gmail.com</a> · <a href="https://t.me/horusping">@horusping</a></div>
+  <div class="footer__code">Код проверки: PLAT</div>
 </footer>
 
 </body>

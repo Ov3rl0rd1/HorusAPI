@@ -1,4 +1,5 @@
-import { byId, detectOS, formatSize } from './util.js';
+import { byId, detectOS, formatSize, plural } from './util.js';
+import { billingPlans } from './endpoints.js';
 import { initParallax, initReveal } from './motion.js';
 
 // Файлы отдаёт наш же nginx: /download/… — зеркало последнего релиза
@@ -21,12 +22,8 @@ const GROUPS = [
   { key: 'android', title: 'ANDROID' },
   { key: 'checks',  title: 'ПРОВЕРКА ФАЙЛОВ' }
 ];
-const PRICE = { monthly: 199, three: 499 };
-const MONTH_WORDS = ['1 месяц', '2 месяца', '3 месяца'];
-
 const os = detectOS();
 let release = null;
-let months = 1;
 
 // ── Какой макет показываем: ноутбук или телефон ───────────────────────────
 const showPhone = os === 'android' || os === 'ios';
@@ -119,7 +116,12 @@ const filesToggle = byId('files-toggle');
 
 // Кнопка стоит низко, поэтому место под панель ищем каждый раз: снизу от
 // кнопки, сверху от неё или листом у нижней кромки экрана. Сверху свободно
-// только до липкой шапки — от её нижней кромки и считаем.
+// только до липкой шапки: от её нижней кромки и считаем, а высоту всегда
+// зажимаем по найденному месту — иначе длинный список уезжает под шапку.
+const PANEL_GAP = 12;      // отступ от кнопки (совпадает с CSS)
+const PANEL_EDGE = 20;     // запас до кромки экрана и до шапки
+const PANEL_MIN = 240;     // ниже этого панель не сжимаем — показываем листом
+
 function placePanel() {
   panel.classList.remove('files--up', 'files--sheet');
   panel.style.maxHeight = '';
@@ -127,19 +129,38 @@ function placePanel() {
 
   const r = filesToggle.getBoundingClientRect();
   const vh = window.innerHeight || 800;
-  const navBottom = byId('hero').ownerDocument.querySelector('.nav').getBoundingClientRect().bottom;
-  const need = Math.min(panel.scrollHeight + 24, 420);
-  const below = vh - r.bottom - 24;
-  const above = r.top - navBottom - 12;
+  const nav = document.querySelector('.nav');
+  const navBottom = nav ? nav.getBoundingClientRect().bottom : 0;
+  const need = panel.scrollHeight + 2;
+  const below = vh - r.bottom - PANEL_GAP - PANEL_EDGE;
+  const above = r.top - navBottom - PANEL_GAP - PANEL_EDGE;
 
   if (below >= need) return;
-  if (above >= need) { panel.classList.add('files--up'); return; }
-  if (above > below && above >= 260) {
+
+  if (above >= need || (above > below && above >= PANEL_MIN)) {
     panel.classList.add('files--up');
-    panel.style.maxHeight = Math.round(above) + 'px';
+    panel.style.maxHeight = Math.round(Math.min(above, need)) + 'px';
+    return;
+  }
+  if (below >= PANEL_MIN) {
+    panel.style.maxHeight = Math.round(Math.min(below, need)) + 'px';
     return;
   }
   panel.classList.add('files--sheet');
+}
+
+// Пока панель открыта, страница под ней стоит на месте. Ширину исчезающего
+// скроллбара возвращаем паддингом, иначе макет дёргается.
+function lockScroll(on) {
+  const root = document.documentElement;
+  if (on) {
+    const bar = window.innerWidth - root.clientWidth;
+    root.style.paddingRight = bar > 0 ? bar + 'px' : '';
+    root.classList.add('is-locked');
+  } else {
+    root.classList.remove('is-locked');
+    root.style.paddingRight = '';
+  }
 }
 
 function setFilesOpen(open) {
@@ -148,6 +169,7 @@ function setFilesOpen(open) {
   hero.classList.toggle('is-files-open', open);
   filesToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (open) { panel.scrollTop = 0; placePanel(); }
+  lockScroll(open);
 }
 function closeFiles() { setFilesOpen(false); }
 
@@ -155,8 +177,8 @@ filesToggle.addEventListener('click', function () { setFilesOpen(panel.hidden); 
 backdrop.addEventListener('click', closeFiles);
 byId('files-close').addEventListener('click', closeFiles);
 window.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeFiles(); });
-// Панель привязана к кнопке — закрываем её, когда она уехала из видимости.
-// Лист у нижней кромки закреплён на экране и при проматывании остаётся.
+// Прокрутка страницы при открытой панели заблокирована, но событие всё равно
+// может прийти (якорь, клавиатура) — тогда закрываем, если панель ушла из вида.
 window.addEventListener('scroll', function () {
   if (panel.hidden) return;
   const r = panel.getBoundingClientRect();
@@ -166,40 +188,98 @@ window.addEventListener('scroll', function () {
 window.addEventListener('resize', function () { if (!panel.hidden) placePanel(); });
 
 // ── Цена ──────────────────────────────────────────────────────────────────
-const slider = byId('months');
-const ticks = Array.prototype.slice.call(document.querySelectorAll('.price__tick'));
+// Сроки и суммы берём из /billing/plans. Эндпоинт анонимный, гостю отдаются
+// только публичные тарифы; если запрос не удался — остаются встроенные значения
+// (они же лежат в HTML, чтобы блок цены работал и без JS).
+const FALLBACK_TIERS = [
+  { label: '1 мес', full: 'за 1 месяц',  amount: 199, months: 1 },
+  { label: '2 мес', full: 'за 2 месяца', amount: 378, months: 2 },
+  { label: '3 мес', full: 'за 3 месяца', amount: 499, months: 3 }
+];
+const UNIT_SHORT = { day: ['дн', 'дн', 'дн'], week: ['нед', 'нед', 'нед'],
+  month: ['мес', 'мес', 'мес'], year: ['год', 'года', 'лет'] };
+const UNIT_FULL = { day: ['день', 'дня', 'дней'], week: ['неделю', 'недели', 'недель'],
+  month: ['месяц', 'месяца', 'месяцев'], year: ['год', 'года', 'лет'] };
+const IN_MONTHS = { day: 1 / 30, week: 7 / 30, month: 1, year: 12 };
 
-function priceFor(m) {
-  if (m <= 1) return PRICE.monthly;
-  if (m >= 3) return PRICE.three;
-  return Math.round(PRICE.monthly * 2 * 0.95);
+let tiers = FALLBACK_TIERS;
+let tier = 0;
+
+const slider = byId('months');
+const ticksHost = byId('price-ticks');
+let ticks = [];
+
+function money(value) { return Math.round(value).toLocaleString('ru-RU') + ' ₽'; }
+
+function planToTier(p) {
+  const n = Number(p.interval_count) || 1;
+  const unit = UNIT_SHORT[p.interval_unit] ? p.interval_unit : 'month';
+  return {
+    label: n + ' ' + plural(n, UNIT_SHORT[unit]),
+    full: 'за ' + n + ' ' + plural(n, UNIT_FULL[unit]),
+    amount: Number(p.amount) || 0,
+    months: n * IN_MONTHS[unit]
+  };
+}
+
+function renderTicks() {
+  ticksHost.textContent = '';
+  ticks = tiers.map(function (t, i) {
+    const b = document.createElement('button');
+    b.className = 'price__tick' + (i === tier ? ' is-on' : '');
+    b.type = 'button';
+    b.textContent = t.label;
+    b.addEventListener('click', function () { tier = i; renderPrice(); });
+    ticksHost.appendChild(b);
+    return b;
+  });
+  slider.min = '1';
+  slider.max = String(Math.max(1, tiers.length));
+  slider.disabled = tiers.length < 2;
 }
 
 function renderPrice() {
-  const total = priceFor(months);
-  const full = PRICE.monthly * months;
-  const saveAmt = full - total;
+  const t = tiers[tier] || tiers[0];
+  // Самый дорогой месяц среди тарифов — база, от которой считается выгода.
+  const base = Math.max.apply(null, tiers.map(function (x) { return x.amount / (x.months || 1); }));
+  const full = Math.round(base * t.months);
+  const saveAmt = full - t.amount;
   const savePct = full > 0 ? Math.round((saveAmt / full) * 100) : 0;
 
-  slider.value = String(months);
-  slider.style.setProperty('--fill', (((months - 1) / 2) * 100) + '%');
-  ticks.forEach(function (b, i) { b.classList.toggle('is-on', i + 1 === months); });
+  slider.value = String(tier + 1);
+  slider.style.setProperty('--fill', (tiers.length > 1 ? (tier / (tiers.length - 1)) * 100 : 0) + '%');
+  ticks.forEach(function (b, i) { b.classList.toggle('is-on', i === tier); });
 
-  byId('price-total').textContent = total + ' ₽';
-  byId('price-for').textContent = 'за ' + MONTH_WORDS[months - 1];
-  byId('price-permonth').textContent = months > 1
-    ? '≈ ' + Math.round(total / months) + ' ₽ в месяц'
+  byId('price-total').textContent = money(t.amount);
+  byId('price-for').textContent = t.full;
+  byId('price-permonth').textContent = t.months > 1.2
+    ? '≈ ' + money(t.amount / t.months) + ' в месяц'
     : 'все функции включены';
 
   const save = byId('price-save');
-  const show = months > 1 && saveAmt > 0;
+  const show = saveAmt > 0 && savePct >= 3;
   save.hidden = !show;
-  if (show) save.textContent = 'Выгода ' + savePct + '% · −' + saveAmt + ' ₽';
+  if (show) save.textContent = 'Выгода ' + savePct + '% · −' + money(saveAmt);
 }
 
-slider.addEventListener('input', function (e) { months = Number(e.target.value); renderPrice(); });
-ticks.forEach(function (b, i) {
-  b.addEventListener('click', function () { months = i + 1; renderPrice(); });
+async function loadTiers() {
+  try {
+    const plans = await billingPlans();
+    const list = (plans || []).filter(function (p) { return p.is_public !== false; });
+    const recurring = list.filter(function (p) { return p.kind === 'recurring'; });
+    const next = (recurring.length ? recurring : list).map(planToTier)
+      .sort(function (a, b) { return a.months - b.months; });
+    if (!next.length) return;
+    tiers = next;
+    tier = 0;
+    renderTicks();
+    renderPrice();
+  } catch (e) {}
+}
+
+slider.addEventListener('input', function (e) {
+  tier = Math.max(0, Math.min(tiers.length - 1, Number(e.target.value) - 1));
+  renderPrice();
 });
 
 // ── Движение ──────────────────────────────────────────────────────────────
@@ -232,8 +312,10 @@ initParallax(function (pos, reduced) {
 
 initReveal();
 
+renderTicks();
 renderPrice();
 renderDownloads();
+loadTiers();
 
 // Манифест зеркала: версия и размеры. Не дошёл — кнопки всё равно рабочие.
 fetch('/download/latest.json', { cache: 'no-store' })

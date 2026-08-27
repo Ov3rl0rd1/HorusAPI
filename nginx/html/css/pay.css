@@ -1,0 +1,53 @@
+/* Страница оплаты: тарифы, промокод, итог.
+   Оболочка (шапка, кнопки, карточки, .state) — style.css, плитки — account.css. */
+
+/* Переключатель вида оплаты: подписка ↔ разовый платёж. */
+.pay-seg{display:inline-flex;gap:4px;padding:4px;margin-bottom:18px;border-radius:14px;
+  background:rgba(11,5,18,.5);border:1px solid rgba(255,255,255,.1)}
+.pay-seg__btn{padding:0 16px;min-height:42px;border:none;border-radius:11px;cursor:pointer;
+  background:transparent;color:rgba(239,234,246,.6);font:800 13.5px var(--font);
+  transition:background .25s ease,color .25s ease}
+.pay-seg__btn:hover{color:var(--text)}
+.pay-seg__btn.is-on{background:rgba(240,196,106,.14);color:var(--accent-l)}
+
+.plans{display:grid;gap:12px;margin-top:2px;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,208px),1fr))}
+.plan{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:5px;
+  min-width:0;padding:20px 18px 18px;border-radius:16px;cursor:pointer;text-align:left;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.09);
+  color:var(--text);font-family:var(--font);
+  transition:border-color .25s ease,background .25s ease,transform .25s ease}
+.plan:hover{border-color:rgba(240,196,106,.42);background:rgba(240,196,106,.05);transform:translateY(-2px)}
+.plan.is-on{border-color:rgba(240,196,106,.75);background:rgba(240,196,106,.09)}
+.plan.is-on::after{content:'✓';position:absolute;top:15px;right:16px;
+  font-size:13px;font-weight:800;color:var(--accent)}
+.plan__title{padding-right:22px;font-size:12px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:rgba(239,234,246,.5)}
+.plan__price{font-family:var(--display);font-size:28px;font-weight:700;line-height:1.15}
+.plan__per{font-size:13px;font-weight:600;color:rgba(239,234,246,.55)}
+.plan__month{font-size:12.5px;font-weight:700;color:rgba(239,234,246,.42)}
+.plan__save{margin-top:6px;padding:4px 10px;border-radius:99px;font-size:11.5px;font-weight:800;
+  letter-spacing:.04em;background:rgba(126,217,167,.14);color:#8FE0B4}
+.plan__tag{margin-top:6px;padding:4px 10px;border-radius:99px;font-size:11.5px;font-weight:800;
+  letter-spacing:.04em;background:rgba(255,255,255,.06);color:rgba(239,234,246,.6)}
+
+.pay-promo{max-width:320px;margin-top:22px}
+.pay-promo label{display:block;margin-bottom:8px}
+.pay-promo__input{width:100%;padding:13px 15px;border-radius:12px;
+  background:rgba(11,5,18,.5);border:1px solid rgba(255,255,255,.14);color:var(--text);
+  font:700 14.5px var(--font);letter-spacing:.08em;text-transform:uppercase;
+  transition:border-color .25s ease}
+.pay-promo__input::placeholder{color:rgba(239,234,246,.3);letter-spacing:.08em}
+.pay-promo__input:focus{outline:none;border-color:rgba(240,196,106,.55)}
+
+.pay-sum{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
+  gap:14px 24px;margin-top:26px;padding-top:22px;border-top:1px solid rgba(255,255,255,.08)}
+.pay-sum__what{flex:1;min-width:180px}
+.pay-sum__line{font-size:14.5px;font-weight:600;color:rgba(239,234,246,.7);text-wrap:pretty}
+.pay-sum__total{font-family:var(--display);font-size:clamp(28px,4vw,34px);font-weight:700;
+  line-height:1;color:var(--accent-l);white-space:nowrap}
+
+.pay-legal{margin:16px 0 0;font-size:12.5px;line-height:1.55;
+  color:rgba(239,234,246,.45);text-wrap:pretty}
+.pay-legal a{color:rgba(240,196,106,.8)}
+.pay-legal a:hover{color:var(--accent-l)}

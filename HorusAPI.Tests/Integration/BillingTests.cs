@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using Dapper;
 using HorusAPI.Tests.Infrastructure;
@@ -26,6 +27,52 @@ public class BillingTests(ApiFixture fixture) : IntegrationTest(fixture)
 
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
         Assert.Equal("subscription_expired", await res.ReadStringPropAsync("code"));
+    }
+
+    // ── Plans catalogue (anonymous) ───────────────────────────────────────────────
+
+    [SkippableFact]
+    public async Task Plans_endpoint_is_anonymous_and_hides_non_public_plans()
+    {
+        RequireDb();
+        string pub    = await SeedPlanAsync(kind: "recurring", amount: 199, isPublic: true);
+        string hidden = await SeedPlanAsync(kind: "recurring", amount: 99,  isPublic: false);
+
+        // No session at all — the landing page must be able to load prices.
+        var res = await Client().GetWithAsync("/billing/plans", TestData.NewIp(), session: null);
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var codes = await PlanCodesAsync(res);
+        Assert.Contains(pub, codes);
+        Assert.DoesNotContain(hidden, codes);   // non-public never leaks to guests
+    }
+
+    [SkippableFact]
+    public async Task Non_public_plan_is_visible_only_to_a_grantee()
+    {
+        RequireDb();
+        string hidden = await SeedPlanAsync(kind: "recurring", amount: 99, isPublic: false);
+
+        var client = Client();
+        var (username, _, session) = await RegisterVerifiedUserAsync(client);
+        string adminSession = await NewAdminSessionAsync(client);
+
+        var grant = await client.PostJsonAsync($"/admin/users/{username}/grant", new { plan_code = hidden }, TestData.NewIp(), adminSession);
+        Assert.Equal(HttpStatusCode.NoContent, grant.StatusCode);
+
+        // The grantee (valid session) sees the granted non-public plan…
+        var mine = await PlanCodesAsync(await client.GetWithAsync("/billing/plans", TestData.NewIp(), session));
+        Assert.Contains(hidden, mine);
+
+        // …but the same endpoint anonymously still hides it.
+        var anon = await PlanCodesAsync(await client.GetWithAsync("/billing/plans", TestData.NewIp(), session: null));
+        Assert.DoesNotContain(hidden, anon);
+    }
+
+    private static async Task<List<string?>> PlanCodesAsync(HttpResponseMessage res)
+    {
+        var root = await res.ReadJsonAsync();
+        return root.EnumerateArray().Select(e => e.GetProperty("code").GetString()).ToList();
     }
 
     // ── Checkout ─────────────────────────────────────────────────────────────────────

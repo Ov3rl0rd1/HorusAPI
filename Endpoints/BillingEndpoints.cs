@@ -20,15 +20,23 @@ public static class BillingEndpoints
             .RequireAuthorization()
             .RequireRateLimiting(RateLimitPolicies.Billing);
 
-        // Plans available to this user (public + those granted to them).
+        // Plans catalogue. Anonymous so the landing page can show prices without a login:
+        // guests get PUBLIC plans only; a signed-in caller (valid session resolved by the auth
+        // handler into ctx.Items) additionally sees plans granted to them. A missing or invalid
+        // session never yields anything beyond the public catalogue.
         group.MapGet("/plans", async (HttpContext ctx, IPlanService plans) =>
         {
-            if (ctx.Items[ApiConsts.UserHttpContext] is not User user) return Results.Unauthorized();
-            try { return Results.Ok(await plans.GetPlansForUserAsync(user.id)); }
+            try
+            {
+                if (ctx.Items[ApiConsts.UserHttpContext] is User user)
+                    return Results.Ok(await plans.GetPlansForUserAsync(user.id));
+                return Results.Ok(await plans.GetPublicPlansAsync());
+            }
             catch { return Results.Problem("Database error.", statusCode: 503); }
         })
+        .AllowAnonymous()
         .Produces<IReadOnlyList<PlanView>>(200)
-        .WithSummary("Plans the caller may buy (public + granted).");
+        .WithSummary("Plan catalogue: public plans for guests, public + granted for the signed-in caller.");
 
         // Start a checkout — returns the provider redirect URL to send the payer to.
         group.MapPost("/checkout", async (

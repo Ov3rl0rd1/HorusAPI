@@ -11,6 +11,10 @@ namespace HorusAPI.Services.Billing;
 /// </summary>
 public interface IPlanService
 {
+    /// <summary>Public, active plans only — safe to serve to anonymous callers (landing page).
+    /// Never includes non-public ("для своих") plans or any per-user grant.</summary>
+    Task<IReadOnlyList<PlanView>> GetPublicPlansAsync();
+
     Task<IReadOnlyList<PlanView>> GetPlansForUserAsync(int userId);
 
     /// <summary>The plan a user is allowed to buy under <paramref name="code"/>, or null when it
@@ -40,6 +44,15 @@ public class PlanService(IConfiguration cfg, IEntitlementService entitlement) : 
     private const string PlanCols =
         "id, code, title, tier, kind, interval_unit, interval_count, amount, currency, is_public, is_active";
 
+    public async Task<IReadOnlyList<PlanView>> GetPublicPlansAsync()
+    {
+        // Public catalogue only: no user context, no grants, no non-public tariffs.
+        const string sql = $"SELECT {PlanCols} FROM plans WHERE is_active AND is_public ORDER BY amount";
+        await using var conn = Connect();
+        var rows = await conn.QueryAsync<PlanRow>(sql);
+        return rows.Select(ToView).ToList();
+    }
+
     public async Task<IReadOnlyList<PlanView>> GetPlansForUserAsync(int userId)
     {
         const string sql = $"""
@@ -53,9 +66,11 @@ public class PlanService(IConfiguration cfg, IEntitlementService entitlement) : 
             """;
         await using var conn = Connect();
         var rows = await conn.QueryAsync<PlanRow>(sql, new { u = userId });
-        return rows.Select(p => new PlanView(
-            p.code, p.title, p.tier, p.kind, p.interval_unit, p.interval_count, p.amount, p.currency, p.is_public)).ToList();
+        return rows.Select(ToView).ToList();
     }
+
+    private static PlanView ToView(PlanRow p) => new(
+        p.code, p.title, p.tier, p.kind, p.interval_unit, p.interval_count, p.amount, p.currency, p.is_public);
 
     public async Task<PlanRow?> GetPlanForUserAsync(int userId, string code)
     {
