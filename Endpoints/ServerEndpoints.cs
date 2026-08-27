@@ -1,6 +1,7 @@
 using HorusAPI.Models;
 using HorusAPI.Services;
 using HorusAPI.Services.Auth_Handler;
+using HorusAPI.Services.Billing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -74,8 +75,9 @@ public static class ServerEndpoints
         .WithSummary("Reserve or move the caller to a node (auto-picks least-loaded when server_id is omitted)");
     }
 
-    /// <summary>Access gate: a set expiry in the past blocks; NULL = never expires (free/admin).</summary>
-    internal static bool IsExpired(User u) => u.expires_at.HasValue && u.expires_at.Value <= DateTime.UtcNow;
+    /// <summary>Access gate: blocks unless the caller holds a live subscription (or is an admin).
+    /// NULL/past <c>expires_at</c> now means "no active subscription" — see <see cref="AccessPolicy"/>.</summary>
+    internal static bool IsExpired(User u) => !AccessPolicy.HasActiveAccess(u);
 
     /// <summary>Best-effort node sync after a binding change: drop the old node, add the new one.</summary>
     internal static async Task ReprovisionAsync(ReserveResult res, string uuid, IVpnServerService svc, INodeNotifier notifier)

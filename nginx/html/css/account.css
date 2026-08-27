@@ -12,6 +12,7 @@
 .nav__logout:hover{color:#FFF;background:rgba(255,255,255,.06)}
 
 .acc-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.acc-grid > *{min-width:0}
 .acc-grid + .acc-grid{margin-top:16px}
 
 .tile__kind{font-size:12px;font-weight:800;letter-spacing:.18em;
@@ -33,6 +34,7 @@
 .bar__fill{height:100%;border-radius:99px;background:var(--accent);transition:width .4s ease}
 .bar__fill--busy{background:var(--danger)}
 
+.srv-list{display:grid;gap:10px;margin-top:18px}
 .srv{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:14px 16px;
   border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)}
 .srv + .srv{margin-top:10px}
@@ -42,6 +44,30 @@
 .srv__load{width:min(180px,100%)}
 .srv__pct{font-size:12.5px;font-weight:700;color:rgba(239,234,246,.6)}
 .srv__here{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--accent-l)}
+
+/* Строка сервера как кнопка выбора. */
+.srv--pick{width:100%;cursor:pointer;text-align:left;font-family:var(--font);color:var(--text);
+  transition:border-color .25s ease,background .25s ease,transform .25s ease}
+.srv--pick:hover:not(:disabled){border-color:rgba(240,196,106,.45);
+  background:rgba(240,196,106,.06);transform:translateY(-2px)}
+.srv--pick:disabled{cursor:default;opacity:.75}
+.srv--pick.is-busy{opacity:.5}
+.srv--current{margin:14px 0 22px;background:rgba(240,196,106,.06);
+  border-color:rgba(240,196,106,.28)}
+
+/* Ссылки по протоколам под спойлером. */
+.proto-wrap{margin-top:22px}
+.proto-wrap__more{cursor:pointer;font:700 13.5px var(--font);color:var(--accent);
+  list-style:none;padding:10px 0}
+.proto-wrap__more::-webkit-details-marker{display:none}
+.proto-wrap__more::before{content:'▸ ';font-size:11px}
+.proto-wrap[open] .proto-wrap__more::before{content:'▾ '}
+.proto-wrap__more:hover{color:#F7DA9B}
+.proto-list{display:grid;gap:16px;margin-top:6px}
+.proto{min-width:0}
+.proto__kind{font-size:11.5px;font-weight:800;letter-spacing:.14em;
+  color:rgba(239,234,246,.5);margin-bottom:7px}
+.proto__value{margin-bottom:10px}
 
 .acc-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
 .btn--wide{width:auto;padding:0 26px}

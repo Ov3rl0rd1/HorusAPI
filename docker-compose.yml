@@ -121,6 +121,37 @@ services:
         limits:
           memory: 128M
 
+  # ── Encrypted off-site DB backups (sidecar) ──────────────────────────────────
+  # Streams pg_dump → age (encrypt) → rclone (S3-compatible: R2/B2). The age private
+  # key is NEVER here — only the public recipient — so a server compromise can't read
+  # backups. Disabled by default; set BACKUP_ENABLED=true and provide backup/rclone.conf.
+  # See docs/backups.md. Tiny footprint: it sleeps between runs.
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BACKUP_ENABLED:            ${BACKUP_ENABLED:-false}
+      BACKUP_INTERVAL:           ${BACKUP_INTERVAL:-86400}
+      BACKUP_RETENTION_DAILY:    ${BACKUP_RETENTION_DAILY:-7}
+      BACKUP_RETENTION_WEEKLY:   ${BACKUP_RETENTION_WEEKLY:-4}
+      BACKUP_RETENTION_MONTHLY:  ${BACKUP_RETENTION_MONTHLY:-6}
+      PGHOST:      postgres
+      PGUSER:      ${POSTGRES_USER:-horus}
+      PGPASSWORD:  ${POSTGRES_PASSWORD}
+      PGDATABASE:  ${POSTGRES_DB:-horus}
+      AGE_RECIPIENT: ${AGE_RECIPIENT:-}
+      RCLONE_REMOTE: ${RCLONE_REMOTE:-r2:horus-backups}
+    volumes:
+      # Operator-provided rclone remote credentials (read-only). Keep out of git.
+      - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
 volumes:
   pgdata:
   letsencrypt:

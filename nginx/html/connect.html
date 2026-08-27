@@ -46,47 +46,60 @@
 
   <div class="acc-grid">
     <div class="card tile tile__wide">
-      <p class="lead lead--card">Нажмите «Подключить» — мы выберем наименее загруженный сервер, закрепим за вами место и выдадим ссылку подписки. Её нужно один раз добавить в клиент на устройстве: подходит для iPhone, iPad и любой системы, где приложение Horus не установлено.</p>
 
-      <ol class="conn-steps">
-        <li>Нажмите «Подключить» — место на сервере закрепится за вашим аккаунтом.</li>
-        <li>Скопируйте ссылку подписки.</li>
-        <li>Добавьте её в клиент с поддержкой Hysteria2 и включите соединение — как именно, показано в инструкциях ниже.</li>
-      </ol>
-
-      <section id="state-idle" class="state is-active">
-        <div class="acc-actions" style="margin-top:0">
-          <button class="btn btn--primary btn--wide" id="connect" type="button" data-label="Подключить">Подключить</button>
+      <section id="state-loading" class="state is-active">
+        <div class="checking">
+          <div class="spinner" role="status" aria-label="Загружаем данные"></div>
+          <p>Проверяем подписку…</p>
         </div>
-        <p class="msg msg--error" id="idle-msg" role="alert"></p>
+      </section>
+
+      <section id="state-picker" class="state">
+        <div class="tile__kind" id="picker-title">ВЫБЕРИТЕ СЕРВЕР</div>
+        <p class="lead lead--card">Место на сервере закрепится за вашим аккаунтом. Если не важно, где именно — включите автоподбор: возьмём наименее загруженный.</p>
+
+        <div class="warn" id="picker-warn" hidden>
+          <b>Сервер общий для всех ваших устройств.</b> После смены приложение Horus и все клиенты, где добавлена ссылка, переподключатся к новому серверу — соединение прервётся на несколько секунд.
+        </div>
+
+        <div class="acc-actions">
+          <button class="btn btn--primary btn--wide" id="picker-auto" type="button" data-label="Автоподбор">Автоподбор</button>
+          <button class="btn btn--quiet" id="picker-back" type="button" hidden>Отмена</button>
+        </div>
+
+        <div class="srv-list" id="picker-list"></div>
+        <p class="msg msg--error" id="picker-msg" role="alert"></p>
       </section>
 
       <section id="state-ready" class="state">
-        <div class="tile__kind" style="margin-top:4px">ССЫЛКА ПОДПИСКИ · HYSTERIA2</div>
+        <div class="tile__kind">ВАШ СЕРВЕР</div>
+        <div class="srv srv--current">
+          <div class="srv__place">
+            <div class="srv__name" id="server-name">—</div>
+            <div class="srv__where" id="server-note"></div>
+          </div>
+          <button class="chip" id="change-server" type="button">Сменить сервер</button>
+        </div>
+
+        <p class="lead lead--card">Одна ссылка на все клиенты: вставьте её в приложение, поддерживающее подписки — сервер и протоколы подтянутся сами.</p>
+
+        <div class="tile__kind">ССЫЛКА ПОДПИСКИ</div>
         <div class="secret">
           <pre class="secret__box secret__box--link" id="link">—</pre>
           <div class="secret__row">
             <button class="chip" id="copy-link" type="button" data-label="Скопировать ссылку">Скопировать ссылку</button>
             <a class="chip" id="open-link" href="#">Открыть в клиенте</a>
+            <button class="chip" id="download-link" type="button" data-label="Сохранить файлом">Сохранить файлом</button>
           </div>
         </div>
 
-        <div class="tile__kind" style="margin-top:24px">ЗАПАСНАЯ ССЫЛКА · VLESS</div>
-        <div class="secret">
-          <pre class="secret__box secret__box--link" id="link-vless">—</pre>
-          <div class="secret__row">
-            <button class="chip" id="copy-vless" type="button" data-label="Скопировать ссылку">Скопировать ссылку</button>
-            <a class="chip" id="open-vless" href="#">Открыть в клиенте</a>
-          </div>
-        </div>
-
-        <div class="secret__row" style="margin-top:20px">
-          <button class="chip" id="download-config" type="button" data-label="Скачать обе ссылки">Скачать обе ссылки</button>
-          <button class="chip" id="refresh" type="button" data-label="Обновить">Обновить</button>
-        </div>
+        <details class="proto-wrap" id="extra-wrap" hidden>
+          <summary class="proto-wrap__more">Отдельные ссылки по протоколам</summary>
+          <div class="proto-list" id="extra-links"></div>
+        </details>
 
         <div class="warn">
-          <b>Ссылки личные.</b> Они открывают доступ к вашей подписке — не публикуйте их и не пересылайте. Если ссылка утекла, смените пароль: это закроет все сессии.
+          <b>Ссылка личная.</b> Она открывает доступ к вашей подписке — не публикуйте её и не пересылайте. Если ссылка утекла, смените пароль и закройте лишние сессии в кабинете.
         </div>
       </section>
 
@@ -94,10 +107,12 @@
         <div class="tile__value" id="blocked-title">Подписка неактивна</div>
         <div class="tile__note" id="blocked-note">Подключение доступно, пока действует подписка.</div>
         <div class="acc-actions">
-          <a class="btn btn--primary btn--wide" href="/#pricing">Оформить подписку</a>
+          <a class="btn btn--primary btn--wide" href="/pay">Оформить подписку</a>
+          <button class="btn btn--quiet" id="retry" type="button" hidden>Повторить</button>
           <a class="btn btn--quiet" href="/cabinet">В кабинет</a>
         </div>
       </section>
+
     </div>
   </div>
 

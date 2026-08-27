@@ -1,4 +1,5 @@
 using HorusAPI.Services;
+using HorusAPI.Services.Billing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -16,6 +17,7 @@ namespace HorusAPI.Tests.Infrastructure;
 public sealed class HorusApiFactory(string connectionString) : WebApplicationFactory<Program>
 {
     public RecordingEmailSender Email { get; } = new();
+    public FakePaymentProvider Payments { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -28,6 +30,9 @@ public sealed class HorusApiFactory(string connectionString) : WebApplicationFac
                 ["ConnectionStrings:Postgres"] = connectionString,
                 ["Mail:Enabled"]               = "false",
                 ["App:PublicUrl"]              = "http://localhost",
+                // Tighten the sweep so the stale-hold test doesn't wait minutes.
+                ["Payments:HoldMinutes"]       = "30",
+                ["Payments:SweepMinutes"]      = "1",
             });
         });
 
@@ -35,6 +40,10 @@ public sealed class HorusApiFactory(string connectionString) : WebApplicationFac
         {
             services.RemoveAll<IEmailSender>();
             services.AddSingleton<IEmailSender>(Email);
+
+            // Swap the real acquirer for the deterministic fake (no network in tests).
+            services.RemoveAll<IPaymentProvider>();
+            services.AddSingleton<IPaymentProvider>(Payments);
         });
     }
 }

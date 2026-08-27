@@ -58,6 +58,12 @@ nunit-*.xml
 .env
 *.env
 
+# Backup remote credentials + any age keys — never commit
+backup/rclone.conf
+*.age
+horus-backup.key
+
 # Locally generated OpenAPI spec (produced on build; not for publishing)
 /openapi/
 
+/docs

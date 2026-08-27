@@ -1,0 +1,18 @@
+# Copy to backup/rclone.conf and fill in — it is mounted read-only into the backup
+# container at /root/.config/rclone/rclone.conf. Keep the real file OUT of git (.gitignored).
+#
+# Cloudflare R2 (10 GB free, no egress fees) — S3-compatible. Create an R2 bucket and an
+# API token with Object Read & Write scoped to that bucket, then:
+[r2]
+type = s3
+provider = Cloudflare
+access_key_id = YOUR_R2_ACCESS_KEY_ID
+secret_access_key = YOUR_R2_SECRET_ACCESS_KEY
+endpoint = https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+acl = private
+
+# Backblaze B2 alternative (10 GB free; supports Object Lock for immutability):
+# [b2]
+# type = b2
+# account = YOUR_B2_KEY_ID
+# key = YOUR_B2_APPLICATION_KEY
