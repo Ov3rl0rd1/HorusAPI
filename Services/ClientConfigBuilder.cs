@@ -30,9 +30,13 @@ public static class ClientConfigBuilder
 
     public static string Hysteria2Link(ServerRow s, Guid uuid)
     {
-        string hop = string.IsNullOrEmpty(s.hop) ? string.Empty : "," + s.hop;
-        return $"hysteria2://{uuid}@{s.host}:{s.hysteria_port}{hop}/" +
-               $"?sni={s.host}&obfs=salamander&obfs-password={s.obfs_password}#{Tag(s, "HY2")}";
+        // Port hopping goes in the `mport` query param as a dash range (e.g. 31111-49999),
+        // NOT appended to the host as ":port,range". The node may report the range with a
+        // colon (31111:49999); normalise it to a dash.
+        string range = string.IsNullOrEmpty(s.hop) ? string.Empty : s.hop.Replace(':', '-');
+        string mport = string.IsNullOrEmpty(range) ? string.Empty : $"&mport={range}";
+        return $"hysteria2://{uuid}@{s.host}:{s.hysteria_port}" +
+               $"?sni={s.host}&obfs=salamander{mport}&obfs-password={s.obfs_password}#{Tag(s, "HY2")}";
     }
 
     /// <summary>olcRTC parameters, or null when the node advertises no room (provider empty).</summary>

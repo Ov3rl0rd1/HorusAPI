@@ -71,10 +71,11 @@ public class ReservationService(IConfiguration cfg, ILogger<ReservationService> 
 
     // Least-loaded active node that still has a free slot, locked so a parallel
     // reservation can't grab the same last slot. SKIP LOCKED steps over rows another
-    // transaction is mid-reserving.
+    // transaction is mid-reserving. Capacity is the HARD cap (max_reservations); max_clients
+    // is only a soft "recommended" threshold for client display.
     private const string PickLeastLoaded = """
         SELECT id FROM vpn_servers
-        WHERE is_active AND reserved_count < max_clients
+        WHERE is_active AND reserved_count < max_reservations
         ORDER BY reserved_count ASC, id ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
@@ -122,7 +123,7 @@ public class ReservationService(IConfiguration cfg, ILogger<ReservationService> 
         if (serverId.HasValue)
         {
             var row = await conn.QuerySingleOrDefaultAsync<TargetRow>(
-                "SELECT is_active, (reserved_count < max_clients) AS has_capacity FROM vpn_servers WHERE id = @s FOR UPDATE",
+                "SELECT is_active, (reserved_count < max_reservations) AS has_capacity FROM vpn_servers WHERE id = @s FOR UPDATE",
                 new { s = serverId.Value }, tx);
 
             if (row is null || !row.is_active) { await tx.RollbackAsync(); return ReserveResult.NotFound; }

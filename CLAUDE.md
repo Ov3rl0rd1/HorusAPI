@@ -67,7 +67,7 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 The connection model is split into **selection** and **connection**, and every user is bound to exactly one node. See [docs/connection-model.md](docs/connection-model.md) — the contract the app + node teams build against.
 
 - **Identity**: `users.vpn_uuid` is the stable per-user id (VLESS `id` + node client label). It never changes; only its server binding moves.
-- **Binding = reservation**: `users.current_server_id` is the reserved slot; `vpn_servers.reserved_count` counts bound users and is what capacity is measured on (`reserved_count = max_clients` → full). `vpn_servers.current_load` is now the *live* online count from node telemetry (display only).
+- **Binding = reservation**: `users.current_server_id` is the reserved slot; `vpn_servers.reserved_count` counts bound users + pending holds and is what capacity is measured on. Two limits: **`max_reservations`** is the HARD cap (`reserved_count = max_reservations` → full; buy/select refused), **`max_clients`** is a SOFT "recommended" threshold (~1.5× smaller) used only for client load display — reservations keep succeeding past it up to the hard cap. `vpn_servers.current_load` is the *live* online count from node telemetry (display only).
 - [ReservationService](Services/ReservationService.cs) (classic Dapper, **not** `[DapperAot]`) owns reserve/move/release in a single transaction with `FOR UPDATE SKIP LOCKED`, so parallel purchases can't oversell. `EnsureReservedAsync` auto-picks; `SelectAsync` binds/moves; `ReleaseAsync` frees. Node (de)provisioning + session-cache eviction ([SessionCacheOps](Services/Auth Handler/SessionCacheOps.cs)) are done by the caller *after* the commit.
 - **Purchase**: admin `PUT …/subscription` reserves first → `409 no_capacity` when every node is full (so a subscription can't be sold with no seats). `DELETE …/subscription` releases the slot + de-provisions the node.
 - **`/connect` is node-free on the hot path**: provisioning happens at reserve/select; a normal connect reads one row and builds strings. The node persists its user set and reconciles xray from it on restart.
@@ -157,7 +157,7 @@ PostgreSQL. Schema in [init.sql](init.sql). Key columns:
 - `users.sessions VARCHAR(64)[]` — bounded to 10 entries; cleared via `ClearOtherSessionsAsync` and wiped on password reset
 - unique partial index `users_email_lower_key` on `lower(email)` (where non-empty) — one account per address; `CreateUserAsync` maps its `23505` to email-taken
 - `email_verifications` (PK `user_id`) / `password_resets` (PK `token_hash`) — hashed single-purpose secret rows, FK `ON DELETE CASCADE`
-- `vpn_servers.reserved_count INT` — bound-user count; capacity is measured on this (`= max_clients` → full). `idx_servers_available (country, reserved_count) WHERE is_active` backs selection
+- `vpn_servers.reserved_count INT` — bound-user + pending-hold count; capacity is measured on this against **`max_reservations`** (hard cap → full). `max_clients` is a soft/advisory threshold only. `idx_servers_available (country, reserved_count) WHERE is_active` backs selection
 - `vpn_servers.current_load INT` — live online count from `/node/events` (display only, not capacity)
 - `vpn_servers.auth_password` — per-node shared secret, sent to the agent as `X-API-PASSWORD`
 - `vpn_servers.reality_*` / `olcrtc_*` / ports — reported by the node via `/node/register`

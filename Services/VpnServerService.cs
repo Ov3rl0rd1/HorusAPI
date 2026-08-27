@@ -28,14 +28,16 @@ public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log)
     public async Task<IEnumerable<PingCandidate>> GetPingCandidatesAsync()
     {
         // One row per country (the least-loaded node there that still has a slot),
-        // then the whole list ordered least-loaded first.
+        // then the whole list ordered least-loaded first. Candidates are filtered on the
+        // HARD cap (max_reservations); max_clients rides along only so the client can flag a
+        // node as heavily loaded (reserved_count ≥ max_clients) while it stays selectable.
         const string sql = """
-            SELECT id, country, city, host, current_load, reserved_count, max_clients
+            SELECT id, country, city, host, current_load, reserved_count, max_clients, max_reservations
             FROM (
                 SELECT DISTINCT ON (country)
-                       id, country, city, host, current_load, reserved_count, max_clients
+                       id, country, city, host, current_load, reserved_count, max_clients, max_reservations
                 FROM vpn_servers
-                WHERE is_active AND reserved_count < max_clients
+                WHERE is_active AND reserved_count < max_reservations
                 ORDER BY country, reserved_count ASC, id
             ) c
             ORDER BY reserved_count ASC, country

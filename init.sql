@@ -34,8 +34,15 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
     city           VARCHAR(64)  NOT NULL,
     host           VARCHAR(256) NOT NULL,
     current_load   INTEGER      NOT NULL DEFAULT 0,   -- live online count, reported by node telemetry (/node/events)
-    reserved_count INTEGER      NOT NULL DEFAULT 0,   -- slots held by bound users (current_server_id); capacity is measured on THIS
-    max_clients    INTEGER      NOT NULL DEFAULT 5,
+    reserved_count INTEGER      NOT NULL DEFAULT 0,   -- slots held by bound users (current_server_id) + pending holds
+    -- Two capacity numbers:
+    --   max_reservations = the HARD physical cap. Overselling is blocked on THIS
+    --                      (reserved_count = max_reservations → full; buy/select refused).
+    --   max_clients      = a SOFT "recommended" threshold, ~1.5× smaller. Purely advisory:
+    --                      the client shows a node as heavily loaded once reserved_count
+    --                      reaches it, but reservations keep succeeding up to max_reservations.
+    max_clients      INTEGER    NOT NULL DEFAULT 5,
+    max_reservations INTEGER    NOT NULL DEFAULT 8,
     is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
 
     -- Shared secret with this node's agent (sent/received as X-API-PASSWORD).
@@ -106,54 +113,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_vpn_uuid ON users(vpn_uuid);
 -- rows with a NULL/empty email stay valid.
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key
     ON users (lower(email)) WHERE email IS NOT NULL AND email <> '';
-
--- ============================================================================
---  Idempotent upgrades for pre-existing databases (safe to re-run)
--- ============================================================================
-ALTER TABLE users ADD COLUMN IF NOT EXISTS vpn_uuid UUID;
--- Older rows got vpn_uuid with no default — backfill, then make it mandatory/unique.
-UPDATE users SET vpn_uuid = gen_random_uuid() WHERE vpn_uuid IS NULL;
-ALTER TABLE users ALTER COLUMN vpn_uuid SET DEFAULT gen_random_uuid();
-ALTER TABLE users ALTER COLUMN vpn_uuid SET NOT NULL;
-
--- Slot accounting: the number of users bound to a node (their reserved slot).
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS reserved_count INTEGER NOT NULL DEFAULT 0;
--- Rebuild reserved_count from the actual bindings (safe to re-run).
-UPDATE vpn_servers s
-SET reserved_count = COALESCE(c.n, 0)
-FROM (SELECT id FROM vpn_servers) sid
-LEFT JOIN (SELECT current_server_id AS id, COUNT(*) AS n
-           FROM users WHERE current_server_id IS NOT NULL
-           GROUP BY current_server_id) c ON c.id = sid.id
-WHERE s.id = sid.id;
-
--- Accounts that already existed predate email confirmation, so they are
--- grandfathered in as verified (DEFAULT TRUE backfills them); every account
--- created from now on starts unverified.
-ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE;
-
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS auth_password       VARCHAR(128) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS obfs_password       VARCHAR(128) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS hop                 VARCHAR(64)  NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS masquerade_url      VARCHAR(256);
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS reality_public_key  VARCHAR(128) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS reality_short_ids   TEXT[]       NOT NULL DEFAULT '{}';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS reality_server_name VARCHAR(256) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS reality_dest        VARCHAR(256) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS vless_port          INTEGER      NOT NULL DEFAULT 443;
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS hysteria_port       INTEGER      NOT NULL DEFAULT 8443;
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS olcrtc_provider     VARCHAR(32)  NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS olcrtc_transport    VARCHAR(32)  NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS olcrtc_room_id      VARCHAR(256) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS olcrtc_room_key     VARCHAR(128) NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS agent_version       VARCHAR(32)  NOT NULL DEFAULT '';
-ALTER TABLE vpn_servers ADD COLUMN IF NOT EXISTS last_registered_at  TIMESTAMPTZ;
-
-ALTER TABLE users ADD COLUMN IF NOT EXISTS current_server_id      INT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_connect_at        TIMESTAMPTZ;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_disconnect_at     TIMESTAMPTZ;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_disconnect_reason VARCHAR(16);
 
 -- ============================================================================
 --  Billing: plans, subscriptions (source of access truth), payments, promos

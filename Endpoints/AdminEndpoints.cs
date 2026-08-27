@@ -52,6 +52,9 @@ public static class AdminEndpoints
                 req.city.Length > 64  || req.host.Length  > 256)
                 return Results.BadRequest(new ApiError("Field length limit exceeded."));
 
+            if (req.max_reservations is int cap && cap < req.max_clients)
+                return Results.BadRequest(new ApiError("max_reservations (hard cap) cannot be below max_clients."));
+
             if (!string.IsNullOrWhiteSpace(req.masquerade_url) &&
                 (!Uri.TryCreate(req.masquerade_url, UriKind.Absolute, out var mUrl) ||
                  (mUrl.Scheme != "https" && mUrl.Scheme != "http")))

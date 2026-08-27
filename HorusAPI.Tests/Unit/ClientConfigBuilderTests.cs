@@ -49,10 +49,38 @@ public class ClientConfigBuilderTests
 
         string link = ClientConfigBuilder.Hysteria2Link(Server(), uuid);
 
-        Assert.StartsWith($"hysteria2://{uuid}@node1.example.com:8443,20000-30000/?", link);
+        // Port hop lives in mport=…, not appended to the host, and there's no trailing "/".
+        Assert.StartsWith($"hysteria2://{uuid}@node1.example.com:8443?sni=node1.example.com", link);
+        Assert.DoesNotContain(":8443,", link);
+        Assert.DoesNotContain("/?", link);
         Assert.Contains("obfs=salamander", link);
+        Assert.Contains("mport=20000-30000", link);
         Assert.Contains("obfs-password=hobfs", link);
         Assert.Contains("Horus-DE", link);
+    }
+
+    [Fact]
+    public void Hysteria2Link_normalises_a_colon_port_range_to_mport_dash()
+    {
+        var uuid = Guid.NewGuid();
+        var s = Server() with { hop = "31111:49999" };
+
+        string link = ClientConfigBuilder.Hysteria2Link(s, uuid);
+
+        Assert.Contains("mport=31111-49999", link);
+        Assert.DoesNotContain("31111:49999", link);
+    }
+
+    [Fact]
+    public void Hysteria2Link_omits_mport_when_no_port_hop()
+    {
+        var uuid = Guid.NewGuid();
+        var s = Server() with { hop = "" };
+
+        string link = ClientConfigBuilder.Hysteria2Link(s, uuid);
+
+        Assert.DoesNotContain("mport=", link);
+        Assert.StartsWith($"hysteria2://{uuid}@node1.example.com:8443?sni=node1.example.com&obfs=salamander&obfs-password=hobfs", link);
     }
 
     [Fact]

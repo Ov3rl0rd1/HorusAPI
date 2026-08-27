@@ -21,7 +21,7 @@ public class AdminServerService(
 {
     // Column list backing a ServerAdminItem (names match the record parameters).
     private const string AdminColumns =
-        "id, name, country, city, host, current_load, max_clients, is_active, " +
+        "id, name, country, city, host, current_load, max_clients, max_reservations, is_active, " +
         "auth_password, masquerade_url, reality_public_key, agent_version, last_registered_at";
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
@@ -38,17 +38,25 @@ public class AdminServerService(
     {
         // Only identity + capacity + the shared secret. The node fills in
         // reality_*/olcrtc_*/ports itself via POST /node/register; the rest default.
+        // max_reservations is the hard cap; default it to ceil(max_clients * 1.5) so the
+        // soft (max_clients) and hard limits stay in the intended ~2:3 ratio.
         const string sql = """
             INSERT INTO vpn_servers
-                (name, country, city, host, max_clients, auth_password, masquerade_url)
+                (name, country, city, host, max_clients, max_reservations, auth_password, masquerade_url)
             VALUES
-                (@name, @country, @city, @host, @max_clients,
+                (@name, @country, @city, @host, @max_clients, @MaxReservations,
                  COALESCE(@auth_password, ''), @masquerade_url)
             RETURNING id
             """;
 
+        int maxReservations = req.max_reservations ?? (int)Math.Ceiling(req.max_clients * 1.5);
+
         await using var conn = Connect();
-        return await conn.ExecuteScalarAsync<int>(sql, req);
+        return await conn.ExecuteScalarAsync<int>(sql, new
+        {
+            req.name, req.country, req.city, req.host, req.max_clients,
+            MaxReservations = maxReservations, req.auth_password, req.masquerade_url
+        });
     }
 
     public async Task<bool> RemoveServerAsync(int id)

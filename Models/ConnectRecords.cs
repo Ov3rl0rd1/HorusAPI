@@ -14,7 +14,8 @@ public record PingCandidate(
     string host,
     int    current_load,
     int    reserved_count,
-    int    max_clients);
+    int    max_clients,       // soft "recommended" threshold (advisory load display)
+    int    max_reservations); // hard capacity cap (physical limit)
 
 /// <summary>Body of POST /servers/select. Omit <c>server_id</c> to auto-pick the least-loaded node.</summary>
 public record SelectServerRequest(int? server_id);

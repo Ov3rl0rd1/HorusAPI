@@ -9,5 +9,6 @@ public record AddServerRequest(
     string  city,
     string  host,
     int     max_clients,
+    int?    max_reservations = null,  // hard cap; defaults to ceil(max_clients * 1.5) when omitted
     string? masquerade_url = null,
     string? auth_password  = null);   // node shared secret (X-API-PASSWORD)

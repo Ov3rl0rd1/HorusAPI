@@ -12,6 +12,7 @@ public record ServerAdminItem(
     string           host,
     int              current_load,
     int              max_clients,
+    int              max_reservations,
     bool             is_active,
     string           auth_password,
     string?          masquerade_url,
