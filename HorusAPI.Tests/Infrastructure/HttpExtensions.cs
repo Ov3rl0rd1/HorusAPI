@@ -38,8 +38,11 @@ public static class HttpExtensions
 
     public static async Task<JsonElement> ReadJsonAsync(this HttpResponseMessage response)
     {
-        await using var stream = await response.Content.ReadAsStreamAsync();
-        using var doc = await JsonDocument.ParseAsync(stream);
+        // ReadAsStringAsync buffers the content into the response, so the body can be read
+        // more than once (e.g. several ReadStringPropAsync calls on the same response).
+        // Reading the stream directly would dispose it and make a second read throw.
+        string json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
         return doc.RootElement.Clone();
     }
 
