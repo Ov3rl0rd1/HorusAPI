@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 namespace HorusAPI.Models;
 
 // ── Server selection (GET /servers, POST /servers/select) ─────────────────────
@@ -25,23 +27,24 @@ public record BoundServer(int id, string name, string country, string city, stri
 
 // ── Connection (GET /connect, header path → JSON) ─────────────────────────────
 
-/// <summary>olcRTC parameters for the Horus app (whitelist bypass). Only returned to
-/// the app (session in the X-Session-Key header), never in the third-party subscription.</summary>
-public record OlcRtc(
-    string provider,
-    string transport,
-    string room_id,
-    string room_key,
-    string uuid,
-    string host);
+/// <summary>
+/// One ready-to-use client outbound: a complete xray outbound object, exactly as the node
+/// described it, with this user's uuid already substituted. The client can drop it straight
+/// into a config.
+///
+/// Deliberately untyped. This API models no protocol at all, so a node can start offering a
+/// new one and its users get a working config the same day, with no release on this side.
+/// </summary>
+public record ClientOutbound(
+    string   id,        // stable id from the node's profile, e.g. "vless-reality"
+    string   label,     // human-readable, for the client's UI
+    string   tag,       // the node-side inbound tag this corresponds to
+    JsonNode outbound); // a full xray outbound
 
 /// <summary>
-/// App-facing connect payload. <c>vless</c> lists every VLESS variant the node exposes
-/// (one today), <c>hysteria2</c> is the Hysteria2 link, <c>olcrtc</c> is present only
-/// when the node advertises an olcRTC room.
+/// App-facing connect payload: the node the caller is bound to, and every outbound it offers
+/// the app, in the order the node listed them (a profile lists its preferred one first).
 /// </summary>
 public record ConnectResponse(
-    BoundServer     server,
-    string[]        vless,
-    string          hysteria2,
-    OlcRtc?         olcrtc);
+    BoundServer      server,
+    ClientOutbound[] outbounds);

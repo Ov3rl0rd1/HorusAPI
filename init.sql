@@ -65,8 +65,40 @@ CREATE TABLE IF NOT EXISTS vpn_servers (
     olcrtc_room_id      VARCHAR(256) NOT NULL DEFAULT '',
     olcrtc_room_key     VARCHAR(128) NOT NULL DEFAULT '',   -- shared with clients out-of-band
     agent_version       VARCHAR(32)  NOT NULL DEFAULT '',
-    last_registered_at  TIMESTAMPTZ
+    last_registered_at  TIMESTAMPTZ,
+
+    -- ── xray profiles ───────────────────────────────────────────────────────
+    -- What the node is ACTUALLY running, reported by POST /node/register.
+    profile        VARCHAR(64) NOT NULL DEFAULT '',
+    profile_hash   VARCHAR(80) NOT NULL DEFAULT '',   -- sha256 of the profile source
+    config_hash    VARCHAR(80) NOT NULL DEFAULT '',   -- sha256 of the rendered config.json
+
+    -- What we WANT it to run. NULL = follow fleet_settings.default_profile.
+    -- Setting this is how a protocol is switched without touching the node.
+    desired_profile VARCHAR(64),
+
+    -- The node's client-facing offers: whole xray outbounds carrying a ${uuid}
+    -- placeholder. Stored opaquely and replayed with the user substituted, which is
+    -- what lets /connect serve a protocol this API knows nothing about.
+    offers         JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+    -- Set when the node could not render its profile (it keeps serving the previous
+    -- config). Surfaced in the admin view so a typo is visible rather than silent.
+    render_error   TEXT,
+    warnings       TEXT[] NOT NULL DEFAULT '{}'
 );
+
+-- ============================================================================
+--  fleet_settings  (exactly one row)
+--  The fleet-wide default profile. A node uses COALESCE(desired_profile,
+--  default_profile), so one UPDATE here moves every node that has no override.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS fleet_settings (
+    id              SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    default_profile VARCHAR(64) NOT NULL DEFAULT '',   -- '' = let each node decide
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO fleet_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 --  email_verifications  (at most one pending 6-digit code per user)

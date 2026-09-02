@@ -8,12 +8,16 @@ namespace HorusAPI.Endpoints;
 /// <summary>
 /// The single <b>connection</b> endpoint. The auth source decides audience and format:
 /// <list type="bullet">
-///   <item><b>X-Session-Key header</b> → the Horus app → JSON with olcRTC + vless + hysteria2.</item>
+///   <item><b>X-Session-Key header</b> → the Horus app → JSON: every outbound the node
+///   offers, ready to use.</item>
 ///   <item><b>?key= query</b> → a third-party VPN client using this as a subscription URL →
-///   base64 subscription body (vless + hysteria2 only; never olcRTC).</item>
+///   base64 body of the share links the node published.</item>
 /// </list>
+/// What a client gets is decided entirely by the node's active profile: it reports whole
+/// client-side xray outbounds and this endpoint substitutes the user into them. Nothing here
+/// knows what a protocol is, so switching one on the fleet needs no change in this file.
 /// Node-free on the hot path: provisioning happens when the slot is reserved (purchase /
-/// select), so a normal /connect only reads one row and builds strings.
+/// select), so a normal /connect reads one row and does string work.
 /// </summary>
 public static class ConnectEndpoints
 {
@@ -62,16 +66,24 @@ public static class ConnectEndpoints
                 SessionCacheOps.EvictSessions(cache, user.sessions);   // current_server_id changed
             }
 
-            // Third-party subscription URL → base64(vless…\nhysteria2…). No olcRTC.
+            // Third-party subscription URL → base64 of the share links the node published.
+            // Only offers carrying a `uri` take part: writing one is how a profile opts a
+            // protocol into subscriptions, and protocols with no share-link format have none.
             if (!viaHeader)
-                return Results.Text(ClientConfigBuilder.Subscription(server, user.vpn_uuid), "text/plain; charset=utf-8");
+                return Results.Text(OfferRenderer.Subscription(server, user.vpn_uuid), "text/plain; charset=utf-8");
 
-            // Horus app → full JSON incl. olcRTC (when the node advertises a room).
+            // Horus app → the node's own outbounds, with this user substituted in.
+            var outbounds = OfferRenderer.RenderOutbounds(server, user.vpn_uuid, OfferRenderer.AudienceApp);
+
+            // A node that has not re-registered since being upgraded, or whose profile failed
+            // to render, has nothing to offer. Say so rather than handing back an empty config
+            // the client would fail to connect with for no visible reason.
+            if (outbounds.Count == 0)
+                return Results.Problem("Server has no available configuration.", statusCode: 503);
+
             var payload = new ConnectResponse(
                 new BoundServer(server.server_id, server.name, server.country, server.city, server.host),
-                ClientConfigBuilder.VlessLinks(server, user.vpn_uuid),
-                ClientConfigBuilder.Hysteria2Link(server, user.vpn_uuid),
-                ClientConfigBuilder.OlcRtc(server, user.vpn_uuid));
+                [.. outbounds]);
 
             return Results.Json(payload);
         })
@@ -82,6 +94,7 @@ public static class ConnectEndpoints
         .Produces(401)
         .Produces<ApiError>(403)
         .Produces<ApiError>(409)
-        .WithSummary("Connection links for the caller's bound node. Header session → JSON (incl. olcRTC); ?key= → base64 subscription (vless + hysteria2).");
+        .Produces(503)
+        .WithSummary("Client configuration for the caller's bound node. Header session → JSON outbounds; ?key= → base64 subscription.");
     }
 }

@@ -17,11 +17,10 @@ public interface IVpnServerService
 public class VpnServerService(IConfiguration cfg, ILogger<VpnServerService> log) : IVpnServerService
 {
     // Column list backing a ServerRow — `id` is aliased to the record's `server_id`.
+    // `offers` comes back as text: it is handed to the client almost as-is, so there is no
+    // reason to parse it into a typed model this API deliberately does not have.
     private const string ConnectColumns =
-        "id AS server_id, name, country, city, host, auth_password, " +
-        "reality_public_key, reality_short_ids, reality_server_name, reality_dest, " +
-        "vless_port, hysteria_port, obfs_password, hop, " +
-        "olcrtc_provider, olcrtc_transport, olcrtc_room_id, olcrtc_room_key, agent_version";
+        "id AS server_id, name, country, city, host, auth_password, profile, offers::text AS offers";
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
