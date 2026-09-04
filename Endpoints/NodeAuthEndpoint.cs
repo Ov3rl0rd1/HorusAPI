@@ -23,29 +23,41 @@ public static class NodeAuthEndpoints
             .RequireRateLimiting(RateLimitPolicies.Node)
             .AddEndpointFilter(NodeAuthFilter);
 
-        // Node reports its public parameters on startup / refresh.
+        // Node reports what it is actually running: its profile and the client-side offers
+        // that go with it. The reply names the profile it should be on.
         group.MapPost("/register", async (
             [FromBody] NodeRegisterRequest req, HttpContext ctx, INodeService svc) =>
         {
             var serverId = (int)ctx.Items[ServerIdItem]!;
-            try { await svc.RegisterAsync(serverId, req); }
+
+            string? assigned;
+            try { assigned = await svc.RegisterAsync(serverId, req); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
-            return Results.Ok(new NodeRegisterResponse(serverId));
+
+            return Results.Ok(new NodeRegisterResponse(serverId, assigned));
         })
         .Produces<NodeRegisterResponse>(200)
-        .WithSummary("Register/refresh a node's public connection parameters.");
+        .WithSummary("Register what a node is running (profile + client offers); returns the profile it should be on.");
 
         // Node reports connect/disconnect events + current online count.
+        //
+        // Answers 200 with a body rather than the old 204: the reply carries this node's
+        // profile assignment, so a fleet-wide protocol switch reaches a node that has been up
+        // for weeks on its next telemetry post instead of waiting for a restart. Older agents
+        // ignore the body, so this stays compatible in both directions.
         group.MapPost("/events", async (
             [FromBody] NodeEventsRequest req, HttpContext ctx, INodeService svc) =>
         {
             var serverId = (int)ctx.Items[ServerIdItem]!;
-            try { await svc.ApplyEventsAsync(serverId, req); }
+
+            string? assigned;
+            try { assigned = await svc.ApplyEventsAsync(serverId, req); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
-            return Results.NoContent();
+
+            return Results.Ok(new NodeEventsResponse(assigned));
         })
-        .Produces(204)
-        .WithSummary("Report a node's online users and connect/disconnect events.");
+        .Produces<NodeEventsResponse>(200)
+        .WithSummary("Report a node's online users and disconnect events; returns the profile it should be on.");
     }
 
     /// <summary>Resolves X-API-PASSWORD → server id, or short-circuits with 401.</summary>

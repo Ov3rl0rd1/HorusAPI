@@ -36,6 +36,76 @@ public static class AdminEndpoints
         .Produces<IEnumerable<ServerAdminItem>>(200)
         .WithSummary("List all VPN servers including inactive ones");
 
+        // ── xray profiles ────────────────────────────────────────────────────
+        // A profile is what a node actually runs (xray/profiles/<name>.json in the node
+        // repo). Assigning one here is how a protocol is switched under a block: the
+        // node picks the assignment up on its next telemetry post and applies it on its
+        // next update tick, with no SSH and no deploy.
+        //
+        // The profile must already exist on the nodes — this only selects between
+        // profiles that have been shipped. A name nothing recognises leaves the node on
+        // its previous config and reports render_error, visible below.
+
+        // What every node is running versus what it was told to run.
+        group.MapGet("/servers/profiles", async (IAdminServerService svc) =>
+        {
+            IEnumerable<ServerProfileState> states;
+            try { states = await svc.GetProfileStatesAsync(); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return Results.Ok(states);
+        })
+        .Produces<IEnumerable<ServerProfileState>>(200)
+        .WithSummary("Per-node xray profile state: running vs assigned, hashes, offer count, render errors");
+
+        group.MapGet("/fleet/profile", async (IAdminServerService svc) =>
+        {
+            FleetProfile fleet;
+            try { fleet = await svc.GetFleetProfileAsync(); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return Results.Ok(fleet);
+        })
+        .Produces<FleetProfile>(200)
+        .WithSummary("The fleet-wide default xray profile");
+
+        // Move the whole fleet. Every node without its own override switches.
+        group.MapPut("/fleet/profile", async (
+            [FromBody] SetProfileRequest req, IAdminServerService svc) =>
+        {
+            if (!AdminServerService.IsValidProfileName(req?.profile))
+                return Results.BadRequest(new ApiError(
+                    "Profile names may contain letters, digits, '-', '_' and '.' only.", "invalid_profile"));
+
+            try { await svc.SetFleetProfileAsync(req?.profile); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return Results.Ok(await svc.GetFleetProfileAsync());
+        })
+        .Produces<FleetProfile>(200)
+        .Produces<ApiError>(400)
+        .WithSummary("Set the fleet-wide default xray profile (empty clears it)");
+
+        // Override one node — useful for trying a new protocol on a single node first.
+        group.MapPut("/servers/{id:int}/profile", async (
+            [FromRoute] int id, [FromBody] SetProfileRequest req, IAdminServerService svc) =>
+        {
+            if (!AdminServerService.IsValidProfileName(req?.profile))
+                return Results.BadRequest(new ApiError(
+                    "Profile names may contain letters, digits, '-', '_' and '.' only.", "invalid_profile"));
+
+            bool found;
+            try { found = await svc.SetServerProfileAsync(id, req?.profile); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            if (!found) return Results.NotFound(new ApiError("Server not found.", "server_not_found"));
+
+            var states = await svc.GetProfileStatesAsync();
+            return Results.Ok(states.FirstOrDefault(s => s.id == id));
+        })
+        .Produces<ServerProfileState>(200)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(404)
+        .WithSummary("Set one node's xray profile override (empty falls back to the fleet default)");
+
         // Add new server 
         group.MapPost("/servers", async (
             [FromBody] AddServerRequest req,
