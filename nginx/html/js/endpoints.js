@@ -59,11 +59,15 @@ export const selectServer = (serverId) =>
 export const connectInfo = () => get('/servers/connect');
 
 // Личная ссылка подписки для клиентов: её достаточно вставить в приложение.
+// Ключ — base64, в нём встречаются '/', '+' и '=', поэтому в query он уходит
+// percent-encoded (%2F, %2B, %3D): иначе клиент обрежет ключ по слэшу.
 export function subscriptionUrl() {
   const key = getSessionKey();
   if (!key) return '';
-  const base = API_BASE || location.origin;
-  return base.replace(/\/$/, '') + '/servers/connect?key=' + encodeURIComponent(key);
+  const base = (API_BASE || location.origin).replace(/\/$/, '');
+  const url = new URL(base + '/servers/connect', location.origin);
+  url.searchParams.set('key', key);
+  return url.toString();
 }
 
 // ── Billing ─────────────────────────────────────────────────────────────────

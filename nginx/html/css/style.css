@@ -255,9 +255,6 @@ a:hover{color:#F7DA9B}
 .footer__docs{display:flex;flex-wrap:wrap;gap:6px 18px}
 .footer__docs a{color:rgba(239,234,246,.6);text-decoration:none}
 .footer__docs a:hover{color:var(--accent)}
-/* Кодовое слово платёжной системы на время согласования кассы.
-   Стоит в футере каждой страницы — убрать после регистрации. */
-.footer__code{font-weight:800;letter-spacing:.16em;color:rgba(239,234,246,.35)}
 
 /* ── Появление при скролле (js/motion.js) ──────────────────────────────── */
 [data-reveal].is-hidden{opacity:0;transform:translateY(30px)}

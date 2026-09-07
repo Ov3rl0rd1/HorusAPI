@@ -192,9 +192,10 @@ window.addEventListener('resize', function () { if (!panel.hidden) placePanel();
 // только публичные тарифы; если запрос не удался — остаются встроенные значения
 // (они же лежат в HTML, чтобы блок цены работал и без JS).
 const FALLBACK_TIERS = [
-  { label: '1 мес', full: 'за 1 месяц',  amount: 199, months: 1 },
-  { label: '2 мес', full: 'за 2 месяца', amount: 378, months: 2 },
-  { label: '3 мес', full: 'за 3 месяца', amount: 499, months: 3 }
+  { label: '1 мес', full: 'за 1 месяц',   amount: 249,  months: 1 },
+  { label: '3 мес', full: 'за 3 месяца',  amount: 649,  months: 3 },
+  { label: '6 мес', full: 'за 6 месяцев', amount: 1190, months: 6 },
+  { label: '1 год', full: 'за 1 год',     amount: 1990, months: 12 }
 ];
 const UNIT_SHORT = { day: ['дн', 'дн', 'дн'], week: ['нед', 'нед', 'нед'],
   month: ['мес', 'мес', 'мес'], year: ['год', 'года', 'лет'] };

@@ -32,19 +32,21 @@
 .guide-app__mark{flex:none;font-size:15px;color:var(--accent);opacity:0;transition:opacity .2s ease}
 .guide-app.is-on .guide-app__mark{opacity:1}
 
-.guide-panel{padding-top:22px;border-top:1px solid var(--line)}
+.guide-panel{min-width:0;padding-top:22px;border-top:1px solid var(--line)}
 .guide-panel__head{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px}
 .guide-panel__name{font-family:var(--display);font-size:19px;font-weight:600}
 .guide-panel__link{margin-left:auto}
 
-.guide-body{font-size:15.5px;color:rgba(239,234,246,.82)}
+.guide-body{min-width:0;font-size:15.5px;color:rgba(239,234,246,.82)}
 .guide-body > :first-child{margin-top:0}
 .guide-body p{margin:0 0 14px;text-wrap:pretty}
 .guide-body b{color:var(--text)}
 .guide-body hr{border:none;border-top:1px solid var(--line);margin:24px 0}
+/* minmax(0,1fr) и min-width:0 — иначе строка с nowrap-ссылкой растягивает
+   и список, и всю страницу вместо того, чтобы скроллиться внутри блока. */
 .guide-body ol,.guide-body ul{margin:0 0 14px;padding:0;list-style:none;counter-reset:gstep;
-  display:grid;gap:16px}
-.guide-body li{position:relative;padding-left:40px;text-wrap:pretty}
+  display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+.guide-body li{position:relative;min-width:0;padding-left:40px;text-wrap:pretty}
 .guide-body ol > li::before{counter-increment:gstep;content:counter(gstep)}
 .guide-body ul > li::before{content:''}
 .guide-body li::before{position:absolute;left:0;top:-1px;width:27px;height:27px;
@@ -72,10 +74,10 @@
   letter-spacing:.1em;color:var(--accent-l)}
 
 /* Место под личную ссылку подписки внутри инструкции. */
-.guide-link{margin:12px 0 0;padding:12px 14px;border-radius:13px;
+.guide-link{margin:12px 0 0;max-width:100%;min-width:0;padding:12px 14px;border-radius:13px;
   background:rgba(11,5,18,.55);border:1px solid rgba(255,255,255,.12)}
-.guide-link__value{margin:0;font:600 12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  color:var(--text);white-space:nowrap;overflow-x:auto;padding-bottom:8px;
+.guide-link__value{margin:0;max-width:100%;font:600 12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:var(--text);white-space:nowrap;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:8px;
   scrollbar-width:thin;scrollbar-color:rgba(240,196,106,.45) transparent}
 .guide-link__value::-webkit-scrollbar{height:8px}
 .guide-link__value::-webkit-scrollbar-track{background:transparent}

@@ -27,6 +27,9 @@ const UNIT_WORDS = {
   month: ['месяц', 'месяца', 'месяцев'],
   year:  ['год', 'года', 'лет']
 };
+// «Каждый месяц» вместо «каждые 1 месяц» — для одиночного периода своя форма.
+const EVERY_ONE = { day: 'каждый день', week: 'каждую неделю',
+  month: 'каждый месяц', year: 'каждый год' };
 // Во сколько месяцев обходится период — только для «≈ N ₽ / мес» и скидки.
 const IN_MONTHS = { day: 1 / 30, week: 7 / 30, month: 1, year: 12 };
 
@@ -39,6 +42,12 @@ function periodLabel(p) {
   const forms = UNIT_WORDS[p.interval_unit] || UNIT_WORDS.month;
   return count(p) + ' ' + plural(count(p), forms);
 }
+// «каждый месяц» или «каждые 3 месяца»
+function everyLabel(p) {
+  return count(p) === 1
+    ? (EVERY_ONE[p.interval_unit] || EVERY_ONE.month)
+    : 'каждые ' + periodLabel(p);
+}
 function money(value, currency) {
   const sum = Math.round(Number(value) || 0).toLocaleString('ru-RU');
   return currency && currency !== 'RUB' ? sum + ' ' + currency : sum + ' ₽';
@@ -46,7 +55,7 @@ function money(value, currency) {
 function planTitle(p) { return p.title || p.code; }
 function planTerms(p) {
   return isRecurring(p)
-    ? 'списание каждые ' + periodLabel(p)
+    ? 'списание ' + everyLabel(p)
     : 'разово · ' + periodLabel(p) + ' доступа';
 }
 
@@ -84,7 +93,7 @@ function planCard(p, list) {
 
   const per = document.createElement('div');
   per.className = 'plan__per';
-  per.textContent = isRecurring(p) ? 'каждые ' + periodLabel(p) : 'за ' + periodLabel(p);
+  per.textContent = isRecurring(p) ? everyLabel(p) : 'за ' + periodLabel(p);
 
   btn.appendChild(title);
   btn.appendChild(price);

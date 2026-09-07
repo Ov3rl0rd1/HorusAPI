@@ -163,6 +163,10 @@
   border-radius:50%;display:grid;place-items:center}
 .sh-ring i{width:6px;height:6px;border-radius:50%;background:var(--accent)}
 
+/* Пока открыта панель загрузок, страница под ней не скроллится
+   (padding-right ставит js/index.js — вместо исчезнувшего скроллбара). */
+html.is-locked{overflow:hidden}
+
 /* ── Цена ──────────────────────────────────────────────────────────────── */
 .price{margin-top:38px;padding:clamp(26px,4.5vw,46px)}
 .slider{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;

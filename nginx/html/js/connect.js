@@ -284,7 +284,7 @@ async function copy_(text, button, box) {
 }
 
 byId('copy-link').addEventListener('click', function (e) {
-  copy_(byId('link').textContent, e.currentTarget, byId('link'));
+  copy_(subscriptionUrl(), e.currentTarget, byId('link'));
 });
 
 byId('download-link').addEventListener('click', function (e) {
