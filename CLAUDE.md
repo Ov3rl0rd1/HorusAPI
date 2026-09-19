@@ -50,7 +50,7 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 
 | Group | Auth | Purpose |
 |---|---|---|
-| `/auth` | anonymous | login, register, verify, resend-code, reset-request, reset-check, reset-confirm, logout-others |
+| `/auth` | anonymous | login, register, verify, resend-code, change-email, reset-request, reset-check, reset-confirm, logout-others |
 | `GET /servers` | `X-Session-Key` | ping candidates: least-loaded-with-capacity, one per country ([ServerEndpoints](Endpoints/ServerEndpoints.cs)) |
 | `POST /servers/select` | `X-Session-Key` | reserve/move the caller to a node (auto-picks when `server_id` omitted) |
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
@@ -140,6 +140,37 @@ Logs are not in this stack yet — VictoriaLogs + fluent-bit is the documented f
 ### Email confirmation & password reset
 
 Registration is two-step. `POST /auth/register` creates the account **unverified** (`users.email_verified = FALSE`), mails a 6-digit code from `no-reply@mail.{DOMAIN}`, and answers `202 {status:"unverified"}` — it never returns a session. `POST /auth/verify {email, code}` flips `email_verified` and returns a session (login for an unverified account is refused with `403 code=email_unverified`). `POST /auth/resend-code {email}` re-issues a code. All of this lives in [Services/AccountService.cs](Services/AccountService.cs) + [Endpoints/AuthEndpoints.cs](Endpoints/AuthEndpoints.cs).
+
+**An unfinished registration is recoverable.** Logging in to an unverified account no longer
+dead-ends: `/auth/login` answers `403 code=email_unverified` *plus* a **pending ticket**
+(`pending_logins`, sha256-stored, 30 min, one per account), the masked address, and the
+resend countdown. The ticket is not a session — `SessionAuthHandler` reads `users.sessions[]`
+and never looks at `pending_logins` — and it opens exactly three things: `/auth/resend-code`,
+`/auth/change-email`, `/auth/verify`. `verify` and `resend-code` take either an address or a
+ticket; the ticket path exists because someone who signed in with their **username** was
+never told which address to quote, and what they were shown is masked.
+
+`POST /auth/change-email {pending_token, email}` corrects a typo before confirmation. It
+**deletes the outstanding code**, so one mailed to the old address can never confirm the new
+one, and refuses an address the account already has (otherwise "changing" it to itself would
+reset the cooldown).
+
+**Resend cooldown** (`AccountService.ResendCooldown`, 60 s) sits on top of the 3/hour
+per-address quota and is what the button counts down from. The two paths order their checks
+differently **on purpose**: by ticket, cooldown is checked *before* the quota and the true
+remaining seconds come back (the caller owns the account, nothing can leak). By address the
+quota is charged for **every** address first, and the response always states the *full*
+cooldown — if the quota were charged only on an actual send, an unknown address would
+eventually 429 while a real one in cooldown never would, and that difference is an account
+oracle.
+
+[UnverifiedSweeperService](Services/UnverifiedSweeperService.cs) deletes abandoned unverified
+accounts (`Accounts:UnverifiedTtlHours`, default 168; `0` disables) — they otherwise hold a
+username and an address against unique indexes forever, so the person who mistyped cannot even
+sign up again. **Every FK into `users` is `ON DELETE CASCADE`**, so the SQL guards in
+`DeleteStaleUnverifiedAsync` are deliberately broader than the invariants require: no session,
+no `current_server_id`, no `expires_at`, and no row in `subscriptions`/`payments`/`slot_holds`/
+`plan_grants`/`promo_redemptions`. Each guard has a test.
 
 Codes are stored as `sha256("{userId}:{code}")` in `email_verifications` (one row per user, upserted; dies after 5 wrong attempts or 15 min). Reset tokens are stored as `sha256(token)` in `password_resets` (single-use, 60 min). `POST /auth/reset-request {email}` always answers `202 {status:"sent"}` regardless of whether the address exists (no account enumeration) and mails a link to `{PublicUrl}/reset?token=…`. The static reset form ([nginx/html/reset.html](nginx/html/reset.html)) validates the token via `GET /auth/reset-check?token=` then posts to `POST /auth/reset-confirm {token, password}`, which sets the new hash, **wipes every session** (evicting their `IMemoryCache` entries) and marks the email verified.
 

@@ -80,6 +80,12 @@ services:
       # Origin used to build reset links. Empty falls back to https://${DOMAIN};
       # set PUBLIC_URL in .env for HTTP-only deploys (USE_SSL=0).
       App__PublicUrl: ${PUBLIC_URL:-}
+      # Abandoned registrations hold a username and an address against unique
+      # indexes, so the person who mistyped cannot even sign up again. They are
+      # deleted after this many hours, and only when nothing at all is attached
+      # (no session, no subscription, no payment, no hold, no grant). 0 disables
+      # the deletion entirely.
+      Accounts__UnverifiedTtlHours: ${UNVERIFIED_TTL_HOURS:-168}
     deploy:
       resources:
         limits:

@@ -7,11 +7,44 @@ public record RegisterRequest(string username, string password, string email);
 public record LogoutOthersRequest();
 
 // ── E-mail confirmation ──────────────────────────────────────────────────────
-public record VerifyRequest(string email, string code);
-public record ResendCodeRequest(string email);
 
-/// <summary>Answer to /auth/register: the account exists but cannot log in until the code is entered.</summary>
-public record RegisterResponse(string status, string email, int codeExpiresInSeconds);
+/// <summary>
+/// Identify the account by <c>email</c> or by <c>pending_token</c> — the ticket /auth/login
+/// hands back for an unconfirmed account. The ticket path exists because someone who signed
+/// in with their USERNAME has never told the client which address to quote, and because the
+/// address it would have to quote is one we only ever show masked.
+/// </summary>
+public record VerifyRequest(string email, string code, string? pending_token = null);
+
+/// <summary>Same two ways in as <see cref="VerifyRequest"/>; at least one is required.</summary>
+public record ResendCodeRequest(string? email, string? pending_token = null);
+
+/// <summary>Correct a mistyped address on an account that has not been confirmed yet.</summary>
+public record ChangeEmailRequest(string pending_token, string email);
+
+/// <summary>
+/// Answer to /auth/register and to a resend: the account exists but cannot log in until the
+/// code is entered. <c>resendAvailableInSeconds</c> is what the "send again" button counts
+/// down from.
+/// </summary>
+public record RegisterResponse(string status, string email, int codeExpiresInSeconds, int resendAvailableInSeconds = 0);
+
+/// <summary>
+/// Answer to logging in to an account whose address is not confirmed. Carries
+/// <c>code = "email_unverified"</c> so clients that only look at the code keep working, plus
+/// everything the confirmation screen needs: a ticket, the masked address to show, and the
+/// two countdowns.
+///
+/// The ticket is NOT a session. SessionAuthHandler reads users.sessions[] and never looks at
+/// pending_logins, so it opens the confirmation flow and nothing else.
+/// </summary>
+public record PendingVerificationResponse(
+    string Message,
+    string Code,
+    string emailMasked,
+    string pendingToken,
+    int    pendingExpiresInSeconds,
+    int    resendAvailableInSeconds);
 
 // ── Password reset ───────────────────────────────────────────────────────────
 public record ResetRequest(string email);
