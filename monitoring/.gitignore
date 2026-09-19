@@ -1,0 +1,6 @@
+# The scrape password and the rendered Telegram config never go to git.
+.env
+
+# Keep the directory, never its contents.
+vm/secrets/*
+!vm/secrets/.gitkeep

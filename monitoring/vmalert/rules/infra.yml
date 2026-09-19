@@ -1,0 +1,164 @@
+# ==============================================================================
+#  Host-level alerts. Everything here comes from node-exporter, so it works for
+#  the main server and every node with no application support at all.
+#
+#  Severity is the routing key: `critical` goes to Telegram immediately and
+#  repeats every 2 h, `warning` waits and repeats every 12 h. See
+#  alertmanager/alertmanager.yml.tpl.
+# ==============================================================================
+
+groups:
+
+  - name: reachability
+    interval: 30s
+    rules:
+
+      # The single most important alert, and the reason this stack does not live
+      # on the main server. A scrape that stops answering is a fact; a host that
+      # stops pushing is indistinguishable from a host with nothing to say.
+      - alert: ServerUnreachable
+        expr: up{job="horus-host"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Сервер {{ $labels.server }} не отвечает"
+          description: "Метрики с {{ $labels.instance }} не собираются уже 3 минуты. Либо сервер лёг, либо упал nginx, либо протух сертификат."
+
+      # nginx and node-exporter answer but the agent does not — xray may still be
+      # carrying traffic, so this is a warning, not an outage.
+      - alert: NodeAgentUnreachable
+        expr: up{job="horus-agent"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Агент ноды {{ $labels.server }} не отвечает"
+          description: "Хост жив, но /metrics/agent молчит 5 минут — агент упал или перезапускается."
+
+      # A root filesystem flipped read-only is silent, total and survives a
+      # reboot only if you know about it. Everything else fails weirdly first.
+      - alert: FilesystemReadOnly
+        expr: node_filesystem_readonly{mountpoint="/"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: корневая ФС перемонтирована в read-only"
+          description: "Обычно это диск на грани отказа или повреждение ФС. Сервис уже не пишет ни логи, ни состояние."
+
+  - name: saturation
+    interval: 30s
+    rules:
+
+      # 1 core on a node means "busy" and "broken" are close together. 15 minutes
+      # of sustained 85% is the point where latency is already visible to clients.
+      - alert: CpuSaturated
+        expr: 100 * (1 - avg by (server, instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: CPU {{ $value | printf \"%.0f\" }}% уже 15 минут"
+          description: "Загрузка процессора держится выше 85%. На односотовой ноде это потолок пропускной способности."
+
+      # Steal is the neighbours, not you. Worth its own alert because every other
+      # metric looks like your fault: latency up, CPU up, throughput down.
+      - alert: CpuStealHigh
+        expr: 100 * avg by (server, instance) (rate(node_cpu_seconds_total{mode="steal"}[5m])) > 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: steal {{ $value | printf \"%.0f\" }}% — хостер режет CPU"
+          description: "Гипервизор отбирает больше пятой части процессорного времени. Это не нагрузка сервиса, это переподписка на хосте провайдера."
+
+      - alert: MemoryLow
+        expr: 100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: свободно {{ $value | printf \"%.0f\" }}% RAM"
+          description: "Доступной памяти меньше 10%. Следующий шаг — своп и OOM-killer."
+
+      # They run a 2 GB swap file everywhere. Swap being *present* is fine; swap
+      # being half full means the box has been out of RAM for a while.
+      - alert: SwapHeavilyUsed
+        expr: node_memory_SwapTotal_bytes > 0 and 100 * (1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) > 50
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: своп занят на {{ $value | printf \"%.0f\" }}%"
+          description: "Своп используется всерьёз. На VPS с сетевым диском это означает заметную просадку latency у клиентов."
+
+      # Catches an OOM kill without cadvisor — which is exactly what a node needs,
+      # because a node cannot afford to run cadvisor.
+      - alert: OomKill
+        expr: increase(node_vmstat_oom_kill[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: OOM-killer убил процесс"
+          description: "Ядро прибило процесс из-за нехватки памяти за последние 10 минут. На ноде это почти всегда xray или агент, и это выглядит как «внезапно отвалились все клиенты»."
+
+  - name: disk
+    interval: 1m
+    rules:
+
+      # Nodes ship with a 10 GB disk that is already mostly full, so these two
+      # thresholds are tight on purpose: there is no slack left to spend.
+      - alert: DiskSpaceLow
+        expr: 100 * node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 12
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: свободно {{ $value | printf \"%.1f\" }}% диска"
+          description: "Меньше 12% свободного места. Кандидаты на чистку: docker system prune, логи контейнеров, старые образы."
+
+      - alert: DiskSpaceCritical
+        expr: 100 * node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: диск почти полон ({{ $value | printf \"%.1f\" }}%)"
+          description: "Полный диск роняет ноду целиком: docker перестаёт писать, xray не может открыть лог, агент не сохраняет состояние."
+
+      # The alert that would have paid for itself: it fires while there is still
+      # time to act, instead of at 4% when the node is already misbehaving.
+      - alert: DiskFillingUp
+        expr: predict_linear(node_filesystem_avail_bytes{mountpoint="/"}[6h], 24 * 3600) < 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: диск кончится в ближайшие сутки"
+          description: "По тренду за 6 часов свободное место уходит в ноль за 24 часа. Ещё есть время разобраться, что именно пишет."
+
+  - name: network
+    interval: 30s
+    rules:
+
+      # The 1 Gbit uplink question, made measurable. 800 Mbit sustained means the
+      # link is the bottleneck and every client is now sharing a queue.
+      - alert: UplinkSaturated
+        expr: 8 * sum by (server) (rate(node_network_transmit_bytes_total{device!~"lo|veth.*|docker.*|br-.*"}[5m])) > 800e6
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: отдача {{ $value | humanize }}bit/s"
+          description: "Исходящий трафик держится выше 80% гигабитного канала 10 минут. Дальше растёт только задержка, не скорость."
+
+      - alert: NetworkErrors
+        expr: sum by (server) (rate(node_network_transmit_errs_total[5m]) + rate(node_network_receive_errs_total[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: ошибки на сетевом интерфейсе"
+          description: "Больше одной ошибки в секунду на интерфейсе — обычно проблема на стороне провайдера или драйвера."

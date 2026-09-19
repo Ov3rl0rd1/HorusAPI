@@ -80,6 +80,29 @@ fi
 
 # ── Render the nginx config template ─────────────────────────
 # envsubst replaces ${DOMAIN} only; all other nginx $variables are left intact.
+# -- Metrics gate --------------------------------------------------------------
+# locations.conf includes this file in every /metrics/* location. Rendered here
+# rather than baked into the image because it carries a credential.
+#
+# Empty METRICS_TOKEN renders a bare `return 404;`: a server that was rebuilt but
+# never configured for monitoring must not start publishing its telemetry to
+# whoever asks. Failing closed is the only safe default for a file whose entire
+# job is to decide who may read.
+GATE=/etc/nginx/metrics-gate.conf
+if [ -n "${METRICS_TOKEN}" ]; then
+    htpasswd -bcB /etc/nginx/metrics.htpasswd horus "${METRICS_TOKEN}" >/dev/null 2>&1
+    chmod 640 /etc/nginx/metrics.htpasswd
+    cat > "$GATE" <<'GATECONF'
+auth_basic           "horus metrics";
+auth_basic_user_file /etc/nginx/metrics.htpasswd;
+GATECONF
+    echo "[entrypoint] metrics enabled at /metrics/{host,containers}"
+else
+    echo 'return 404;' > "$GATE"
+    rm -f /etc/nginx/metrics.htpasswd
+    echo "[entrypoint] METRICS_TOKEN is empty - /metrics/* disabled (404)"
+fi
+
 envsubst '${DOMAIN}' \
     < "$TEMPLATE" \
     > /etc/nginx/conf.d/default.conf

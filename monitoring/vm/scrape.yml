@@ -1,0 +1,83 @@
+# ==============================================================================
+#  What VictoriaMetrics scrapes. Prometheus config format.
+#
+#  Targets are NOT listed here — they live in ../targets/*.yml and are picked up
+#  by file_sd. VM re-reads those files on its own (see -promscrape.configCheckInterval),
+#  so adding a node is one edit to one small file with no restart of anything.
+#
+#  Every remote target is reached over the TLS port the host already publishes,
+#  at a /metrics/* path that its nginx guards with HTTP basic auth. The password
+#  is fleet-wide and read-only — deliberately NOT the node's control password
+#  (vpn_servers.auth_password), so this box can read telemetry but can never
+#  provision or delete a user.
+#
+#  Path layout, identical on the main server and every node:
+#     /metrics/host        → node-exporter   (CPU, RAM, swap, disk, network)
+#     /metrics/containers  → cadvisor        (per-container; nodes: opt-in)
+#     /metrics/agent       → node agent      (xray, olcrtc rooms, profile) — nodes only
+# ==============================================================================
+
+global:
+  scrape_interval:     30s
+  scrape_timeout:      10s
+  external_labels:
+    fleet: horus
+
+scrape_configs:
+
+  # ── This monitoring box itself ────────────────────────────────────────────
+  # Reached over the compose network, so no TLS and no auth. If this stack ever
+  # stops seeing itself, the scraper is broken rather than the network.
+  - job_name: host
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          server: monitoring
+          role:   monitoring
+
+  # ── Host metrics from every Horus server ──────────────────────────────────
+  - job_name: horus-host
+    scheme: https
+    metrics_path: /metrics/host
+    basic_auth:
+      username: horus
+      password_file: /etc/vm/secrets/metrics_password
+    file_sd_configs:
+      - files: ["/etc/vm/targets/hosts.yml"]
+
+  # ── Per-container metrics (cadvisor) ──────────────────────────────────────
+  # Main server only by default. A node that has not enabled cadvisor answers
+  # 404 here, which shows up as up==0 for that one job — so list a node in
+  # targets/containers.yml only after turning it on there.
+  - job_name: horus-containers
+    scheme: https
+    metrics_path: /metrics/containers
+    basic_auth:
+      username: horus
+      password_file: /etc/vm/secrets/metrics_password
+    file_sd_configs:
+      - files: ["/etc/vm/targets/containers.yml"]
+    metric_relabel_configs:
+      # cadvisor emits a series per container per metric per label set; most of
+      # it is noise at this scale and it is the single biggest driver of storage.
+      # Keep the handful that answer "is a container starving or restarting".
+      - source_labels: [__name__]
+        regex: "container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|spec_memory_limit_bytes|network_(receive|transmit)_bytes_total|last_seen|start_time_seconds)"
+        action: keep
+      # Drop the per-container cgroup path label — it is a long unique string
+      # that doubles index size and tells you nothing `name` does not.
+      - regex: "^(id|image|container_label_.*)$"
+        action: labeldrop
+
+  # ── The Horus node agent's own metrics ────────────────────────────────────
+  # xray reachability, provisioned vs online users, per-inbound traffic, the
+  # active profile's hashes, TLS certificate expiry and olcrtc room health.
+  # Nodes only — the main server has no agent.
+  - job_name: horus-agent
+    scheme: https
+    metrics_path: /metrics/agent
+    basic_auth:
+      username: horus
+      password_file: /etc/vm/secrets/metrics_password
+    file_sd_configs:
+      - files: ["/etc/vm/targets/agents.yml"]

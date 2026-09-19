@@ -1,0 +1,170 @@
+# ==============================================================================
+#  Horus monitoring — VictoriaMetrics + vmalert + Alertmanager
+#
+#  Deliberately NOT on the main server. The whole point of this stack is to tell
+#  you when a server stops answering, and a watcher that lives on the machine it
+#  watches cannot report that machine's death. Put it on its own small VPS; it
+#  fits in 1 GB / 10 GB with room to spare.
+#
+#  It PULLS. Nothing is installed on the monitored hosts except exporters, and
+#  no host pushes anything: VictoriaMetrics scrapes every target itself over the
+#  TLS port those hosts already publish. A target that stops answering becomes
+#  `up == 0`, which is exactly the alert you want — a push design would instead
+#  go quiet, which looks identical to "nothing is wrong".
+#
+#  Ports on this host:
+#    ${VM_PORT}/tcp    vmui + the query API. Bind it to a VPN/SSH tunnel or put
+#                      a password in front of it — it is NOT authenticated.
+#
+#  Bring up:  docker compose --env-file .env up -d
+# ==============================================================================
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  # ── Storage + scraper + web UI, all in one binary ───────────────────────────
+  # Single-node VM does its own Prometheus-protocol scraping (-promscrape.config),
+  # so there is no separate Prometheus and no vmagent. vmui is built in.
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:${VM_TAG:-v1.111.0}
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=${RETENTION:-30d}
+      - -httpListenAddr=:8428
+      - -promscrape.config=/etc/vm/scrape.yml
+      # A scrape config that fails to parse must not silently drop targets —
+      # refuse to start instead, so a typo is loud at deploy time.
+      - -promscrape.config.strictParse=true
+      # Re-read scrape.yml and targets/*.yml without a restart. Adding a node is
+      # then an edit to one file, not a redeploy of the stack.
+      - -promscrape.configCheckInterval=1m
+      # VM's own metrics, without spending a scrape job on them.
+      - -selfScrapeInterval=30s
+      # Custom vmui dashboards — the Grafana replacement. See dashboards/.
+      - -vmui.customDashboardsPath=/etc/vm/dashboards
+      # Cap the cache on a small box. VM sizes caches from total RAM otherwise
+      # and will happily take most of a 1 GB VPS.
+      - -memory.allowedPercent=${VM_MEMORY_PERCENT:-40}
+    volumes:
+      - vm-storage:/storage
+      - ./vm/scrape.yml:/etc/vm/scrape.yml:ro
+      - ./targets:/etc/vm/targets:ro
+      - ./dashboards:/etc/vm/dashboards:ro
+      # Scrape credentials. Kept as files, not inline in scrape.yml, so the
+      # config can stay in git while the secrets do not.
+      - ./vm/secrets:/etc/vm/secrets:ro
+    ports:
+      - "${VM_BIND:-127.0.0.1}:${VM_PORT:-8428}:8428"
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: ${VM_MEM_LIMIT:-512M}
+
+  # ── Rule evaluation ─────────────────────────────────────────────────────────
+  # vmalert queries VM, and writes both the firing ALERTS series and any
+  # recording rules back into VM (-remoteWrite), so "what was alerting last
+  # Tuesday" is answerable. -remoteRead restores in-flight alert state after a
+  # restart, so a 15m `for:` window is not reset to zero by a redeploy.
+  vmalert:
+    image: victoriametrics/vmalert:${VM_TAG:-v1.111.0}
+    restart: unless-stopped
+    depends_on:
+      - victoria-metrics
+    command:
+      - -datasource.url=http://victoria-metrics:8428
+      - -remoteWrite.url=http://victoria-metrics:8428
+      - -remoteRead.url=http://victoria-metrics:8428
+      - -notifier.url=http://alertmanager:9093
+      - -rule=/etc/vmalert/rules/*.yml
+      - -evaluationInterval=${EVAL_INTERVAL:-30s}
+      # Makes the "source" link in a Telegram message open the right vmui.
+      - -external.url=${PUBLIC_VM_URL:-http://localhost:8428}
+      - -httpListenAddr=:8880
+    volumes:
+      - ./vmalert/rules:/etc/vmalert/rules:ro
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ── Render alertmanager.yml from the template ───────────────────────────────
+  # Alertmanager does not expand environment variables in its config, and the
+  # bot token / chat id must not sit in git. One-shot sed render, same pattern
+  # the node stack uses for node-init: the real config is built at start-up into
+  # a volume and never exists on disk in the repo.
+  am-init:
+    image: alpine:3.20
+    restart: "no"
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      TELEGRAM_CHAT_ID:   ${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID in .env}
+    volumes:
+      - ./alertmanager/alertmanager.yml.tpl:/tpl/alertmanager.yml.tpl:ro
+      - am-config:/out
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        sed -e "s|__BOT_TOKEN__|$${TELEGRAM_BOT_TOKEN}|g" \
+            -e "s|__CHAT_ID__|$${TELEGRAM_CHAT_ID}|g" \
+            /tpl/alertmanager.yml.tpl > /out/alertmanager.yml
+        echo "alertmanager.yml rendered"
+    logging: *logging
+
+  # ── Grouping, dedup, silences, Telegram delivery ────────────────────────────
+  # Alertmanager talks to Telegram natively (telegram_configs) — no bot bridge
+  # container. It is here for grouping and repeat_interval: without it a
+  # flapping node sends one message per evaluation instead of one per incident.
+  alertmanager:
+    image: prom/alertmanager:${AM_TAG:-v0.28.1}
+    restart: unless-stopped
+    depends_on:
+      am-init:
+        condition: service_completed_successfully
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=:9093
+    volumes:
+      - am-config:/etc/alertmanager:ro
+      - am-data:/alertmanager
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # ── This box's own host metrics ─────────────────────────────────────────────
+  # Scraped over the compose network only; no published port.
+  node-exporter:
+    image: prom/node-exporter:${NE_TAG:-v1.8.2}
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run/credentials)($$|/)
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+volumes:
+  vm-storage:
+  am-config:
+  am-data:

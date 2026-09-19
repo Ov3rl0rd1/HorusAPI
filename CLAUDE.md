@@ -111,6 +111,32 @@ them against the release's `SHA256SUMS.txt`, and only then flips
 `/download/latest.json` describes it (version, sizes, checksums). The page uses the
 manifest for labels only — the hrefs are static, so downloads survive a failed fetch.
 
+### Monitoring ([monitoring/](monitoring/))
+
+Separate compose project, meant for its **own small VPS** — a watcher on the machine it
+watches cannot report that machine's death. VictoriaMetrics (storage + scraping + vmui) +
+vmalert + Alertmanager (native `telegram_configs`); no Prometheus, no Grafana. ~350 MB RAM,
+~500 MB disk for 30 days of the whole fleet.
+
+**Pull, not push.** VM scrapes every server over the TLS port it already publishes, at
+`/metrics/host` (node-exporter), `/metrics/containers` (cadvisor) and `/metrics/agent` (the
+node agent), all behind nginx HTTP basic auth built from `METRICS_TOKEN` — one fleet-wide,
+read-only value, deliberately **not** any node's `NODE_API_PASSWORD`. Empty token renders
+`return 404;`, so a rebuilt server never starts publishing telemetry on its own. The payoff
+is that a dead server is `up == 0`, an alert; a push design would just go quiet, which is
+indistinguishable from healthy.
+
+Targets live in `monitoring/targets/*.yml` (file_sd, re-read every minute — adding a node
+restarts nothing). Dashboards are vmui custom dashboards in `monitoring/dashboards/`.
+Alert rules: `infra.yml` (host) and `horus.yml` (xray, olcrtc rooms, profile render,
+certificate expiry **and name coverage**, container limits).
+
+`cadvisor` runs here by default and is **opt-in on nodes** (`COMPOSE_PROFILES=containers`):
+50-80 MB is affordable on this host and is not on a 700 MB/1-core node, where xray's health
+already comes from `/metrics/agent` and an OOM kill shows up in `node_vmstat_oom_kill`.
+
+Logs are not in this stack yet — VictoriaLogs + fluent-bit is the documented follow-up.
+
 ### Email confirmation & password reset
 
 Registration is two-step. `POST /auth/register` creates the account **unverified** (`users.email_verified = FALSE`), mails a 6-digit code from `no-reply@mail.{DOMAIN}`, and answers `202 {status:"unverified"}` — it never returns a session. `POST /auth/verify {email, code}` flips `email_verified` and returns a session (login for an unverified account is refused with `403 code=email_unverified`). `POST /auth/resend-code {email}` re-issues a code. All of this lives in [Services/AccountService.cs](Services/AccountService.cs) + [Endpoints/AuthEndpoints.cs](Endpoints/AuthEndpoints.cs).

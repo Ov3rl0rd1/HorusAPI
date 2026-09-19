@@ -1,0 +1,107 @@
+{
+  "title": "Horus — сервис",
+  "filename": "02-service.json",
+  "rows": [
+    {
+      "title": "xray и пользователи",
+      "panels": [
+        {
+          "title": "Провижено / онлайн / держит xray",
+          "description": "Три линии, которые должны идти рядом. Провижено > 0 при нуле у xray — это тот самый разъезд состояния, когда нода выглядит живой, а подключиться нельзя.",
+          "width": 8,
+          "expr": [
+            "horus_node_users_provisioned",
+            "horus_node_users_online",
+            "horus_xray_users_in_handler"
+          ],
+          "alias": ["{{server}} провижено", "{{server}} онлайн", "{{server}} в xray"]
+        },
+        {
+          "title": "xray доступен",
+          "width": 4,
+          "expr": ["horus_xray_up"],
+          "alias": ["{{server}}"]
+        }
+      ]
+    },
+    {
+      "title": "Трафик по инбаундам",
+      "panels": [
+        {
+          "title": "Отдача (downlink), байт/с",
+          "description": "Счётчики самого xray, разложенные по тегу инбаунда — видно, какой протокол реально несёт нагрузку.",
+          "unit": "bytes/s",
+          "width": 6,
+          "expr": ["sum by (server, tag) (rate(horus_xray_traffic_bytes_total{direction=\"downlink\"}[5m]))"],
+          "alias": ["{{server}} / {{tag}}"]
+        },
+        {
+          "title": "Приём (uplink), байт/с",
+          "unit": "bytes/s",
+          "width": 6,
+          "expr": ["sum by (server, tag) (rate(horus_xray_traffic_bytes_total{direction=\"uplink\"}[5m]))"],
+          "alias": ["{{server}} / {{tag}}"]
+        }
+      ]
+    },
+    {
+      "title": "olcrtc",
+      "panels": [
+        {
+          "title": "Комнаты подняты (1 = работает)",
+          "description": "Пул сам уходит на запасную комнату, поэтому одна упавшая — это деградация, а не авария. Ноль по всем — авария.",
+          "width": 6,
+          "expr": ["horus_olcrtc_room_up"],
+          "alias": ["{{server}} / {{room}}"]
+        },
+        {
+          "title": "Падения комнат за час",
+          "description": "Комната может быть «поднята» в каждый момент времени и при этом рваться каждые пять минут.",
+          "width": 6,
+          "expr": ["increase(horus_olcrtc_room_failures_total[1h])"],
+          "alias": ["{{server}} / {{room}}"]
+        }
+      ]
+    },
+    {
+      "title": "Конфигурация и сертификаты",
+      "panels": [
+        {
+          "title": "До истечения сертификата, дней",
+          "description": "acme.sh обновляет за 30 дней. Если линия опускается ниже 10 — обновление не отработало.",
+          "unit": "d",
+          "width": 6,
+          "expr": ["(horus_node_cert_expiry_timestamp_seconds - time()) / 86400"],
+          "alias": ["{{server}}"]
+        },
+        {
+          "title": "Ошибка рендера профиля (1 = профиль не собрался)",
+          "description": "Нода при этом продолжает работать на прошлом конфиге — поэтому молчит всё остальное.",
+          "width": 6,
+          "expr": ["horus_node_render_error"],
+          "alias": ["{{server}}"]
+        }
+      ]
+    },
+    {
+      "title": "Контейнеры",
+      "panels": [
+        {
+          "title": "Память контейнера от его лимита, %",
+          "description": "Лимит из docker-compose, а не хоста: контейнер умирает на своих 256 МБ при свободной памяти на сервере.",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * container_memory_working_set_bytes / (container_spec_memory_limit_bytes > 0)"],
+          "alias": ["{{server}} / {{name}}"]
+        },
+        {
+          "title": "CPU контейнера, ядер",
+          "unit": "cores",
+          "width": 6,
+          "expr": ["sum by (server, name) (rate(container_cpu_usage_seconds_total[5m]))"],
+          "alias": ["{{server}} / {{name}}"]
+        }
+      ]
+    }
+  ]
+}

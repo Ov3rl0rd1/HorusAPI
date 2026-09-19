@@ -1,0 +1,7 @@
+# The Horus node agent's /metrics/agent — nodes only, never the main server.
+# Same host:port as targets/hosts.yml; a different path on the same nginx.
+
+- targets: ["ch1.horusping.com:8444"]
+  labels:
+    server: ch1
+    role:   node
