@@ -164,7 +164,7 @@ cooldown — if the quota were charged only on an actual send, an unknown addres
 eventually 429 while a real one in cooldown never would, and that difference is an account
 oracle.
 
-**Two numbers the confirmation screen needs, and the rule they share.** `/auth/verify` returns
+**Three numbers the confirmation screen needs, and the rule they share.** The `403` from `/auth/login` carries `codeExpiresInSeconds` (0 when no live code is pending, so the screen shows nothing rather than counting down from a code that is gone) alongside the resend countdown — both read off one `email_verifications` row. `/auth/verify` returns
 `attemptsLeft` on a wrong code, and a spent hourly quota now answers `429` with `Retry-After`
 (from the fixed-window lease) so the screen can say "next one at 14:35" instead of "later".
 Both follow the same rule as the cooldown: **the number goes back only to a caller who proved

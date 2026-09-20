@@ -10,8 +10,10 @@ import { getSessionKey } from './session.js';
 //
 // 403 code='email_unverified' — не тупик, а вход в экран подтверждения. Тело:
 // PendingVerificationResponse { message, code, emailMasked, pendingToken,
-// pendingExpiresInSeconds, resendAvailableInSeconds }. pendingToken — НЕ сессия:
-// он открывает только verify / resend-code / change-email и живёт 30 минут.
+// pendingExpiresInSeconds, resendAvailableInSeconds, codeExpiresInSeconds }.
+// pendingToken — НЕ сессия: он открывает только verify / resend-code /
+// change-email и живёт 30 минут. codeExpiresInSeconds — остаток жизни уже
+// отправленного кода, 0 когда живого кода нет.
 export const login = (username, password) =>
   post('/auth/login', { username, password }, { auth: false });
 

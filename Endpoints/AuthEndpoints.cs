@@ -50,7 +50,7 @@ public static class AuthEndpoints
                 if (!user.email_verified)
                 {
                     string ticket = await accounts.IssuePendingTicketAsync(user.id);
-                    TimeSpan wait = await accounts.ResendCooldownRemainingAsync(user.id);
+                    var (codeLife, wait) = await accounts.PendingCodeTimingsAsync(user.id);
 
                     log.LogInformation("Unverified account {Username} signed in to finish confirmation", user.username);
 
@@ -60,7 +60,10 @@ public static class AuthEndpoints
                         emailMasked:              MaskEmail(user.email),
                         pendingToken:             ticket,
                         pendingExpiresInSeconds:  (int)AccountService.PendingTicketLifetime.TotalSeconds,
-                        resendAvailableInSeconds: (int)Math.Ceiling(wait.TotalSeconds)),
+                        resendAvailableInSeconds: (int)Math.Ceiling(wait.TotalSeconds),
+                        // Zero when no live code is pending, and the screen then shows no
+                        // countdown at all rather than a lie about a code that is gone.
+                        codeExpiresInSeconds:     (int)Math.Floor(codeLife.TotalSeconds)),
                         statusCode: 403);
                 }
 

@@ -419,6 +419,41 @@ public class UnverifiedAccountTests(ApiFixture fixture) : IntegrationTest(fixtur
         Assert.Equal("too_many_attempts", await fifth.ReadStringPropAsync("code"));
     }
 
+    [SkippableFact]
+    public async Task Login_reports_how_long_the_pending_code_is_still_good_for()
+    {
+        RequireDb();
+        var client = Client();
+        var (username, email) = await RegisterUnverifiedAsync(client);
+
+        var login = await client.PostJsonAsync("/auth/login", new { username, password = Password }, TestData.NewIp());
+        int life = (await login.ReadJsonAsync()).GetProperty("codeExpiresInSeconds").GetInt32();
+
+        // The code was mailed seconds ago, so nearly its whole life is left. Without this the
+        // confirmation screen cannot show a countdown at all when the user signed in rather
+        // than arriving straight from registration.
+        Assert.InRange(life, 1, (int)AccountService.CodeLifetime.TotalSeconds);
+    }
+
+    [SkippableFact]
+    public async Task An_expired_code_reports_no_remaining_life()
+    {
+        RequireDb();
+        var client = Client();
+        var (username, email) = await RegisterUnverifiedAsync(client);
+
+        await ExecuteAsync("""
+            UPDATE email_verifications SET expires_at = NOW() - INTERVAL '1 minute'
+            WHERE user_id = (SELECT id FROM users WHERE lower(email) = lower(@Email))
+            """, new { Email = email });
+
+        var login = await client.PostJsonAsync("/auth/login", new { username, password = Password }, TestData.NewIp());
+
+        // Zero rather than a negative number, so the screen shows nothing instead of
+        // counting down from a code that is already gone.
+        Assert.Equal(0, (await login.ReadJsonAsync()).GetProperty("codeExpiresInSeconds").GetInt32());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private async Task<(string username, string email)> RegisterUnverifiedAsync(HttpClient client)

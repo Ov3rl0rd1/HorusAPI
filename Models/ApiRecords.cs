@@ -58,7 +58,8 @@ public record PendingVerificationResponse(
     string emailMasked,
     string pendingToken,
     int    pendingExpiresInSeconds,
-    int    resendAvailableInSeconds);
+    int    resendAvailableInSeconds,
+    int    codeExpiresInSeconds);
 
 // ── Password reset ───────────────────────────────────────────────────────────
 public record ResetRequest(string email);

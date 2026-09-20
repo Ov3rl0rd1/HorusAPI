@@ -65,6 +65,14 @@ public interface IAccountService
     Task<TimeSpan> ResendCooldownRemainingAsync(int userId);
 
     /// <summary>
+    /// How long the pending code is still good for, and how long until another may be sent.
+    /// Both come off the same row, so the confirmation screen costs one query rather than two.
+    /// Zero lifetime means there is no live code — the screen then shows no countdown rather
+    /// than a wrong one.
+    /// </summary>
+    Task<(TimeSpan codeLifetime, TimeSpan resendCooldown)> PendingCodeTimingsAsync(int userId);
+
+    /// <summary>
     /// Corrects the address on an unverified account. Also drops any pending code, so one
     /// mailed to the OLD address can never confirm the new one.
     /// </summary>
@@ -108,6 +116,8 @@ public class AccountService(
     private const int MaxCodeAttempts = 5;
 
     private sealed record VerificationRow(string code_hash, DateTime expires_at, short attempts);
+
+    private sealed record TimingRow(DateTime sent_at, DateTime expires_at);
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
@@ -323,19 +333,27 @@ public class AccountService(
         return await conn.QuerySingleOrDefaultAsync<User>(sql, new { TokenHash = Sha256Hex(token.Trim()) });
     }
 
-    public async Task<TimeSpan> ResendCooldownRemainingAsync(int userId)
+    public async Task<TimeSpan> ResendCooldownRemainingAsync(int userId) =>
+        (await PendingCodeTimingsAsync(userId)).resendCooldown;
+
+    public async Task<(TimeSpan codeLifetime, TimeSpan resendCooldown)> PendingCodeTimingsAsync(int userId)
     {
         await using var conn = Connect();
-        DateTime? sentAt = await conn.ExecuteScalarAsync<DateTime?>(
-            "SELECT sent_at FROM email_verifications WHERE user_id = @UserId",
+        var row = await conn.QuerySingleOrDefaultAsync<TimingRow>(
+            "SELECT sent_at, expires_at FROM email_verifications WHERE user_id = @UserId",
             new { UserId = userId });
 
-        if (sentAt is null) return TimeSpan.Zero;
+        if (row is null) return (TimeSpan.Zero, TimeSpan.Zero);
 
-        TimeSpan elapsed = DateTime.UtcNow - DateTime.SpecifyKind(sentAt.Value, DateTimeKind.Utc);
-        TimeSpan left = ResendCooldown - elapsed;
+        var now = DateTime.UtcNow;
+        return (Remaining(AsUtc(row.expires_at) - now),
+                Remaining(ResendCooldown - (now - AsUtc(row.sent_at))));
 
-        return left > TimeSpan.Zero ? left : TimeSpan.Zero;
+        // Npgsql hands back Unspecified for timestamptz read into DateTime; the values are
+        // UTC, and subtracting them from DateTime.UtcNow without saying so is an hour or
+        // three of silent drift depending on where the server stands.
+        static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        static TimeSpan Remaining(TimeSpan span) => span > TimeSpan.Zero ? span : TimeSpan.Zero;
     }
 
     public async Task<ChangeEmailStatus> ChangeEmailAsync(int userId, string newEmail)

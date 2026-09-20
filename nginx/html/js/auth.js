@@ -106,7 +106,10 @@ loginForm.addEventListener('submit', async function (e) {
       goVerify({
         email: pendingEmail || info.emailMasked || '',
         masked: !pendingEmail,
-        codeExpiresInSeconds: 0,
+        // Сколько живёт УЖЕ отправленный код. Ноль — живого кода нет, и строка
+        // «Код действует ещё …» тогда не показывается вовсе: пустая честнее,
+        // чем отсчёт от числа, которого мы не знаем.
+        codeExpiresInSeconds: info.codeExpiresInSeconds,
         resendAvailableInSeconds: info.resendAvailableInSeconds
       });
       busy(loginSubmit, false);
