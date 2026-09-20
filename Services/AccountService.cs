@@ -29,7 +29,13 @@ public interface IAccountService
     /// <summary>Looks up an account by e-mail, regardless of verification state.</summary>
     Task<User?> FindByEmailAsync(string email);
 
-    Task<(VerifyStatus status, User? user)> VerifyEmailAsync(string email, string code);
+    /// <summary>
+    /// Checks a confirmation code. <c>attemptsLeft</c> is how many wrong guesses remain before
+    /// the code dies — the screen tells the user, and without it the client would have to
+    /// count locally, which a page reload resets and a resend invalidates. It is meaningful
+    /// only alongside <see cref="VerifyStatus.Invalid"/>; every other status returns 0.
+    /// </summary>
+    Task<(VerifyStatus status, User? user, int attemptsLeft)> VerifyEmailAsync(string email, string code);
 
     /// <summary>Null when no account owns the address — callers must still answer 202.</summary>
     Task<ResetTicket?> IssueResetTokenAsync(string email);
@@ -140,12 +146,12 @@ public class AccountService(
         return await conn.QuerySingleOrDefaultAsync<User>(sql, new { Email = email.Trim() });
     }
 
-    public async Task<(VerifyStatus status, User? user)> VerifyEmailAsync(string email, string code)
+    public async Task<(VerifyStatus status, User? user, int attemptsLeft)> VerifyEmailAsync(string email, string code)
     {
         User? user = await FindByEmailAsync(email);
 
-        if (user is null)            return (VerifyStatus.NotFound, null);
-        if (user.email_verified)     return (VerifyStatus.AlreadyVerified, user);
+        if (user is null)            return (VerifyStatus.NotFound, null, 0);
+        if (user.email_verified)     return (VerifyStatus.AlreadyVerified, user, 0);
 
         await using var conn = Connect();
 
@@ -154,10 +160,10 @@ public class AccountService(
             new { UserId = user.id });
 
         if (row is null || row.expires_at <= DateTime.UtcNow)
-            return (VerifyStatus.Expired, null);
+            return (VerifyStatus.Expired, null, 0);
 
         if (row.attempts >= MaxCodeAttempts)
-            return (VerifyStatus.TooManyAttempts, null);
+            return (VerifyStatus.TooManyAttempts, null, 0);
 
         if (!FixedTimeEquals(row.code_hash, HashCode(user.id, code)))
         {
@@ -168,7 +174,10 @@ public class AccountService(
             log.LogWarning("Wrong verification code for user {UserId} (attempt {Attempt})",
                 user.id, row.attempts + 1);
 
-            return (VerifyStatus.Invalid, null);
+            // What the user sees on the screen. Counted from the row we just incremented,
+            // so it is the server's number and survives a reload.
+            int left = Math.Max(0, MaxCodeAttempts - (row.attempts + 1));
+            return (VerifyStatus.Invalid, null, left);
         }
 
         await conn.ExecuteAsync("""
@@ -179,7 +188,7 @@ public class AccountService(
         user.email_verified = true;
         log.LogInformation("E-mail verified for user {Username}", user.username);
 
-        return (VerifyStatus.Ok, user);
+        return (VerifyStatus.Ok, user, 0);
     }
 
     // ── Password reset ───────────────────────────────────────────────────────

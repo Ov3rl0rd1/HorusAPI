@@ -117,8 +117,8 @@ public static class AuthEndpoints
             // however many IPs ask. Charged only now that a mail is actually going
             // out, so a run of username-taken retries doesn't burn the address's
             // budget. The per-IP + global mail limiters already covered those.
-            if (!await quota.TryAcquireAsync(email))
-                return TooManyEmails();
+            var permit = await quota.TryAcquireDetailedAsync(email);
+            if (!permit.Allowed) return TooManyEmails(permit.RetryAfter);
 
             try
             {
@@ -133,8 +133,16 @@ public static class AuthEndpoints
 
             log.LogInformation("New user registered (unverified): {Username}", username);
 
+            // A ticket straight away, so the confirmation screen can offer "wrong address?"
+            // at the moment a typo is most likely to be noticed — right after typing it.
+            // Safe here and nowhere else: this caller just created the account.
+            string? ticket = null;
+            try { ticket = await accounts.IssuePendingTicketAsync(created.userId); }
+            catch (Exception ex) { log.LogError(ex, "Could not issue a pending ticket for {Username}", username); }
+
             return Results.Json(
-                new RegisterResponse("unverified", email, (int)AccountService.CodeLifetime.TotalSeconds),
+                new RegisterResponse("unverified", email, (int)AccountService.CodeLifetime.TotalSeconds,
+                    (int)AccountService.ResendCooldown.TotalSeconds, ticket),
                 statusCode: 202);
         })
         .AllowAnonymous()
@@ -158,6 +166,8 @@ public static class AuthEndpoints
 
             VerifyStatus status;
             User? user;
+            int attemptsLeft;
+            bool byTicket = false;
             try
             {
                 // A ticket identifies the account on its own, which is the only way someone
@@ -170,13 +180,14 @@ public static class AuthEndpoints
                     if (pending is null)
                         return Results.BadRequest(new ApiError("This session has expired. Sign in again.", "invalid_ticket"));
                     email = pending.email;
+                    byTicket = true;
                 }
                 else if (!IsValidEmail(email))
                 {
                     return Results.BadRequest(new ApiError("E-mail and code are required."));
                 }
 
-                (status, user) = await accounts.VerifyEmailAsync(email!, req.code.Trim());
+                (status, user, attemptsLeft) = await accounts.VerifyEmailAsync(email!, req.code.Trim());
             }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
@@ -196,7 +207,16 @@ public static class AuthEndpoints
                 case VerifyStatus.NotFound:
                 case VerifyStatus.Invalid:
                     // Same answer either way: never reveal whether the address is registered.
-                    return Results.BadRequest(new ApiError("Invalid code.", "invalid_code"));
+                    //
+                    // The remaining-guess counter goes back ONLY on the ticket path. An address
+                    // nobody registered reports 0 while a real unconfirmed one reports 4, so
+                    // returning it to an anonymous caller would turn this into an oracle for
+                    // "is there a pending registration on this address". A ticket holder already
+                    // proved the account is theirs, and both /auth/register and /auth/login hand
+                    // one out, so the screen always has it in practice.
+                    return byTicket
+                        ? Results.BadRequest(new VerifyCodeError("Invalid code.", "invalid_code", attemptsLeft))
+                        : Results.BadRequest(new ApiError("Invalid code.", "invalid_code"));
             }
 
             string? session;
@@ -248,8 +268,8 @@ public static class AuthEndpoints
                     if (wait > TimeSpan.Zero)
                         return TooSoon((int)Math.Ceiling(wait.TotalSeconds));
 
-                    if (!await quota.TryAcquireAsync(pending.email))
-                        return TooManyEmails();
+                    var permit = await quota.TryAcquireDetailedAsync(pending.email);
+                    if (!permit.Allowed) return TooManyEmails(permit.RetryAfter);
 
                     string code = await accounts.IssueVerificationCodeAsync(pending.id);
                     await mail.SendVerificationCodeAsync(pending.email, pending.username, code, AccountService.CodeLifetime);
@@ -275,8 +295,8 @@ public static class AuthEndpoints
             // difference is an account oracle. The cost is that an impatient user can spend
             // their hourly permits on nothing, which is exactly why the response now carries
             // a countdown for the button to obey.
-            if (!await quota.TryAcquireAsync(email))
-                return TooManyEmails();
+            var addressPermit = await quota.TryAcquireDetailedAsync(email);
+            if (!addressPermit.Allowed) return TooManyEmails(addressPermit.RetryAfter);
 
             try
             {
@@ -346,8 +366,8 @@ public static class AuthEndpoints
 
             // Charged against the NEW address: it is the one about to receive mail, and the
             // one a stranger could be pointed at.
-            if (!await quota.TryAcquireAsync(email))
-                return TooManyEmails();
+            var permit = await quota.TryAcquireDetailedAsync(email);
+            if (!permit.Allowed) return TooManyEmails(permit.RetryAfter);
 
             ChangeEmailStatus status;
             try { status = await accounts.ChangeEmailAsync(pending.id, email); }
@@ -407,8 +427,8 @@ public static class AuthEndpoints
 
             string email = req.email.Trim();
 
-            if (!await quota.TryAcquireAsync(email))
-                return TooManyEmails();
+            var permit = await quota.TryAcquireDetailedAsync(email);
+            if (!permit.Allowed) return TooManyEmails(permit.RetryAfter);
 
             try
             {
@@ -512,9 +532,20 @@ public static class AuthEndpoints
         .Produces(401);
     }
 
-    private static IResult TooManyEmails() => Results.Json(
-        new ApiError("Too many messages requested for this address. Try again later.", "email_rate_limited"),
-        statusCode: 429);
+    /// <summary>
+    /// The per-address hourly quota is spent. Carries Retry-After when the limiter could say
+    /// how long is left in the window: the screen turns that into "next one at 14:35", and
+    /// without a number this state is a dead end rather than a wait.
+    /// </summary>
+    private static IResult TooManyEmails(TimeSpan retryAfter = default)
+    {
+        var body = Results.Json(
+            new ApiError("Too many messages requested for this address. Try again later.", "email_rate_limited"),
+            statusCode: 429);
+
+        int seconds = (int)Math.Ceiling(retryAfter.TotalSeconds);
+        return seconds > 0 ? new RetryAfterResult(body, seconds) : body;
+    }
 
     /// <summary>Asked for a code again before the cooldown lapsed. Carries the wait in both places a client looks.</summary>
     private static IResult TooSoon(int seconds)

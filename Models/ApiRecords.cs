@@ -23,11 +23,25 @@ public record ResendCodeRequest(string? email, string? pending_token = null);
 public record ChangeEmailRequest(string pending_token, string email);
 
 /// <summary>
+/// A wrong code, with how many guesses are left before it dies. The count comes from the
+/// server because the client cannot keep it: a page reload would restart it, and a resend
+/// resets it to five.
+/// </summary>
+public record VerifyCodeError(string Message, string? Code, int attemptsLeft);
+
+/// <summary>
 /// Answer to /auth/register and to a resend: the account exists but cannot log in until the
 /// code is entered. <c>resendAvailableInSeconds</c> is what the "send again" button counts
 /// down from.
 /// </summary>
-public record RegisterResponse(string status, string email, int codeExpiresInSeconds, int resendAvailableInSeconds = 0);
+/// <param name="pendingToken">
+/// Set ONLY by /auth/register, where the caller just created the account and is therefore
+/// its owner. /auth/resend-code must never fill it in: that endpoint is anonymous and
+/// answers for any address, so handing out a ticket there would let anyone claim any
+/// account by naming its address.
+/// </param>
+public record RegisterResponse(string status, string email, int codeExpiresInSeconds,
+    int resendAvailableInSeconds = 0, string? pendingToken = null);
 
 /// <summary>
 /// Answer to logging in to an account whose address is not confirmed. Carries

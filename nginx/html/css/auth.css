@@ -4,3 +4,70 @@
 .auth-back{margin-top:20px;text-align:center}
 .auth-code{margin-top:4px}
 .auth-code .input{margin-bottom:12px}
+
+/* ── Адрес, на который ушёл код ─────────────────────────────────────────
+   Один блок на все три пути входа: полный адрес или маскированный
+   («al*****r@gmail.com») — звёздочки приглушены, видимые буквы яркие,
+   чтобы опечатка в домене или в начале бросалась в глаза. */
+.addr{
+  display:flex;align-items:center;justify-content:space-between;gap:10px 14px;flex-wrap:wrap;
+  margin:0 0 10px;padding:13px 15px;border-radius:14px;
+  background:rgba(11,5,18,.45);border:1px solid rgba(255,255,255,.09);
+}
+.addr__mail{min-width:0;font-weight:800;font-size:15.5px;word-break:break-all;line-height:1.35}
+.addr__mask{color:rgba(239,234,246,.34);letter-spacing:.1em;font-weight:700}
+.addr__edit{flex:none;white-space:nowrap}
+.addr-note{margin:-4px 0 10px;font-size:12.5px;line-height:1.5;color:rgba(239,234,246,.45)}
+
+/* Смена адреса: раскрывающийся блок, а не отдельный экран —
+   ввод кода остаётся на месте и выше по странице. */
+.addr-edit{
+  margin:0 0 4px;padding:16px;border-radius:16px;
+  border:1px dashed rgba(240,196,106,.34);background:rgba(240,196,106,.045);
+}
+.addr-edit .hint{margin-top:10px}
+.addr-edit__row{display:flex;gap:10px;margin-top:16px}
+.addr-edit__row .btn{flex:1;min-height:50px;font-size:15px;margin-top:0}
+
+.btn--quiet{
+  display:flex;align-items:center;justify-content:center;width:100%;border-radius:14px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);
+  color:var(--text);font-weight:700;font-size:15px;
+  transition:border-color .2s ease,color .2s ease;
+}
+.btn--quiet:hover{border-color:rgba(240,196,106,.45);color:var(--accent-l)}
+
+/* ── Состояния-уведомления вместо строки красного текста ───────────────
+   warn — можно исправить и продолжить; stop — на этом шаге сделать нечего;
+   ok — всё получилось. Тексты лежат в разметке, JS только снимает hidden. */
+.notice{display:flex;gap:12px;margin:18px 0 0;padding:14px 16px;border-radius:14px;
+  border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04)}
+.notice__mark{flex:none;width:22px;height:22px;margin-top:1px;border-radius:50%;
+  display:grid;place-items:center;font:800 13px/1 var(--font)}
+.notice__title{margin:0;font-weight:800;font-size:14.5px}
+.notice__text{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:rgba(239,234,246,.62)}
+.notice__text b{color:var(--text)}
+.notice__act{margin-top:12px}
+.notice--warn{border-color:rgba(242,166,160,.32);background:rgba(242,166,160,.08)}
+.notice--warn .notice__mark{background:rgba(242,166,160,.18);color:var(--danger-t)}
+.notice--warn .notice__title{color:var(--danger-t)}
+.notice--stop{border-color:rgba(255,255,255,.14);background:rgba(11,5,18,.5)}
+.notice--stop .notice__mark{background:rgba(255,255,255,.1);color:rgba(239,234,246,.72)}
+.notice--ok{border-color:rgba(240,196,106,.32);background:rgba(240,196,106,.08)}
+.notice--ok .notice__mark{background:rgba(240,196,106,.18);color:var(--accent-l)}
+.notice--ok .notice__title{color:var(--accent-l)}
+
+/* Поле кода: буквенный интервал сдвигает текст вправо — компенсируем отступом,
+   иначе шесть цифр стоят не по центру. */
+.input--code{text-indent:.42em}
+.code-foot{margin-top:2px;align-items:baseline}
+/* Код просрочен или заблокирован: поле гаснет, главное действие — новый код. */
+.auth-code.is-stale .input--code{opacity:.45;border-color:rgba(255,255,255,.1)}
+
+@media (max-width:420px){
+  .addr{padding:12px 13px}
+  .addr__edit{margin-left:auto}
+  .input--code{letter-spacing:.3em;text-indent:.3em}
+  .addr-edit__row{flex-direction:column-reverse}
+  .code-foot{gap:8px}
+}

@@ -164,6 +164,24 @@ cooldown — if the quota were charged only on an actual send, an unknown addres
 eventually 429 while a real one in cooldown never would, and that difference is an account
 oracle.
 
+**Two numbers the confirmation screen needs, and the rule they share.** `/auth/verify` returns
+`attemptsLeft` on a wrong code, and a spent hourly quota now answers `429` with `Retry-After`
+(from the fixed-window lease) so the screen can say "next one at 14:35" instead of "later".
+Both follow the same rule as the cooldown: **the number goes back only to a caller who proved
+they own the account.** `attemptsLeft` is therefore ticket-path only — an unregistered address
+reports `0` while a real unconfirmed one reports `4`, which would answer "is there a pending
+registration here". `/auth/register` returns a `pendingToken` (the caller just created the
+account, so it is theirs); **`/auth/resend-code` must never fill that field in** — it is
+anonymous and answers for any address, so a ticket there would hand anyone any account. There
+is a test for each of these three.
+
+The site's confirmation screen ([nginx/html/login.html](nginx/html/login.html) `#state-verify`,
+styles in [css/auth.css](nginx/html/css/auth.css), logic in [js/auth.js](nginx/html/js/auth.js))
+holds its copy in the markup: JS only clears `hidden` on one `.notice` block and fills
+`[data-slot]`. `.auth-code.is-stale` is "this code is dead" (expired or five wrong guesses) —
+the field dims and the primary button becomes "prislat noviy kod", obeying the same cooldown as
+the resend link so the only available action is never presented as unavailable.
+
 [UnverifiedSweeperService](Services/UnverifiedSweeperService.cs) deletes abandoned unverified
 accounts (`Accounts:UnverifiedTtlHours`, default 168; `0` disables) — they otherwise hold a
 username and an address against unique indexes forever, so the person who mistyped cannot even

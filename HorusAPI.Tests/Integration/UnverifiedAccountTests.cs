@@ -325,6 +325,100 @@ public class UnverifiedAccountTests(ApiFixture fixture) : IntegrationTest(fixtur
         Assert.True(await AccountExistsAsync(email));
     }
 
+    // ── What the confirmation screen needs ───────────────────────────────────
+
+    [SkippableFact]
+    public async Task Register_hands_back_a_pending_ticket()
+    {
+        RequireDb();
+        var client = Client();
+
+        var register = await client.PostJsonAsync("/auth/register",
+            new { username = TestData.NewUsername(), password = Password, email = TestData.NewEmail() },
+            TestData.NewIp());
+
+        // Without this the "wrong address?" link cannot exist at the one moment a typo is
+        // most likely to be noticed: a second after it was typed.
+        var body = await register.ReadJsonAsync();
+        Assert.False(string.IsNullOrWhiteSpace(body.GetProperty("pendingToken").GetString()));
+    }
+
+    [SkippableFact]
+    public async Task Resend_by_address_never_hands_out_a_ticket()
+    {
+        RequireDb();
+        var client = Client();
+        var (_, email) = await RegisterUnverifiedAsync(client);
+
+        // The invariant that keeps a ticket meaningful. /auth/resend-code is anonymous and
+        // answers for ANY address, so a ticket here would let anyone claim any account just
+        // by naming its e-mail.
+        var resend = await client.PostJsonAsync("/auth/resend-code", new { email }, TestData.NewIp());
+        var body = await resend.ReadJsonAsync();
+
+        Assert.True(body.TryGetProperty("pendingToken", out var token));
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, token.ValueKind);
+    }
+
+    [SkippableFact]
+    public async Task A_wrong_code_tells_a_ticket_holder_how_many_guesses_remain()
+    {
+        RequireDb();
+        var client = Client();
+        var (username, _) = await RegisterUnverifiedAsync(client);
+        string ticket = await TicketForAsync(client, username);
+
+        var verify = await client.PostJsonAsync("/auth/verify",
+            new { pending_token = ticket, code = "000000" }, TestData.NewIp());
+
+        Assert.Equal(HttpStatusCode.BadRequest, verify.StatusCode);
+        Assert.Equal(4, (await verify.ReadJsonAsync()).GetProperty("attemptsLeft").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task A_wrong_code_by_address_keeps_the_counter_to_itself()
+    {
+        RequireDb();
+        var client = Client();
+        var (_, email) = await RegisterUnverifiedAsync(client);
+
+        // An address nobody registered would report 0 while a real unconfirmed one reports 4,
+        // so an anonymous caller must not see the number at all — otherwise it answers
+        // "is there a pending registration here".
+        var real = await client.PostJsonAsync("/auth/verify",
+            new { email, code = "000000" }, TestData.NewIp());
+        var unknown = await client.PostJsonAsync("/auth/verify",
+            new { email = TestData.NewEmail(), code = "000000" }, TestData.NewIp());
+
+        Assert.Equal(HttpStatusCode.BadRequest, real.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        Assert.False((await real.ReadJsonAsync()).TryGetProperty("attemptsLeft", out _));
+        Assert.Equal(
+            await unknown.ReadStringPropAsync("code"),
+            await real.ReadStringPropAsync("code"));
+    }
+
+    [SkippableFact]
+    public async Task The_fifth_wrong_code_burns_the_code()
+    {
+        RequireDb();
+        var client = Client();
+        var (username, _) = await RegisterUnverifiedAsync(client);
+        string ticket = await TicketForAsync(client, username);
+        string ip = TestData.NewIp();
+
+        for (var i = 0; i < 4; i++)
+            await client.PostJsonAsync("/auth/verify", new { pending_token = ticket, code = "000000" }, ip);
+
+        // Fifth guess: the code dies rather than the attempt simply failing, which is what
+        // puts the screen into its "ask for a new one" state.
+        var fifth = await client.PostJsonAsync("/auth/verify",
+            new { pending_token = ticket, code = "000000" }, ip);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, fifth.StatusCode);
+        Assert.Equal("too_many_attempts", await fifth.ReadStringPropAsync("code"));
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private async Task<(string username, string email)> RegisterUnverifiedAsync(HttpClient client)

@@ -5,22 +5,43 @@ import { get, post, del, put, API_BASE } from './api.js';
 import { getSessionKey } from './session.js';
 
 // ── Auth ──────────────────────────────────────────────────────────────────
-// 200 LoginResponse { session, expiresAt } · 400/403 ApiError · 401 без тела
+// 200 LoginResponse { session, expiresAt } · 400/401 · 403 ApiError
 // Поле username принимает и имя пользователя, и e-mail (single-field login).
+//
+// 403 code='email_unverified' — не тупик, а вход в экран подтверждения. Тело:
+// PendingVerificationResponse { message, code, emailMasked, pendingToken,
+// pendingExpiresInSeconds, resendAvailableInSeconds }. pendingToken — НЕ сессия:
+// он открывает только verify / resend-code / change-email и живёт 30 минут.
 export const login = (username, password) =>
   post('/auth/login', { username, password }, { auth: false });
 
-// 202 RegisterResponse { status, email, codeExpiresInSeconds } · 400/409/429
+// 202 RegisterResponse { status, email, codeExpiresInSeconds,
+//                        resendAvailableInSeconds } · 400/409/429
 export const register = (username, email, password) =>
   post('/auth/register', { username, password, email }, { auth: false });
 
-// 200 LoginResponse · 400/409/429
-export const verifyEmail = (email, code) =>
-  post('/auth/verify', { email, code }, { auth: false });
+// 200 LoginResponse · 400 (invalid_code | code_expired | invalid_ticket) ·
+// 409 already_verified · 429 too_many_attempts
+// Аккаунт задаётся адресом ЛИБО тикетом. Тикет нужен, когда входили по имени
+// пользователя: адреса клиент тогда не знает, ему показали только маску.
+export const verifyEmail = (email, code, pendingToken) =>
+  post('/auth/verify', { email, code, pending_token: pendingToken || null }, { auth: false });
 
-// 202 RegisterResponse · 400/429
-export const resendCode = (email) =>
-  post('/auth/resend-code', { email }, { auth: false });
+// 202 RegisterResponse · 400 invalid_ticket · 429 (resend_too_soon |
+// email_rate_limited)
+//
+// По тикету сервер отдаёт НАСТОЯЩИЙ остаток кулдауна и 429 resend_too_soon,
+// пока он не вышел. По адресу — всегда полный кулдаун и 202: адрес, которому
+// письмо ушло полминуты назад, не должен отличаться от несуществующего.
+export const resendCode = (email, pendingToken) =>
+  post('/auth/resend-code', { email: email || null, pending_token: pendingToken || null }, { auth: false });
+
+// 202 RegisterResponse · 400 (invalid_ticket | email_unchanged) ·
+// 409 (email_taken | already_verified) · 429
+// Исправление опечатки в адресе до подтверждения. Сервер удаляет старый код,
+// поэтому письмо, ушедшее на прежний адрес, подтвердить новый уже не может.
+export const changeEmail = (pendingToken, email) =>
+  post('/auth/change-email', { pending_token: pendingToken, email }, { auth: false });
 
 // 202 StatusResponse — всегда, чтобы не выдавать, есть ли такой адрес
 export const requestPasswordReset = (email) =>
