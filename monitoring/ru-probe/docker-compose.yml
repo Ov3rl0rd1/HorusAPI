@@ -1,0 +1,63 @@
+# ==============================================================================
+#  Пробник блокировок — ставится на МАЛЕНЬКИЙ VPS В РОССИИ.
+#
+#  Существует ровно потому, что проверить блокировку российским провайдером с
+#  зарубежного сервера невозможно в принципе: нужен сетевой обзор изнутри
+#  страны. Всё, что он делает, — раз в минуту пытается открыть TCP-соединение
+#  к каждому узлу и отправляет результат на монитор-сервер.
+#
+#  ОН ПУШИТ, А НЕ ОТДАЁТ. Обратное потребовало бы открыть на нём порт наружу и
+#  завести туда доступ с монитора; здесь же он сам ходит одним исходящим
+#  соединением и не слушает ничего.
+#
+#  ОН НИЧЕГО НЕ ЗНАЕТ. Только список адресов и портов — ни ключей узлов, ни
+#  доступа к API, ни пользовательских данных. Хостинг в РФ это другой правовой
+#  контур, и содержимое этой машины должно быть таким, чтобы её изъятие не
+#  значило ничего.
+#
+#  Поднять:  docker compose --env-file .env up -d
+# ==============================================================================
+
+services:
+
+  # Умеет ровно одно: открыть соединение и сказать, получилось ли.
+  blackbox:
+    image: prom/blackbox-exporter:${BLACKBOX_TAG:-v0.25.0}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # Скрейпит пробы и отправляет их на монитор-сервер. vmagent, а не Prometheus:
+  # он для этого и сделан, и на 256 МБ VPS разница ощутима.
+  vmagent:
+    image: victoriametrics/vmagent:${VM_TAG:-v1.111.0}
+    restart: unless-stopped
+    depends_on:
+      - blackbox
+    command:
+      - -promscrape.config=/etc/vmagent/scrape.yml
+      - -remoteWrite.url=${MONITOR_URL:?set MONITOR_URL in .env}/api/v1/write
+      - -remoteWrite.basicAuth.username=${MONITOR_USER:-horus}
+      - -remoteWrite.basicAuth.password=${MONITOR_PASSWORD:?set MONITOR_PASSWORD in .env}
+      # Канал из России наружу — то, что ломается первым. Очередь на диске
+      # означает, что перерыв связи превращается в задержку данных, а не в
+      # дыру в графике ровно там, где что-то происходило.
+      - -remoteWrite.tmpDataPath=/queue
+      - -remoteWrite.maxDiskUsagePerURL=64MB
+    volumes:
+      - ./scrape.yml:/etc/vmagent/scrape.yml:ro
+      - ./targets:/etc/vmagent/targets:ro
+      - queue:/queue
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  queue:

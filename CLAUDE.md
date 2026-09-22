@@ -149,8 +149,21 @@ indistinguishable from healthy.
 
 Targets live in `monitoring/targets/*.yml` (file_sd, re-read every minute — adding a node
 restarts nothing). Dashboards are vmui custom dashboards in `monitoring/dashboards/`.
-Alert rules: `infra.yml` (host) and `horus.yml` (xray, olcrtc rooms, profile render,
-certificate expiry **and name coverage**, container limits).
+Alert rules: `infra.yml` (host), `horus.yml` (xray, olcrtc rooms, profile render,
+certificate expiry **and name coverage**, container limits) and `blocking.yml`.
+
+**Detecting an RKN IP block needs a vantage point inside Russia** — no check from a foreign
+server can see it. Two signals. The free one is inferred from metrics already collected:
+a node whose xray answers and whose scrape succeeds, with zero users online *and at least
+three online within the last six hours* — that last clause is what separates a block from a
+quiet night or a fresh node. The direct one is `monitoring/ru-probe/`, a blackbox-exporter
+and vmagent on a small Russian VPS that **push** TCP-connect results; it pushes rather than
+serving so nothing has to be opened on it, and it knows only addresses and ports, because a
+box in that jurisdiction should be worthless if seized. `NodeBlockedFromRussia` fires only
+when the probe fails **and we can still reach the node** — otherwise it is an outage, which
+`ServerUnreachable` already covers. Accepting a remote push means turning on VictoriaMetrics'
+`-httpAuth.*` first: it has no authentication of its own, and the same port serves vmui and
+the delete API.
 
 `cadvisor` runs here by default and is **opt-in on nodes** (`COMPOSE_PROFILES=containers`):
 50-80 MB is affordable on this host and is not on a 700 MB/1-core node, where xray's health
