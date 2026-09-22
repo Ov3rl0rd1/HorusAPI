@@ -25,6 +25,16 @@ public interface IAdminServerService
 
     /// <summary>Set (or clear) one node's profile override. False when the node does not exist.</summary>
     Task<bool> SetServerProfileAsync(int id, string? profile);
+
+    /// <summary>
+    /// Takes a node out of rotation, or puts it back. Evacuation sets this first: the
+    /// auto-picker only considers active nodes, so leaving it on would let it hand users
+    /// straight back to the node they are being moved off.
+    /// </summary>
+    Task<bool> SetServerActiveAsync(int id, bool active);
+
+    /// <summary>Everyone currently bound to a node, for moving them somewhere else.</summary>
+    Task<IReadOnlyList<BoundUser>> GetBoundUsersAsync(int serverId);
 }
 
 [DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
@@ -174,6 +184,22 @@ public class AdminServerService(
 
         log.LogWarning("Fleet default profile set to '{Profile}' — every node without an override will switch",
             value.Length == 0 ? "(none)" : value);
+    }
+
+    public async Task<bool> SetServerActiveAsync(int id, bool active)
+    {
+        await using var conn = Connect();
+        return await conn.ExecuteAsync(
+            "UPDATE vpn_servers SET is_active = @Active WHERE id = @Id",
+            new { Id = id, Active = active }) > 0;
+    }
+
+    public async Task<IReadOnlyList<BoundUser>> GetBoundUsersAsync(int serverId)
+    {
+        await using var conn = Connect();
+        return [.. await conn.QueryAsync<BoundUser>(
+            "SELECT id, username, vpn_uuid FROM users WHERE current_server_id = @Id ORDER BY id",
+            new { Id = serverId })];
     }
 
     public async Task<bool> SetServerProfileAsync(int id, string? profile)

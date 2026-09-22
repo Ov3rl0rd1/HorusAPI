@@ -83,5 +83,18 @@ public record SetSubscriptionRequest(DateTime expires_at);
 
 public record PingResult(int id, string name, bool reachable, int? statusCode, string? error);
 
+/// <summary>A user bound to a node, with the identity the node itself is keyed by.</summary>
+public record BoundUser(int id, string username, Guid vpn_uuid);
+
+/// <summary>
+/// What an evacuation did. Deliberately a report rather than a bare 204: moving several
+/// hundred users touches two nodes per user over the network, and some of it will fail.
+/// </summary>
+/// <param name="moved">Users now bound to a different node.</param>
+/// <param name="stayed">Users the fleet had no room for — still on the old node.</param>
+/// <param name="failed">Users moved in the database whose node calls did not both succeed.</param>
+public record EvacuationReport(
+    int serverId, int total, int moved, int stayed, int failed, IReadOnlyList<string> problems);
+
 /// <summary><c>Code</c> is a stable machine-readable tag for clients that need to branch on the failure.</summary>
 public record ApiError(string Message, string? Code = null);

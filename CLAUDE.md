@@ -56,7 +56,7 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
 | `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel` ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
 | `POST /payments/{provider}/webhook` | **anonymous** (secret checked in-adapter, idempotent) | payment provider callbacks |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **evacuate/activate a node**, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
@@ -89,6 +89,27 @@ a freshly registered non-admin user has no access until they buy (this closed th
 - **Capacity holds**: checkout charges a seat to `vpn_servers.reserved_count` immediately via `slot_holds` (TTL `Payments:HoldMinutes`), so a full fleet fails the buy *before* payment. [ReservationService](Services/ReservationService.cs) gained `HoldSlotAsync`/`ConfirmHoldAsync`/`ReleaseHoldAsync`/`SweepExpiredHoldsAsync`; because a hold uses the same `reserved_count`, every existing candidate/select/pick query is unchanged. [BillingSweeperService](Services/Billing/BillingSweeperService.cs) (hosted) releases expired holds + fails stale pending payments.
 - **Promo caveat**: promos are percent-off, first-charge-only → they apply to **one-time** buys; a promo on a recurring plan is refused (`promo_not_applicable`) because Platega recurring charges a fixed amount every period.
 - **Provider reconciliation** (polling for missed webhooks) is a documented follow-up, not yet implemented.
+
+### Evacuating a node
+
+`POST /admin/servers/{id}/evacuate` moves every user off a node and takes it out of rotation;
+`POST /admin/servers/{id}/activate` puts it back. Written for an address being blocked — the
+node is healthy and reachable from everywhere except where the users are.
+
+Two things about it are load-bearing. **`is_active = false` is set before anything is read**:
+the auto-picker only considers active nodes, and a node that has just had a seat freed is the
+least-loaded one, so otherwise the fleet hands each user straight back to the node they are
+being moved off. And **`SelectAsync` returning Ok is not enough** — it keeps the existing
+binding when nothing in the fleet has room, which is right for an ordinary move and a lie
+here, so the result is compared against the source id and counted as `stayed` rather than
+`moved`.
+
+Node calls happen after the commit, like every other reservation flow, and a failure there
+does not roll the binding back: the database is the truth and the node reconciles its user set
+from it. De-provisioning the old node is best effort on purpose — it is very likely the
+unreachable one. The answer is an `EvacuationReport` rather than a 204, and **re-running is
+how a partial evacuation is finished**: the users who moved are no longer bound there, so a
+second pass sees only what is left.
 
 ### Landing page & client downloads (nginx only — the API is not involved)
 
