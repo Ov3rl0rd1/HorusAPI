@@ -399,7 +399,7 @@ public class UnverifiedAccountTests(ApiFixture fixture) : IntegrationTest(fixtur
     }
 
     [SkippableFact]
-    public async Task The_fifth_wrong_code_burns_the_code()
+    public async Task Five_wrong_codes_are_allowed_and_the_fifth_leaves_none()
     {
         RequireDb();
         var client = Client();
@@ -407,16 +407,38 @@ public class UnverifiedAccountTests(ApiFixture fixture) : IntegrationTest(fixtur
         string ticket = await TicketForAsync(client, username);
         string ip = TestData.NewIp();
 
-        for (var i = 0; i < 4; i++)
+        HttpResponseMessage last = null!;
+        for (var i = 0; i < 5; i++)
+            last = await client.PostJsonAsync("/auth/verify",
+                new { pending_token = ticket, code = "000000" }, ip);
+
+        // The counter is checked BEFORE it is incremented, so all five guesses are spent
+        // rather than the fifth being refused. What ends the code is the fifth reporting
+        // nothing left — that is what puts the screen into its "ask for a new one" state,
+        // and why a well-behaved client never sends a sixth.
+        Assert.Equal(HttpStatusCode.BadRequest, last.StatusCode);
+        Assert.Equal(0, (await last.ReadJsonAsync()).GetProperty("attemptsLeft").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task A_sixth_attempt_is_refused_outright()
+    {
+        RequireDb();
+        var client = Client();
+        var (username, _) = await RegisterUnverifiedAsync(client);
+        string ticket = await TicketForAsync(client, username);
+        string ip = TestData.NewIp();
+
+        for (var i = 0; i < 5; i++)
             await client.PostJsonAsync("/auth/verify", new { pending_token = ticket, code = "000000" }, ip);
 
-        // Fifth guess: the code dies rather than the attempt simply failing, which is what
-        // puts the screen into its "ask for a new one" state.
-        var fifth = await client.PostJsonAsync("/auth/verify",
+        // The guard for a client that ignores attemptsLeft — or for someone guessing by
+        // hand. Without it the code would stay alive for unlimited tries.
+        var sixth = await client.PostJsonAsync("/auth/verify",
             new { pending_token = ticket, code = "000000" }, ip);
 
-        Assert.Equal(HttpStatusCode.TooManyRequests, fifth.StatusCode);
-        Assert.Equal("too_many_attempts", await fifth.ReadStringPropAsync("code"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, sixth.StatusCode);
+        Assert.Equal("too_many_attempts", await sixth.ReadStringPropAsync("code"));
     }
 
     [SkippableFact]

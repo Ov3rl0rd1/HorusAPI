@@ -24,7 +24,7 @@ public class EvacuationTests(ApiFixture fixture) : IntegrationTest(fixture)
         var admin = await NewAdminSessionAsync(client);
 
         var from = await SeedServerAsync();
-        var to = await SeedServerAsync();
+        await SeedServerAsync();
         var userId = await BindUserAsync(client, from);
 
         var res = await client.PostJsonAsync($"/admin/servers/{from}/evacuate", new { }, TestData.NewIp(), admin);
@@ -34,7 +34,12 @@ public class EvacuationTests(ApiFixture fixture) : IntegrationTest(fixture)
         var body = await res.ReadJsonAsync();
         Assert.Equal(1, body.GetProperty("moved").GetInt32());
         Assert.Equal(0, body.GetProperty("stayed").GetInt32());
-        Assert.Equal(to, await CurrentServerAsync(userId));
+
+        // Off the old node is the invariant; WHICH node is the auto-picker's business and
+        // depends on every server in the database, including ones other tests left behind —
+        // the fixture shares one database across the collection. Asserting the destination
+        // made this test a hostage to the order it happened to run in.
+        Assert.NotEqual(from, await CurrentServerAsync(userId));
     }
 
     [SkippableFact]
@@ -66,15 +71,28 @@ public class EvacuationTests(ApiFixture fixture) : IntegrationTest(fixture)
         var only = await SeedServerAsync();
         var userId = await BindUserAsync(client, only);
 
-        var res = await client.PostJsonAsync($"/admin/servers/{only}/evacuate", new { }, TestData.NewIp(), admin);
-        var body = await res.ReadJsonAsync();
+        // "Nowhere to go" has to be made true, not assumed. The database is shared across
+        // the collection, so servers seeded by other tests are sitting there with free
+        // seats and the user lands on one of them.
+        var reactivate = await DeactivateOtherServersAsync(only);
+        try
+        {
+            var res = await client.PostJsonAsync($"/admin/servers/{only}/evacuate", new { }, TestData.NewIp(), admin);
+            var body = await res.ReadJsonAsync();
 
         // SelectAsync keeps the existing binding when nothing has room and reports success
         // for it — right for an ordinary move, and a lie here. Counting that as "moved" would
         // report a completed evacuation with everyone still on the blocked node.
-        Assert.Equal(0, body.GetProperty("moved").GetInt32());
-        Assert.Equal(1, body.GetProperty("stayed").GetInt32());
-        Assert.Equal(only, await CurrentServerAsync(userId));
+            Assert.Equal(0, body.GetProperty("moved").GetInt32());
+            Assert.Equal(1, body.GetProperty("stayed").GetInt32());
+            Assert.Equal(only, await CurrentServerAsync(userId));
+        }
+        finally
+        {
+            // Restore exactly what was switched off, in a finally: a failed assertion must
+            // not leave the fleet dark for every test that runs after this one.
+            await ReactivateAsync(reactivate);
+        }
     }
 
     [SkippableFact]
@@ -151,6 +169,33 @@ public class EvacuationTests(ApiFixture fixture) : IntegrationTest(fixture)
 
         return await conn.ExecuteScalarAsync<int>(
             "SELECT id FROM users WHERE username = @u", new { u = username });
+    }
+
+    /// <summary>
+    /// Switches off every active server except one and returns what it touched, so the
+    /// caller can put it back. Used to make "the fleet is full" true rather than hoping it is.
+    /// </summary>
+    private async Task<int[]> DeactivateOtherServersAsync(int keep)
+    {
+        await using var conn = new NpgsqlConnection(Fixture.ConnectionString);
+
+        var ids = (await conn.QueryAsync<int>(
+            "SELECT id FROM vpn_servers WHERE is_active AND id <> @keep", new { keep })).ToArray();
+
+        if (ids.Length > 0)
+            await conn.ExecuteAsync(
+                "UPDATE vpn_servers SET is_active = FALSE WHERE id = ANY(@ids)", new { ids });
+
+        return ids;
+    }
+
+    private async Task ReactivateAsync(int[] ids)
+    {
+        if (ids.Length == 0) return;
+
+        await using var conn = new NpgsqlConnection(Fixture.ConnectionString);
+        await conn.ExecuteAsync(
+            "UPDATE vpn_servers SET is_active = TRUE WHERE id = ANY(@ids)", new { ids });
     }
 
     private async Task<int?> CurrentServerAsync(int userId)
