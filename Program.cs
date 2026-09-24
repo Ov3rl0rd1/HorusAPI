@@ -46,6 +46,10 @@ public partial class Program
         builder.Services.AddScoped<IBillingService, BillingService>();
         AddPaymentProvider(builder);
         builder.Services.AddHostedService<BillingSweeperService>();
+        // Deletes abandoned unverified registrations, which otherwise hold a username
+        // and an address against unique indexes forever. Accounts:UnverifiedTtlHours = 0
+        // turns the deletion off; the ticket housekeeping runs either way.
+        builder.Services.AddHostedService<UnverifiedSweeperService>();
 
         AddPingClient(builder);
 

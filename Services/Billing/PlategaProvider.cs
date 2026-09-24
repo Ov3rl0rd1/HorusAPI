@@ -164,8 +164,9 @@ public sealed class PlategaProvider(
         req.Headers.TryAddWithoutValidation(SecretHeader, Secret);
         if (acceptText) req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/plain"));
 
-        if (body is not null)
-            req.Content = new StringContent(JsonSerializer.Serialize(body, Json), Encoding.UTF8, "application/json");
+        string? payload = body is null ? null : JsonSerializer.Serialize(body, Json);
+        if (payload is not null)
+            req.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
         HttpResponseMessage resp;
         try { resp = await http.SendAsync(req, ct); }
@@ -178,7 +179,10 @@ public sealed class PlategaProvider(
         string content = await resp.Content.ReadAsStringAsync(ct);
         if (!resp.IsSuccessStatusCode)
         {
-            log.LogWarning("Platega {Method} {Path} → {Status}: {Body}", method, path, (int)resp.StatusCode, content);
+            // The request body carries no secrets (those ride in headers), so log it too:
+            // a 4xx from Platega is almost always about what we sent.
+            log.LogWarning("Platega {Method} {Path} -> {Status}. Sent: {Request} Got: {Body}",
+                method, path, (int)resp.StatusCode, payload ?? "(no body)", content);
             throw new PaymentProviderException($"Platega returned {(int)resp.StatusCode}.");
         }
 

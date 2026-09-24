@@ -1,0 +1,158 @@
+# ==============================================================================
+#  Horus-specific alerts: xray, olcrtc rooms, profile rendering, certificates
+#  and per-container resource use.
+#
+#  These come from /metrics/agent (the node agent) and /metrics/containers
+#  (cadvisor). Everything here is about the service being *wrong* while the
+#  host looks perfectly healthy — the failure mode that cost the most time so
+#  far, because nothing in the infrastructure alerts above would catch it.
+# ==============================================================================
+
+groups:
+
+  - name: xray
+    interval: 30s
+    rules:
+
+      - alert: XrayDown
+        expr: horus_xray_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: xray не отвечает"
+          description: "Агент жив, но gRPC-канал к xray молчит 2 минуты. Клиенты на этой ноде не подключаются вообще."
+
+      # THE alert. This is the outage that looked like a network problem for an
+      # hour: the agent had six users persisted, xray had come back empty, and
+      # every single host metric was green. The node answers, nginx answers,
+      # xray answers — and nobody can connect.
+      - alert: XrayHoldsNoUsers
+        expr: horus_node_users_provisioned > 0 and horus_xray_users_in_handler == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: xray не держит ни одного пользователя"
+          description: "На ноде провижено {{ $value | printf \"%.0f\" }} пользователей, xray — ноль. Данные разъехались с конфигом: смотри `docker compose logs node-agent`, лечится POST /reconcile."
+
+      # A rendered profile that failed is not fatal — node-init deliberately exits
+      # 0 and leaves the node on its last good config — which is exactly why it
+      # needs an alert. Otherwise the node quietly serves a stale profile forever.
+      - alert: ProfileRenderFailed
+        expr: horus_node_render_error == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: профиль не отрендерился"
+          description: "Нода работает на предыдущем конфиге. Подробности в /state/render-error.json и в GET /status."
+
+      # Users are connected but nothing is moving. Catches a shaper/tariff
+      # misconfiguration, a dead upstream, and a blocked node — all of which look
+      # fine on every other metric.
+      - alert: NoTrafficWhileOnline
+        expr: horus_node_users_online > 0 and on (server) sum by (server) (rate(horus_xray_traffic_bytes_total{direction="downlink"}[15m])) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: есть онлайн, но нет трафика"
+          description: "Пользователи числятся онлайн полчаса, а счётчики downlink не растут. Проверь блокировки, маршруты и шейпер."
+
+  - name: olcrtc
+    interval: 30s
+    rules:
+
+      # Per-room. The pool rotates to a fallback on failure, so one dead room is
+      # degradation rather than outage — but it is the early warning that the
+      # provider is squeezing you, and it is invisible from outside.
+      - alert: OlcrtcRoomDown
+        expr: horus_olcrtc_room_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: комната olcrtc {{ $labels.room }} недоступна"
+          description: "Комната не поднимается 10 минут. Пул ушёл на запасную; когда кончатся запасные, olcrtc встанет целиком."
+
+      - alert: OlcrtcAllRoomsDown
+        expr: sum by (server) (horus_olcrtc_room_up) == 0 and count by (server) (horus_olcrtc_room_up) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: все комнаты olcrtc легли"
+          description: "Ни одна комната в пуле не поднимается. Транспорт olcrtc на этой ноде не работает — переключать запасную некуда."
+
+      # Rooms that keep flapping burn through cooldowns and look "up" at any
+      # single moment while being useless in practice.
+      - alert: OlcrtcRoomFlapping
+        expr: increase(horus_olcrtc_room_failures_total[1h]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: комната {{ $labels.room }} падала {{ $value | printf \"%.0f\" }} раз за час"
+          description: "Комната поднимается и снова рвётся. Для клиента это разрывы соединения, хотя метрика доступности большую часть времени зелёная."
+
+  - name: certificates
+    interval: 5m
+    rules:
+
+      # Born from a real outage: the certificate was valid, issued by Let's
+      # Encrypt, and covered only the OLD domain. Hysteria was the only thing
+      # that checked, because REALITY authenticates with its own key and never
+      # looks at X.509 — so the node looked healthy while half of it was dead.
+      - alert: CertificateExpiringSoon
+        expr: (horus_node_cert_expiry_timestamp_seconds - time()) / 86400 < 10
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: сертификат истекает через {{ $value | printf \"%.1f\" }} дн."
+          description: "acme.sh обновляет за 30 дней до конца — если осталось меньше 10, обновление уже не сработало. Проверь `horus-certs status`."
+
+      - alert: CertificateExpiringCritical
+        expr: (horus_node_cert_expiry_timestamp_seconds - time()) / 86400 < 3
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: сертификат истекает через {{ $value | printf \"%.1f\" }} дн."
+          description: "Когда он истечёт, Hysteria отвалится первым и молча — клиенты увидят просто «не подключается»."
+
+      # Covers the actual 2026-09 incident: a cert that is valid but does not
+      # cover the name clients connect to.
+      - alert: CertificateNameMismatch
+        expr: horus_node_cert_covers_host == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: сертификат не покрывает имя ноды"
+          description: "Сертификат валиден, но в нём нет имени, по которому подключаются клиенты. Hysteria откажет в соединении, VLESS/REALITY — нет, поэтому выглядит как «работает половина протоколов»."
+
+  - name: containers
+    interval: 30s
+    rules:
+
+      # Approaching the cgroup limit, not the host limit. A container capped at
+      # 256M dies at 256M while the host still shows plenty of free RAM.
+      - alert: ContainerNearMemoryLimit
+        expr: 100 * container_memory_working_set_bytes / (container_spec_memory_limit_bytes > 0) > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}/{{ $labels.name }}: {{ $value | printf \"%.0f\" }}% от лимита памяти"
+          description: "Контейнер упёрся в свой лимит в docker-compose. Следующий шаг — OOM-kill этого контейнера при полностью здоровом хосте."
+
+      - alert: ContainerRestartLoop
+        expr: changes(container_start_time_seconds[30m]) > 3
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}/{{ $labels.name }}: перезапускается по кругу"
+          description: "Больше трёх стартов за полчаса. restart: unless-stopped маскирует падение — контейнер «работает», но не обслуживает."

@@ -1,0 +1,12 @@
+# Per-container metrics (cadvisor).
+#
+# The main server runs cadvisor by default — it has six containers and the RAM
+# headroom to watch them. A NODE does not: 700 MB and one core are already
+# shared by xray and the agent, and xray's health is covered by /metrics/agent
+# without spending 60 MB on cadvisor. Turn it on per node with
+# METRICS_CONTAINERS=1 in that node's .env, THEN add it here.
+
+- targets: ["horusping.com:443"]
+  labels:
+    server: main
+    role:   central

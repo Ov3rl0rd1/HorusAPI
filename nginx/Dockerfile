@@ -3,7 +3,9 @@ FROM nginx:alpine
 # certbot for automatic Let's Encrypt certificates
 # gettext provides envsubst (for rendering the nginx config template)
 # curl + jq are used by sync-releases.sh to mirror the client release
-RUN apk add --no-cache certbot gettext curl jq \
+# apache2-utils provides htpasswd, used to build the /metrics scrape credential
+# at start-up so the token never lands in the image or in git
+RUN apk add --no-cache certbot gettext curl jq apache2-utils \
  && mkdir -p /var/www/certbot /var/www/downloads
 
 COPY nginx.conf            /etc/nginx/nginx-template.conf

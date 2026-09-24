@@ -49,9 +49,22 @@ export async function request(path, { method = 'GET', body, headers, signal, aut
     throw new ApiError('Сеть недоступна. Проверьте соединение и попробуйте ещё раз.', { status: 0 });
   }
 
+  // 429 раньше терял тело, а вместе с ним code — и «подождите 40 секунд»
+  // становилось неотличимо от «лимит писем на час исчерпан». Это разные
+  // ситуации с разным выходом, поэтому тело читаем и code сохраняем;
+  // retryAfterText остаётся запасным текстом, если сервер ничего не прислал.
   if (response.status === 429) {
     const after = response.headers.get('Retry-After');
-    throw new ApiError(retryAfterText(after), { status: 429, retryAfter: parseInt(after, 10) || 0 });
+    const data = await response.json().catch(() => null);
+    throw new ApiError(
+      (data && (data.message || data.Message)) || retryAfterText(after),
+      {
+        status: 429,
+        code: (data && data.code) || '',
+        retryAfter: parseInt(after, 10) || 0,
+        body: data
+      }
+    );
   }
 
   const empty = response.status === 204 || response.status === 401;

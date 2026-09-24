@@ -110,25 +110,136 @@
       <section id="state-verify" class="state">
         <div class="eyebrow">ПОДТВЕРЖДЕНИЕ</div>
         <h1 class="h3">Введите код из письма</h1>
-        <p class="lead lead--card">Шесть цифр отправлены на <b id="verify-email"></b>. Письма нет — проверьте «Спам».</p>
+        <p class="lead lead--card">Шесть цифр ушли на этот адрес. Письма нет — загляните в «Спам».</p>
+
+        <!-- Адрес. Полный (после регистрации и при входе по e-mail) или маскированный
+             (вход по имени пользователя): <span class="addr__mask">*****</span> вокруг видимых букв. -->
+        <div class="addr">
+          <span class="addr__mail" id="verify-email"></span>
+          <button type="button" class="link-btn addr__edit" id="addr-open" aria-expanded="false" aria-controls="addr-edit">Не мой адрес</button>
+        </div>
+        <p class="addr-note" id="addr-masked-note" hidden>Адрес показан частично — так его отдаёт сервер, пока вход не подтверждён. Сверьте домен и буквы по краям: если они чужие, при регистрации была опечатка.</p>
+
+        <!-- Смена адреса: раскрывается по «Не мой адрес», ввод кода остаётся выше -->
+        <div class="addr-edit" id="addr-edit" hidden>
+          <div class="field">
+            <label class="field__label" for="new-email">Правильный e-mail</label>
+            <div class="field__row">
+              <input class="input" id="new-email" type="email" inputmode="email" autocomplete="email"
+                     autocapitalize="off" spellcheck="false" placeholder="you@example.com">
+            </div>
+          </div>
+          <p class="hint">Код уйдёт на новый адрес, старый мы забудем. Имя пользователя и пароль остаются прежними.</p>
+
+          <div class="notice notice--warn" id="n-email-taken" hidden role="alert">
+            <span class="notice__mark" aria-hidden="true">!</span>
+            <div>
+              <p class="notice__title">На этом адресе уже есть аккаунт</p>
+              <p class="notice__text">Войдите в него или укажите другой e-mail. Если аккаунт ваш, а пароль забыт — восстановите доступ.</p>
+              <p class="notice__act"><button type="button" class="link-btn" data-go="forgot">Восстановить доступ</button></p>
+            </div>
+          </div>
+          <div class="notice notice--warn" id="n-email-same" hidden role="alert">
+            <span class="notice__mark" aria-hidden="true">!</span>
+            <div>
+              <p class="notice__title">Это тот же адрес</p>
+              <p class="notice__text">Он уже указан в аккаунте. Чтобы письмо пришло ещё раз, закройте поле и нажмите «Отправить код заново».</p>
+            </div>
+          </div>
+
+          <div class="addr-edit__row">
+            <button type="button" class="btn btn--quiet" id="addr-cancel">Отмена</button>
+            <button type="button" class="btn btn--primary" id="addr-save" data-label="Отправить код туда">Отправить код туда</button>
+          </div>
+        </div>
 
         <form class="form-col auth-code" id="verify-form" novalidate>
           <div class="field">
-            <label class="field__label" for="code">Код подтверждения</label>
+            <label class="field__label" for="code">Код из письма</label>
             <div class="field__row">
-              <input class="input input--code" id="code" type="text" inputmode="numeric" autocomplete="one-time-code"
-                     maxlength="6" required placeholder="······">
+              <input class="input input--code" id="code" type="text" inputmode="numeric" pattern="[0-9]*"
+                     autocomplete="one-time-code" enterkeyhint="go" maxlength="6" required placeholder="······">
             </div>
           </div>
-          <div class="row">
+          <div class="row code-foot">
             <span class="note" id="code-expiry"></span>
             <button type="button" class="link-btn" id="resend">Отправить код заново</button>
           </div>
           <button class="btn btn--primary" id="verify-submit" type="submit" data-label="Подтвердить">Подтвердить</button>
         </form>
 
+        <!-- Состояния вместо строки красного текста: JS снимает hidden с одного блока -->
+        <div class="notice notice--warn" id="n-wrong" hidden role="alert">
+          <span class="notice__mark" aria-hidden="true">!</span>
+          <div>
+            <p class="notice__title">Код не подошёл</p>
+            <p class="notice__text">Сверьте цифры с письмом: возможно, это код из предыдущего. Осталось попыток: <b data-slot="attempts">4</b> из 5.</p>
+          </div>
+        </div>
+
+        <div class="notice notice--stop" id="n-attempts-out" hidden role="alert">
+          <span class="notice__mark" aria-hidden="true">✕</span>
+          <div>
+            <p class="notice__title">Код заблокирован</p>
+            <p class="notice__text">Пять раз подряд не совпало. Этот код больше не примем — пришлём новый.</p>
+            <p class="notice__act"><button type="button" class="link-btn" data-act="resend">Прислать новый код</button></p>
+          </div>
+        </div>
+
+        <div class="notice notice--stop" id="n-expired" hidden role="alert">
+          <span class="notice__mark" aria-hidden="true">⏳</span>
+          <div>
+            <p class="notice__title">Срок кода истёк</p>
+            <p class="notice__text">Код живёт 15 минут. Пришлём новый — придёт в течение минуты.</p>
+            <p class="notice__act"><button type="button" class="link-btn" data-act="resend">Прислать новый код</button></p>
+          </div>
+        </div>
+
+        <div class="notice notice--stop" id="n-too-soon" hidden role="alert">
+          <span class="notice__mark" aria-hidden="true">⏳</span>
+          <div>
+            <p class="notice__title">Письмо уже в пути</p>
+            <p class="notice__text">Новое можно запросить через <b data-slot="seconds">38 с</b>. Если предыдущее не дошло — проверьте «Спам» и «Промоакции».</p>
+          </div>
+        </div>
+
+        <div class="notice notice--stop" id="n-hour-limit" hidden role="alert">
+          <span class="notice__mark" aria-hidden="true">✕</span>
+          <div>
+            <p class="notice__title">Больше писем за этот час не отправим</p>
+            <p class="notice__text">На один адрес уходит не больше трёх писем в час. Следующее можно запросить в <b data-slot="at">14:35</b>. Код из последнего письма ещё действует — если письмо нашлось, введите цифры выше. Отправитель: horusping@gmail.com, посмотрите и в «Спаме».</p>
+          </div>
+        </div>
+
+        <div class="notice notice--ok" id="n-sent" hidden role="status">
+          <span class="notice__mark" aria-hidden="true">✓</span>
+          <div>
+            <p class="notice__title">Новое письмо отправлено</p>
+            <p class="notice__text">Код придёт в течение минуты. Предыдущий больше не действует.</p>
+          </div>
+        </div>
+
+        <div class="notice notice--ok" id="n-addr-changed" hidden role="status">
+          <span class="notice__mark" aria-hidden="true">✓</span>
+          <div>
+            <p class="notice__title">Адрес изменён</p>
+            <p class="notice__text">Код ушёл на <b data-slot="email">you@example.com</b>. Старый адрес больше не используется.</p>
+          </div>
+        </div>
+
+        <!-- Запасной канал для сети и неожиданных ответов сервера -->
         <p class="msg msg--error" id="verify-msg" role="alert"></p>
-        <div class="auth-back"><button type="button" class="link-btn" data-go="register">Указать другой адрес</button></div>
+
+        <p class="hint">Пока адрес не подтверждён, аккаунт хранится 7 дней. Не успеете — ничего не потеряете: имя пользователя освободится, и его можно будет занять снова.</p>
+        <div class="auth-back"><button type="button" class="link-btn" data-go="login">Вернуться ко входу</button></div>
+      </section>
+
+      <!-- Сессия подтверждения истекла (30 минут) -->
+      <section id="state-verify-expired" class="state state--center">
+        <div class="disc disc--neutral" aria-hidden="true"><span class="disc__diamond"></span></div>
+        <h1 class="h3">Время на подтверждение вышло</h1>
+        <p class="lead lead--card">Страница ждала код полчаса — дольше мы её держать не можем. Войдите ещё раз, и код придёт заново. Аккаунт на месте.</p>
+        <button type="button" class="btn btn--primary" data-go="login">Войти</button>
       </section>
 
       <!-- Забыли пароль -->

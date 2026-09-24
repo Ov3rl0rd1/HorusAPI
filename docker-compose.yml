@@ -80,6 +80,12 @@ services:
       # Origin used to build reset links. Empty falls back to https://${DOMAIN};
       # set PUBLIC_URL in .env for HTTP-only deploys (USE_SSL=0).
       App__PublicUrl: ${PUBLIC_URL:-}
+      # Abandoned registrations hold a username and an address against unique
+      # indexes, so the person who mistyped cannot even sign up again. They are
+      # deleted after this many hours, and only when nothing at all is attached
+      # (no session, no subscription, no payment, no hold, no grant). 0 disables
+      # the deletion entirely.
+      Accounts__UnverifiedTtlHours: ${UNVERIFIED_TTL_HOURS:-168}
     deploy:
       resources:
         limits:
@@ -107,6 +113,10 @@ services:
       RELEASE_SYNC_INTERVAL:      ${RELEASE_SYNC_INTERVAL:-3600}
       # Optional — only to raise the GitHub API rate limit (60/h per IP without).
       GITHUB_TOKEN:               ${GITHUB_TOKEN:-}
+      # Read-only password the monitoring server uses to scrape /metrics/host and
+      # /metrics/containers. Empty (the default) makes both answer 404, so a
+      # rebuild never starts publishing telemetry on its own.
+      METRICS_TOKEN:              ${METRICS_TOKEN:-}
     ports:
       - "80:80"
       - "443:443"
@@ -151,6 +161,56 @@ services:
       resources:
         limits:
           memory: 96M
+
+
+  # ── Host metrics ─────────────────────────────────────────────────────────────
+  # No published port: the monitoring server reaches this through nginx at
+  # /metrics/host, behind the site's own TLS and a read-only password.
+  node-exporter:
+    image: prom/node-exporter:${NODE_EXPORTER_TAG:-v1.8.2}
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run/credentials)($$|/)
+      - --collector.processes
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── Per-container metrics ────────────────────────────────────────────────────
+  # On by default HERE and off by default on nodes: this host runs six containers
+  # with memory limits that are worth watching, and it has the RAM headroom a
+  # 700 MB node does not. The flags trim cadvisor's default firehose down to what
+  # answers "is a container starving or restarting" — without them it is both the
+  # heaviest process in the stack and the biggest consumer of metric storage.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_TAG:-v0.49.1}
+    restart: unless-stopped
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,process,referenced_memory,resctrl,sched,tcp,udp
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    deploy:
+      resources:
+        limits:
+          memory: 160M
 
 volumes:
   pgdata:

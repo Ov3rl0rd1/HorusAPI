@@ -1,0 +1,25 @@
+# Пробы идут к blackbox, а он уже — к узлам. Метки server/role переносятся с
+# цели, чтобы алерты на монитор-сервере могли сопоставить пробу с узлом
+# (`and on (server) up{job="horus-host"}`).
+global:
+  scrape_interval: 60s
+  scrape_timeout: 15s
+  external_labels:
+    fleet: horus
+    vantage: ru
+
+scrape_configs:
+  - job_name: ru-probe
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    file_sd_configs:
+      - files: ["/etc/vmagent/targets/nodes.yml"]
+    relabel_configs:
+      # Целевой адрес уезжает в параметр, а обращаемся мы к blackbox.
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

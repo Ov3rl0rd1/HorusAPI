@@ -12,6 +12,8 @@ public enum VerifyStatus { Ok, NotFound, AlreadyVerified, Expired, TooManyAttemp
 
 public enum ResetStatus { Ok, InvalidOrExpired }
 
+public enum ChangeEmailStatus { Ok, EmailTaken, AlreadyVerified, NotFound }
+
 /// <summary>User + plaintext token; the token only ever exists in the outgoing e-mail.</summary>
 public record ResetTicket(int userId, string username, string email, string token);
 
@@ -27,7 +29,13 @@ public interface IAccountService
     /// <summary>Looks up an account by e-mail, regardless of verification state.</summary>
     Task<User?> FindByEmailAsync(string email);
 
-    Task<(VerifyStatus status, User? user)> VerifyEmailAsync(string email, string code);
+    /// <summary>
+    /// Checks a confirmation code. <c>attemptsLeft</c> is how many wrong guesses remain before
+    /// the code dies — the screen tells the user, and without it the client would have to
+    /// count locally, which a page reload resets and a resend invalidates. It is meaningful
+    /// only alongside <see cref="VerifyStatus.Invalid"/>; every other status returns 0.
+    /// </summary>
+    Task<(VerifyStatus status, User? user, int attemptsLeft)> VerifyEmailAsync(string email, string code);
 
     /// <summary>Null when no account owns the address — callers must still answer 202.</summary>
     Task<ResetTicket?> IssueResetTokenAsync(string email);
@@ -36,6 +44,48 @@ public interface IAccountService
     Task<bool> IsResetTokenValidAsync(string token);
 
     Task<ResetStatus> ResetPasswordAsync(string token, string newPassword);
+
+    // ── Unverified accounts ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Mints a ticket that proves the caller owns an UNVERIFIED account, and returns the
+    /// plaintext. Issued only after a correct password, and it is NOT a session: it opens
+    /// resend / change-address / confirm and nothing else. One live ticket per account.
+    /// </summary>
+    Task<string> IssuePendingTicketAsync(int userId);
+
+    /// <summary>The unverified account behind a live ticket, or null. Verified accounts never match.</summary>
+    Task<User?> FindByPendingTicketAsync(string token);
+
+    /// <summary>
+    /// How long until this account may be sent another code. Zero when it may be sent now.
+    /// Separate from the per-address hourly quota: that one stops abuse, this one stops a
+    /// user hammering the button and is the number the button counts down from.
+    /// </summary>
+    Task<TimeSpan> ResendCooldownRemainingAsync(int userId);
+
+    /// <summary>
+    /// How long the pending code is still good for, and how long until another may be sent.
+    /// Both come off the same row, so the confirmation screen costs one query rather than two.
+    /// Zero lifetime means there is no live code — the screen then shows no countdown rather
+    /// than a wrong one.
+    /// </summary>
+    Task<(TimeSpan codeLifetime, TimeSpan resendCooldown)> PendingCodeTimingsAsync(int userId);
+
+    /// <summary>
+    /// Corrects the address on an unverified account. Also drops any pending code, so one
+    /// mailed to the OLD address can never confirm the new one.
+    /// </summary>
+    Task<ChangeEmailStatus> ChangeEmailAsync(int userId, string newEmail);
+
+    /// <summary>
+    /// Deletes abandoned unverified accounts older than <paramref name="olderThan"/>, and only
+    /// those with nothing whatsoever attached. Returns how many went.
+    /// </summary>
+    Task<int> DeleteStaleUnverifiedAsync(TimeSpan olderThan);
+
+    /// <summary>Drops expired pending tickets. Pure housekeeping — an expired ticket is already refused.</summary>
+    Task<int> PurgeExpiredTicketsAsync();
 }
 
 // Deliberately NOT [DapperAot]: reads the sessions VARCHAR(64)[] as a scalar
@@ -49,9 +99,25 @@ public class AccountService(
     public static readonly TimeSpan CodeLifetime  = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan ResetLifetime = TimeSpan.FromMinutes(60);
 
+    /// <summary>
+    /// A ticket is a convenience for finishing registration, not a login. Half an hour is
+    /// long enough to read an e-mail and short enough that an abandoned tab stops mattering.
+    /// </summary>
+    public static readonly TimeSpan PendingTicketLifetime = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Minimum gap between two codes for one account. The per-address hourly quota
+    /// (IAccountRateLimiter) is the abuse control; this is the "resend in 0:47" the button
+    /// shows, and it also stops one impatient user burning all three hourly permits in
+    /// five seconds and then being locked out for an hour.
+    /// </summary>
+    public static readonly TimeSpan ResendCooldown = TimeSpan.FromSeconds(60);
+
     private const int MaxCodeAttempts = 5;
 
     private sealed record VerificationRow(string code_hash, DateTime expires_at, short attempts);
+
+    private sealed record TimingRow(DateTime sent_at, DateTime expires_at);
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
@@ -90,12 +156,12 @@ public class AccountService(
         return await conn.QuerySingleOrDefaultAsync<User>(sql, new { Email = email.Trim() });
     }
 
-    public async Task<(VerifyStatus status, User? user)> VerifyEmailAsync(string email, string code)
+    public async Task<(VerifyStatus status, User? user, int attemptsLeft)> VerifyEmailAsync(string email, string code)
     {
         User? user = await FindByEmailAsync(email);
 
-        if (user is null)            return (VerifyStatus.NotFound, null);
-        if (user.email_verified)     return (VerifyStatus.AlreadyVerified, user);
+        if (user is null)            return (VerifyStatus.NotFound, null, 0);
+        if (user.email_verified)     return (VerifyStatus.AlreadyVerified, user, 0);
 
         await using var conn = Connect();
 
@@ -104,10 +170,10 @@ public class AccountService(
             new { UserId = user.id });
 
         if (row is null || row.expires_at <= DateTime.UtcNow)
-            return (VerifyStatus.Expired, null);
+            return (VerifyStatus.Expired, null, 0);
 
         if (row.attempts >= MaxCodeAttempts)
-            return (VerifyStatus.TooManyAttempts, null);
+            return (VerifyStatus.TooManyAttempts, null, 0);
 
         if (!FixedTimeEquals(row.code_hash, HashCode(user.id, code)))
         {
@@ -118,7 +184,10 @@ public class AccountService(
             log.LogWarning("Wrong verification code for user {UserId} (attempt {Attempt})",
                 user.id, row.attempts + 1);
 
-            return (VerifyStatus.Invalid, null);
+            // What the user sees on the screen. Counted from the row we just incremented,
+            // so it is the server's number and survives a reload.
+            int left = Math.Max(0, MaxCodeAttempts - (row.attempts + 1));
+            return (VerifyStatus.Invalid, null, left);
         }
 
         await conn.ExecuteAsync("""
@@ -129,7 +198,7 @@ public class AccountService(
         user.email_verified = true;
         log.LogInformation("E-mail verified for user {Username}", user.username);
 
-        return (VerifyStatus.Ok, user);
+        return (VerifyStatus.Ok, user, 0);
     }
 
     // ── Password reset ───────────────────────────────────────────────────────
@@ -218,6 +287,151 @@ public class AccountService(
     }
 
     // ── Secrets ──────────────────────────────────────────────────────────────
+
+    // ── Unverified accounts ──────────────────────────────────────────────────
+
+    public async Task<string> IssuePendingTicketAsync(int userId)
+    {
+        // One live ticket per account: logging in again invalidates the last one, the
+        // same rule password_resets follows.
+        const string sql = """
+            DELETE FROM pending_logins WHERE user_id = @UserId;
+            INSERT INTO pending_logins (token_hash, user_id, expires_at)
+            VALUES (@TokenHash, @UserId, @ExpiresAt);
+            """;
+
+        string token = GenerateToken();
+
+        await using var conn = Connect();
+        await conn.ExecuteAsync(sql, new
+        {
+            UserId    = userId,
+            TokenHash = Sha256Hex(token),
+            ExpiresAt = DateTime.UtcNow + PendingTicketLifetime
+        });
+
+        return token;
+    }
+
+    public async Task<User?> FindByPendingTicketAsync(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+
+        // email_verified = FALSE is part of the lookup, not a check afterwards: a ticket
+        // must stop working the instant the account it belongs to is confirmed, including
+        // when that happened in another tab.
+        const string sql = """
+            SELECT u.* FROM pending_logins p
+            JOIN users u ON u.id = p.user_id
+            WHERE p.token_hash = @TokenHash
+              AND p.expires_at > NOW()
+              AND u.email_verified = FALSE
+            LIMIT 1
+            """;
+
+        await using var conn = Connect();
+        return await conn.QuerySingleOrDefaultAsync<User>(sql, new { TokenHash = Sha256Hex(token.Trim()) });
+    }
+
+    public async Task<TimeSpan> ResendCooldownRemainingAsync(int userId) =>
+        (await PendingCodeTimingsAsync(userId)).resendCooldown;
+
+    public async Task<(TimeSpan codeLifetime, TimeSpan resendCooldown)> PendingCodeTimingsAsync(int userId)
+    {
+        await using var conn = Connect();
+        var row = await conn.QuerySingleOrDefaultAsync<TimingRow>(
+            "SELECT sent_at, expires_at FROM email_verifications WHERE user_id = @UserId",
+            new { UserId = userId });
+
+        if (row is null) return (TimeSpan.Zero, TimeSpan.Zero);
+
+        var now = DateTime.UtcNow;
+        return (Remaining(AsUtc(row.expires_at) - now),
+                Remaining(ResendCooldown - (now - AsUtc(row.sent_at))));
+
+        // Npgsql hands back Unspecified for timestamptz read into DateTime; the values are
+        // UTC, and subtracting them from DateTime.UtcNow without saying so is an hour or
+        // three of silent drift depending on where the server stands.
+        static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        static TimeSpan Remaining(TimeSpan span) => span > TimeSpan.Zero ? span : TimeSpan.Zero;
+    }
+
+    public async Task<ChangeEmailStatus> ChangeEmailAsync(int userId, string newEmail)
+    {
+        await using var conn = Connect();
+
+        try
+        {
+            // The WHERE clause carries the whole rule: an account that got confirmed while
+            // this request was in flight matches nothing and changes nothing, so a
+            // confirmed address can never be moved by this path.
+            int changed = await conn.ExecuteAsync("""
+                UPDATE users SET email = @Email
+                WHERE id = @UserId AND email_verified = FALSE;
+                """, new { UserId = userId, Email = newEmail.Trim() });
+
+            if (changed == 0)
+            {
+                bool exists = await conn.ExecuteScalarAsync<bool>(
+                    "SELECT EXISTS (SELECT 1 FROM users WHERE id = @UserId)", new { UserId = userId });
+                return exists ? ChangeEmailStatus.AlreadyVerified : ChangeEmailStatus.NotFound;
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            // users_email_lower_key — one account per address.
+            return ChangeEmailStatus.EmailTaken;
+        }
+
+        // Kill the outstanding code. It was mailed to the OLD address, and letting it
+        // still confirm would mean whoever holds the old mailbox can verify the new one.
+        await conn.ExecuteAsync("DELETE FROM email_verifications WHERE user_id = @UserId",
+            new { UserId = userId });
+
+        log.LogInformation("User {UserId} corrected their e-mail address before confirming", userId);
+        return ChangeEmailStatus.Ok;
+    }
+
+    public async Task<int> DeleteStaleUnverifiedAsync(TimeSpan olderThan)
+    {
+        // Every FK into users is ON DELETE CASCADE, so a row deleted here takes its
+        // subscriptions, payments and grants with it silently. That is precisely why the
+        // guards below are explicit and generous rather than clever: this query must be
+        // incapable of touching an account anyone has ever done anything with.
+        //
+        // An unverified account cannot normally hold a session (login refuses one) or a
+        // subscription (checkout needs a session), so in a healthy system each NOT EXISTS
+        // is redundant. They are here for the unhealthy system — a grandfathered row, a
+        // hand-made admin grant, a future endpoint that forgets this rule.
+        const string sql = """
+            DELETE FROM users u
+            WHERE u.email_verified = FALSE
+              AND u.is_admin       = FALSE
+              AND u.created_at     < NOW() - @Age::interval
+              AND COALESCE(cardinality(u.sessions), 0) = 0
+              AND u.current_server_id IS NULL
+              AND u.expires_at        IS NULL
+              AND NOT EXISTS (SELECT 1 FROM subscriptions        s WHERE s.user_id = u.id)
+              AND NOT EXISTS (SELECT 1 FROM payments             p WHERE p.user_id = u.id)
+              AND NOT EXISTS (SELECT 1 FROM slot_holds           h WHERE h.user_id = u.id)
+              AND NOT EXISTS (SELECT 1 FROM plan_grants          g WHERE g.user_id = u.id)
+              AND NOT EXISTS (SELECT 1 FROM promo_redemptions    r WHERE r.user_id = u.id)
+            """;
+
+        await using var conn = Connect();
+        int removed = await conn.ExecuteAsync(sql, new { Age = $"{(int)olderThan.TotalMinutes} minutes" });
+
+        if (removed > 0)
+            log.LogInformation("Swept {Count} abandoned unverified account(s) older than {Age}", removed, olderThan);
+
+        return removed;
+    }
+
+    public async Task<int> PurgeExpiredTicketsAsync()
+    {
+        await using var conn = Connect();
+        return await conn.ExecuteAsync("DELETE FROM pending_logins WHERE expires_at <= NOW()");
+    }
 
     private static string GenerateToken()
     {

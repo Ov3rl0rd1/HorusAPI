@@ -1,0 +1,101 @@
+{
+  "title": "Horus — серверы",
+  "filename": "01-servers.json",
+  "rows": [
+    {
+      "title": "Процессор",
+      "panels": [
+        {
+          "title": "Загрузка CPU, %",
+          "description": "100 минус idle. На односотовой ноде всё выше 85% — это уже потолок пропускной способности.",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * (1 - avg by (server) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))"],
+          "alias": ["{{server}}"]
+        },
+        {
+          "title": "Steal (CPU, отобранный гипервизором), %",
+          "description": "Не ваша нагрузка. Высокий steal означает переподписку на стороне хостера — выглядит как замедление сервиса.",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * avg by (server) (rate(node_cpu_seconds_total{mode=\"steal\"}[5m]))"],
+          "alias": ["{{server}}"]
+        }
+      ]
+    },
+    {
+      "title": "Память",
+      "panels": [
+        {
+          "title": "Свободная RAM, %",
+          "description": "MemAvailable, а не MemFree: учитывает кэш, который ядро отдаст под запрос.",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes"],
+          "alias": ["{{server}}"]
+        },
+        {
+          "title": "Занято свопа, %",
+          "description": "Своп на 2 ГБ есть везде. Наличие свопа — норма, заполнение больше половины — признак, что RAM кончилась давно.",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * (1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)"],
+          "alias": ["{{server}}"]
+        }
+      ]
+    },
+    {
+      "title": "Диск",
+      "panels": [
+        {
+          "title": "Свободно на /, %",
+          "description": "На нодах диск 10 ГБ и почти полон — держите это на виду.",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}"],
+          "alias": ["{{server}}"]
+        },
+        {
+          "title": "Свободно на /, байт",
+          "description": "Абсолютные цифры: проценты на маленьком диске обманчивы.",
+          "unit": "bytes",
+          "width": 6,
+          "expr": ["node_filesystem_avail_bytes{mountpoint=\"/\"}"],
+          "alias": ["{{server}}"]
+        }
+      ]
+    },
+    {
+      "title": "Сеть",
+      "panels": [
+        {
+          "title": "Исходящий трафик, бит/с",
+          "description": "Канал гигабитный: 800 Mbit/s — это 80% и точка, после которой растёт только задержка.",
+          "unit": "bits/s",
+          "width": 6,
+          "expr": ["8 * sum by (server) (rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|docker.*|br-.*\"}[5m]))"],
+          "alias": ["{{server}}"]
+        },
+        {
+          "title": "Входящий трафик, бит/с",
+          "unit": "bits/s",
+          "width": 6,
+          "expr": ["8 * sum by (server) (rate(node_network_receive_bytes_total{device!~\"lo|veth.*|docker.*|br-.*\"}[5m]))"],
+          "alias": ["{{server}}"]
+        }
+      ]
+    },
+    {
+      "title": "Доступность",
+      "panels": [
+        {
+          "title": "up (1 = отвечает)",
+          "description": "Ноль означает, что метрики не собираются: сервер, nginx или сертификат.",
+          "width": 12,
+          "expr": ["up{job=~\"horus-.*\"}"],
+          "alias": ["{{server}} / {{job}}"]
+        }
+      ]
+    }
+  ]
+}

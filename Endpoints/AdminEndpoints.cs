@@ -157,6 +157,124 @@ public static class AdminEndpoints
         .Produces<ApiError>(404)
         .WithSummary("Remove a VPN server");
 
+        // ── Evacuation ────────────────────────────────────────────────────────────
+
+        // Move everyone off a node and stop it taking new ones. The reason this exists is
+        // an address being blocked: the node is healthy, reachable from everywhere except
+        // where the users are, and every one of them has to be somewhere else within
+        // minutes rather than hours.
+        group.MapPost("/servers/{id:int}/evacuate", async (
+            [FromRoute] int id,
+            IAdminServerService svc,
+            IReservationService reservation,
+            IVpnServerService   servers,
+            INodeNotifier       notifier,
+            ILogger<Program>    log) =>
+        {
+            // First, and before anything is read. The auto-picker only considers active
+            // nodes, so until this lands the fleet is free to hand users straight back to
+            // the node they are being moved off — and with a seat just freed, it is the
+            // least-loaded one, which makes it the pick.
+            try
+            {
+                if (!await svc.SetServerActiveAsync(id, false))
+                    return Results.NotFound(new ApiError($"Server {id} not found."));
+            }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            IReadOnlyList<BoundUser> bound;
+            ServerRow? source;
+            try
+            {
+                bound = await svc.GetBoundUsersAsync(id);
+                source = await servers.GetConnectDataAsync(id);
+            }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            int moved = 0, stayed = 0, failed = 0;
+            var problems = new List<string>();
+
+            foreach (var user in bound)
+            {
+                ReserveResult result;
+                try { result = await reservation.SelectAsync(user.id, null); }
+                catch (Exception ex)
+                {
+                    failed++;
+                    problems.Add($"{user.username}: {ex.Message}");
+                    continue;
+                }
+
+                // SelectAsync keeps the existing binding when nothing has room, and reports
+                // success for it — correct for an ordinary move, wrong to count here. The
+                // user is still on the node being evacuated.
+                if (result.status != ReserveStatus.Ok || result.serverId == id)
+                {
+                    stayed++;
+                    continue;
+                }
+
+                moved++;
+
+                // After the commit, like every other reservation flow. A node call that
+                // fails must not roll the binding back: the database is already the truth,
+                // and the node reconciles its user set from what central tells it.
+                var uuid = user.vpn_uuid.ToString();
+
+                try
+                {
+                    ServerRow? target = await servers.GetConnectDataAsync(result.serverId!.Value);
+                    if (target is not null)
+                        await notifier.AddUserAsync(new NodeTarget(target.host, target.auth_password), uuid);
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    problems.Add($"{user.username}: provision failed on {result.serverId}: {ex.Message}");
+                }
+
+                // Best effort by design. The node is very likely the unreachable one — that
+                // is why this is being run — and failing to tidy it up must not stop the
+                // evacuation. It drops its user set on the next reconcile anyway.
+                try
+                {
+                    if (source is not null)
+                        await notifier.RemoveUserAsync(new NodeTarget(source.host, source.auth_password), uuid);
+                }
+                catch (Exception ex)
+                {
+                    log.LogInformation("Evacuation: could not deprovision {User} from {Server}: {Message}",
+                        user.username, id, ex.Message);
+                }
+            }
+
+            log.LogWarning("Evacuated server {Server}: {Moved} moved, {Stayed} stayed, {Failed} with problems",
+                id, moved, stayed, failed);
+
+            // Re-running is the intended way to finish a partial evacuation: the users who
+            // moved are no longer bound here, so a second pass only sees what is left.
+            return Results.Ok(new EvacuationReport(
+                id, bound.Count, moved, stayed, failed, problems));
+        })
+        .Produces<EvacuationReport>(200)
+        .Produces<ApiError>(404)
+        .WithSummary("Deactivate a node and move every user off it; re-run to retry what is left");
+
+        // Put a node back into rotation after an evacuation, or after maintenance.
+        group.MapPost("/servers/{id:int}/activate", async (
+            [FromRoute] int id,
+            IAdminServerService svc) =>
+        {
+            bool ok;
+            try { ok = await svc.SetServerActiveAsync(id, true); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return ok ? Results.NoContent() : Results.NotFound(new ApiError($"Server {id} not found."));
+        })
+        .Produces(204)
+        .Produces<ApiError>(404)
+        .WithSummary("Put a node back into rotation");
+
         // Grant/extend a COMP (free, service) subscription. This is the manual "purchase":
         // it reserves a node slot (409 no_capacity when the fleet is full) and writes a
         // comp subscription row (the entitlement source of truth), so access survives the

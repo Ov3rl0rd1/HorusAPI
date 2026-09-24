@@ -397,6 +397,15 @@ CERTBOT_STAGING=${CERTBOT_STAGING}
 POSTGRES_DB=${POSTGRES_DB}
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+# ── Monitoring ────────────────────────────────────────────────
+# Read-only password the monitoring server uses to scrape
+# /metrics/host and /metrics/containers. EMPTY DISABLES BOTH (404),
+# which is the right default until a monitoring box exists.
+# Use the same value on every server in the fleet, and never reuse a
+# node's control password: this one may read and nothing else.
+#   openssl rand -hex 24
+METRICS_TOKEN=
 EOF
 
 chmod 600 "$ENV_FILE"

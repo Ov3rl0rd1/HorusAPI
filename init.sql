@@ -113,6 +113,35 @@ CREATE TABLE IF NOT EXISTS email_verifications (
 );
 
 -- ============================================================================
+--  pending_logins  (a ticket for getting back into an UNVERIFIED account)
+--
+--  Issued when someone logs in with the right password to an account whose
+--  e-mail is not confirmed yet. It authorises exactly three things: ask for a
+--  fresh code, correct the address, confirm the code. It is NOT a session —
+--  SessionAuthHandler reads users.sessions[] and never looks here, so a ticket
+--  cannot reach /servers, /billing or anything else a session opens.
+--
+--  Its own table rather than a column on email_verifications because the ticket
+--  outlives individual codes: a user may request three codes and keep one
+--  ticket, and email_verifications rows are replaced wholesale on every send.
+--  Only sha256(token) is stored, so a DB leak cannot be replayed as a ticket.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS pending_logins (
+    token_hash VARCHAR(64) PRIMARY KEY,
+    user_id    INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_logins_user ON pending_logins (user_id);
+
+-- Keeps the unverified-account sweep off the main table: verified accounts are
+-- the overwhelming majority and never match this predicate.
+CREATE INDEX IF NOT EXISTS idx_users_unverified
+    ON users (created_at)
+    WHERE email_verified = FALSE;
+
+-- ============================================================================
 --  password_resets  (one row per emailed reset link)
 --  Only sha256(token) is stored, so a DB leak cannot be replayed as a link.
 -- ============================================================================

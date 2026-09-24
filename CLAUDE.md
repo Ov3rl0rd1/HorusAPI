@@ -50,13 +50,13 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 
 | Group | Auth | Purpose |
 |---|---|---|
-| `/auth` | anonymous | login, register, verify, resend-code, reset-request, reset-check, reset-confirm, logout-others |
+| `/auth` | anonymous | login, register, verify, resend-code, change-email, reset-request, reset-check, reset-confirm, logout-others |
 | `GET /servers` | `X-Session-Key` | ping candidates: least-loaded-with-capacity, one per country ([ServerEndpoints](Endpoints/ServerEndpoints.cs)) |
 | `POST /servers/select` | `X-Session-Key` | reserve/move the caller to a node (auto-picks when `server_id` omitted) |
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
 | `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel` ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
 | `POST /payments/{provider}/webhook` | **anonymous** (secret checked in-adapter, idempotent) | payment provider callbacks |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **evacuate/activate a node**, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
@@ -90,6 +90,27 @@ a freshly registered non-admin user has no access until they buy (this closed th
 - **Promo caveat**: promos are percent-off, first-charge-only → they apply to **one-time** buys; a promo on a recurring plan is refused (`promo_not_applicable`) because Platega recurring charges a fixed amount every period.
 - **Provider reconciliation** (polling for missed webhooks) is a documented follow-up, not yet implemented.
 
+### Evacuating a node
+
+`POST /admin/servers/{id}/evacuate` moves every user off a node and takes it out of rotation;
+`POST /admin/servers/{id}/activate` puts it back. Written for an address being blocked — the
+node is healthy and reachable from everywhere except where the users are.
+
+Two things about it are load-bearing. **`is_active = false` is set before anything is read**:
+the auto-picker only considers active nodes, and a node that has just had a seat freed is the
+least-loaded one, so otherwise the fleet hands each user straight back to the node they are
+being moved off. And **`SelectAsync` returning Ok is not enough** — it keeps the existing
+binding when nothing in the fleet has room, which is right for an ordinary move and a lie
+here, so the result is compared against the source id and counted as `stayed` rather than
+`moved`.
+
+Node calls happen after the commit, like every other reservation flow, and a failure there
+does not roll the binding back: the database is the truth and the node reconciles its user set
+from it. De-provisioning the old node is best effort on purpose — it is very likely the
+unreachable one. The answer is an `EvacuationReport` rather than a 204, and **re-running is
+how a partial evacuation is finished**: the users who moved are no longer bound there, so a
+second pass sees only what is left.
+
 ### Landing page & client downloads (nginx only — the API is not involved)
 
 The site is a single self-contained [nginx/html/index.html](nginx/html/index.html): a
@@ -111,9 +132,97 @@ them against the release's `SHA256SUMS.txt`, and only then flips
 `/download/latest.json` describes it (version, sizes, checksums). The page uses the
 manifest for labels only — the hrefs are static, so downloads survive a failed fetch.
 
+### Monitoring ([monitoring/](monitoring/))
+
+Separate compose project, meant for its **own small VPS** — a watcher on the machine it
+watches cannot report that machine's death. VictoriaMetrics (storage + scraping + vmui) +
+vmalert + Alertmanager (native `telegram_configs`); no Prometheus, no Grafana. ~350 MB RAM,
+~500 MB disk for 30 days of the whole fleet.
+
+**Pull, not push.** VM scrapes every server over the TLS port it already publishes, at
+`/metrics/host` (node-exporter), `/metrics/containers` (cadvisor) and `/metrics/agent` (the
+node agent), all behind nginx HTTP basic auth built from `METRICS_TOKEN` — one fleet-wide,
+read-only value, deliberately **not** any node's `NODE_API_PASSWORD`. Empty token renders
+`return 404;`, so a rebuilt server never starts publishing telemetry on its own. The payoff
+is that a dead server is `up == 0`, an alert; a push design would just go quiet, which is
+indistinguishable from healthy.
+
+Targets live in `monitoring/targets/*.yml` (file_sd, re-read every minute — adding a node
+restarts nothing). Dashboards are vmui custom dashboards in `monitoring/dashboards/`.
+Alert rules: `infra.yml` (host), `horus.yml` (xray, olcrtc rooms, profile render,
+certificate expiry **and name coverage**, container limits) and `blocking.yml`.
+
+**Detecting an RKN IP block needs a vantage point inside Russia** — no check from a foreign
+server can see it. Two signals. The free one is inferred from metrics already collected:
+a node whose xray answers and whose scrape succeeds, with zero users online *and at least
+three online within the last six hours* — that last clause is what separates a block from a
+quiet night or a fresh node. The direct one is `monitoring/ru-probe/`, a blackbox-exporter
+and vmagent on a small Russian VPS that **push** TCP-connect results; it pushes rather than
+serving so nothing has to be opened on it, and it knows only addresses and ports, because a
+box in that jurisdiction should be worthless if seized. `NodeBlockedFromRussia` fires only
+when the probe fails **and we can still reach the node** — otherwise it is an outage, which
+`ServerUnreachable` already covers. Accepting a remote push means turning on VictoriaMetrics'
+`-httpAuth.*` first: it has no authentication of its own, and the same port serves vmui and
+the delete API.
+
+`cadvisor` runs here by default and is **opt-in on nodes** (`COMPOSE_PROFILES=containers`):
+50-80 MB is affordable on this host and is not on a 700 MB/1-core node, where xray's health
+already comes from `/metrics/agent` and an OOM kill shows up in `node_vmstat_oom_kill`.
+
+Logs are not in this stack yet — VictoriaLogs + fluent-bit is the documented follow-up.
+
 ### Email confirmation & password reset
 
 Registration is two-step. `POST /auth/register` creates the account **unverified** (`users.email_verified = FALSE`), mails a 6-digit code from `no-reply@mail.{DOMAIN}`, and answers `202 {status:"unverified"}` — it never returns a session. `POST /auth/verify {email, code}` flips `email_verified` and returns a session (login for an unverified account is refused with `403 code=email_unverified`). `POST /auth/resend-code {email}` re-issues a code. All of this lives in [Services/AccountService.cs](Services/AccountService.cs) + [Endpoints/AuthEndpoints.cs](Endpoints/AuthEndpoints.cs).
+
+**An unfinished registration is recoverable.** Logging in to an unverified account no longer
+dead-ends: `/auth/login` answers `403 code=email_unverified` *plus* a **pending ticket**
+(`pending_logins`, sha256-stored, 30 min, one per account), the masked address, and the
+resend countdown. The ticket is not a session — `SessionAuthHandler` reads `users.sessions[]`
+and never looks at `pending_logins` — and it opens exactly three things: `/auth/resend-code`,
+`/auth/change-email`, `/auth/verify`. `verify` and `resend-code` take either an address or a
+ticket; the ticket path exists because someone who signed in with their **username** was
+never told which address to quote, and what they were shown is masked.
+
+`POST /auth/change-email {pending_token, email}` corrects a typo before confirmation. It
+**deletes the outstanding code**, so one mailed to the old address can never confirm the new
+one, and refuses an address the account already has (otherwise "changing" it to itself would
+reset the cooldown).
+
+**Resend cooldown** (`AccountService.ResendCooldown`, 60 s) sits on top of the 3/hour
+per-address quota and is what the button counts down from. The two paths order their checks
+differently **on purpose**: by ticket, cooldown is checked *before* the quota and the true
+remaining seconds come back (the caller owns the account, nothing can leak). By address the
+quota is charged for **every** address first, and the response always states the *full*
+cooldown — if the quota were charged only on an actual send, an unknown address would
+eventually 429 while a real one in cooldown never would, and that difference is an account
+oracle.
+
+**Three numbers the confirmation screen needs, and the rule they share.** The `403` from `/auth/login` carries `codeExpiresInSeconds` (0 when no live code is pending, so the screen shows nothing rather than counting down from a code that is gone) alongside the resend countdown — both read off one `email_verifications` row. `/auth/verify` returns
+`attemptsLeft` on a wrong code, and a spent hourly quota now answers `429` with `Retry-After`
+(from the fixed-window lease) so the screen can say "next one at 14:35" instead of "later".
+Both follow the same rule as the cooldown: **the number goes back only to a caller who proved
+they own the account.** `attemptsLeft` is therefore ticket-path only — an unregistered address
+reports `0` while a real unconfirmed one reports `4`, which would answer "is there a pending
+registration here". `/auth/register` returns a `pendingToken` (the caller just created the
+account, so it is theirs); **`/auth/resend-code` must never fill that field in** — it is
+anonymous and answers for any address, so a ticket there would hand anyone any account. There
+is a test for each of these three.
+
+The site's confirmation screen ([nginx/html/login.html](nginx/html/login.html) `#state-verify`,
+styles in [css/auth.css](nginx/html/css/auth.css), logic in [js/auth.js](nginx/html/js/auth.js))
+holds its copy in the markup: JS only clears `hidden` on one `.notice` block and fills
+`[data-slot]`. `.auth-code.is-stale` is "this code is dead" (expired or five wrong guesses) —
+the field dims and the primary button becomes "prislat noviy kod", obeying the same cooldown as
+the resend link so the only available action is never presented as unavailable.
+
+[UnverifiedSweeperService](Services/UnverifiedSweeperService.cs) deletes abandoned unverified
+accounts (`Accounts:UnverifiedTtlHours`, default 168; `0` disables) — they otherwise hold a
+username and an address against unique indexes forever, so the person who mistyped cannot even
+sign up again. **Every FK into `users` is `ON DELETE CASCADE`**, so the SQL guards in
+`DeleteStaleUnverifiedAsync` are deliberately broader than the invariants require: no session,
+no `current_server_id`, no `expires_at`, and no row in `subscriptions`/`payments`/`slot_holds`/
+`plan_grants`/`promo_redemptions`. Each guard has a test.
 
 Codes are stored as `sha256("{userId}:{code}")` in `email_verifications` (one row per user, upserted; dies after 5 wrong attempts or 15 min). Reset tokens are stored as `sha256(token)` in `password_resets` (single-use, 60 min). `POST /auth/reset-request {email}` always answers `202 {status:"sent"}` regardless of whether the address exists (no account enumeration) and mails a link to `{PublicUrl}/reset?token=…`. The static reset form ([nginx/html/reset.html](nginx/html/reset.html)) validates the token via `GET /auth/reset-check?token=` then posts to `POST /auth/reset-confirm {token, password}`, which sets the new hash, **wipes every session** (evicting their `IMemoryCache` entries) and marks the email verified.
 
