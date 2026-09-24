@@ -90,7 +90,17 @@ fi
 # job is to decide who may read.
 GATE=/etc/nginx/metrics-gate.conf
 if [ -n "${METRICS_TOKEN}" ]; then
-    htpasswd -bcB /etc/nginx/metrics.htpasswd horus "${METRICS_TOKEN}" >/dev/null 2>&1
+    # stdout is discarded because htpasswd echoes the hash. stderr is NOT: a missing
+    # apache2-utils would otherwise look exactly like success, and the failure would
+    # surface much later as an unexplained 500.
+    htpasswd -bcB /etc/nginx/metrics.htpasswd horus "${METRICS_TOKEN}" >/dev/null
+
+    # The group matters. This script runs as root, but auth_basic_user_file is read on
+    # every request BY THE WORKER, which runs as `nginx` — so a root-only 640 file gives
+    # 500 to every correctly authenticated request while a wrong password still gets a
+    # clean 401. That combination reads as "the password is wrong", which is the one
+    # conclusion it is not.
+    chown root:nginx /etc/nginx/metrics.htpasswd
     chmod 640 /etc/nginx/metrics.htpasswd
     cat > "$GATE" <<'GATECONF'
 auth_basic           "horus metrics";
