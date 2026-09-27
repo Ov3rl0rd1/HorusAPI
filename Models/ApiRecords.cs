@@ -96,5 +96,22 @@ public record BoundUser(int id, string username, Guid vpn_uuid);
 public record EvacuationReport(
     int serverId, int total, int moved, int stayed, int failed, IReadOnlyList<string> problems);
 
+/// <summary>
+/// One row of the admin user search. <c>expires_at</c> is the entitlement cache (see
+/// AccessPolicy), so it answers "does this person have access right now" without a
+/// second lookup; <c>server_name</c> is null when the user holds no seat.
+/// </summary>
+public record UserAdminItem(
+    int       id,
+    string    username,
+    string?   email,
+    bool      email_verified,
+    bool      is_admin,
+    bool      is_active,
+    DateTime  created_at,
+    DateTime? expires_at,
+    int?      current_server_id,
+    string?   server_name);
+
 /// <summary><c>Code</c> is a stable machine-readable tag for clients that need to branch on the failure.</summary>
 public record ApiError(string Message, string? Code = null);

@@ -1,0 +1,161 @@
+/* Черновой вид панели: только чтобы было читаемо. JS на классы не опирается,
+   поэтому этот файл можно выбросить и написать заново целиком. Состояния,
+   которые выставляет JS, — это атрибуты: hidden, aria-current, aria-busy,
+   data-kind у сообщений и data-<флаг>="true|false" на строках. */
+
+:root {
+  --bg: #fff;
+  --fg: #1b1b1f;
+  --muted: #6b6b76;
+  --line: #e3e3e8;
+  --soft: #f5f5f7;
+  --accent: #b8860b;
+  --ok: #1e7b34;
+  --warn: #9a6200;
+  --bad: #b3261e;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141417;
+    --fg: #e8e8ec;
+    --muted: #9a9aa5;
+    --line: #2c2c33;
+    --soft: #1d1d22;
+    --accent: #d4a53c;
+    --ok: #6fcf87;
+    --warn: #e0a84a;
+    --bad: #ff8a80;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+[hidden] { display: none !important; }
+
+a { color: var(--accent); }
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.tabs { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.tabs a { color: var(--muted); text-decoration: none; padding: 4px 0; }
+.tabs a[aria-current="page"] { color: var(--fg); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
+.me { margin-left: auto; color: var(--muted); }
+
+.auth-lost {
+  padding: 10px 16px;
+  background: var(--bad);
+  color: #fff;
+}
+.auth-lost a { color: #fff; font-weight: 600; }
+
+main { padding: 16px; max-width: 1400px; }
+section[aria-busy="true"] { opacity: .6; }
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+}
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 17px; margin: 0; }
+
+.muted { color: var(--muted); }
+.bad { color: var(--bad); }
+.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+
+.notice {
+  white-space: pre-line;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--soft);
+  border-left: 3px solid var(--muted);
+}
+.notice[data-kind="ok"]    { border-color: var(--ok); }
+.notice[data-kind="warn"]  { border-color: var(--warn); }
+.notice[data-kind="error"] { border-color: var(--bad); color: var(--bad); }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--muted); white-space: nowrap; }
+tr[data-active="false"] > td { opacity: .55; }
+tr[data-active="false"] > td.actions { opacity: 1; }
+td.ping { white-space: nowrap; }
+tr[data-pinged="true"][data-reachable="true"]  td.ping { color: var(--ok); }
+tr[data-pinged="true"][data-reachable="false"] td.ping { color: var(--bad); }
+tr[data-status="refunded"] > td, tr[data-status="canceled"] > td, tr[data-status="failed"] > td { color: var(--muted); }
+.actions { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+.tag--warn { color: var(--warn); border-color: currentColor; }
+
+button {
+  font: inherit;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--fg);
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button[aria-busy="true"] { cursor: wait; opacity: .6; }
+button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; }
+
+input {
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+form.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 12px;
+  align-items: end;
+  margin-top: 8px;
+}
+form.grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
+form.grid input { color: var(--fg); }
+
+.box {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+summary { cursor: pointer; font-weight: 600; }
+
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }

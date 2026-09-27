@@ -14,6 +14,28 @@ public static class AdminEndpoints
             .RequireAuthorization("AdminOnly")
             .RequireRateLimiting(RateLimitPolicies.Admin);
 
+        // The site's admin panel (/panel) is gated by nginx's auth_request on this route:
+        // 204 lets the file through, and the 401/403 an ordinary visitor gets here is
+        // turned into a plain 404 there. The group's policy does the whole check, so the
+        // handler has nothing left to decide — which is exactly why it cannot get it wrong.
+        group.MapGet("/gate", () => Results.NoContent())
+            .Produces(204)
+            .WithSummary("204 for an admin session; nginx gates the /panel pages on it");
+
+        // Find a user to act on. The subscription/grant routes below take a username, and
+        // payments name users by id — this is how an admin gets from either to the other.
+        group.MapGet("/users", async ([FromQuery] string? q, IAdminServerService svc) =>
+        {
+            if (q?.Length > 128)
+                return Results.BadRequest(new ApiError("Query is too long."));
+
+            try { return Results.Ok(await svc.SearchUsersAsync(q)); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+        })
+        .Produces<IReadOnlyList<UserAdminItem>>(200)
+        .Produces<ApiError>(400)
+        .WithSummary("Search users by username, e-mail or id (up to 50; newest first when q is empty)");
+
         // Ping all servers
         group.MapPost("/servers/ping", async (IAdminServerService svc) =>
         {
@@ -409,7 +431,7 @@ public static class AdminEndpoints
             try { return Results.Ok(await plans.ListPaymentsAsync(user)); }
             catch { return Results.Problem("Database error.", statusCode: 503); }
         })
-        .Produces<IReadOnlyList<PaymentRow>>(200)
+        .Produces<IReadOnlyList<PaymentAdminItem>>(200)
         .WithSummary("List payments (optionally filtered by ?user=username).");
 
         // ── Promo codes ─────────────────────────────────────────────────────────────

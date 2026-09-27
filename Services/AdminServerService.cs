@@ -12,6 +12,12 @@ public interface IAdminServerService
     Task<IEnumerable<PingResult>> PingAllServersAsync();
     Task<User?> GetByUsernameAsync(string username);
 
+    /// <summary>
+    /// Up to 50 users whose username or e-mail contains <paramref name="query"/>, or whose id
+    /// it is; the most recent 50 when it is empty.
+    /// </summary>
+    Task<IReadOnlyList<UserAdminItem>> SearchUsersAsync(string? query);
+
     // ── xray profiles ────────────────────────────────────────────────────────
 
     /// <summary>What every node is running versus what it was told to run.</summary>
@@ -46,7 +52,7 @@ public class AdminServerService(
     // Column list backing a ServerAdminItem (names match the record parameters).
     private const string AdminColumns =
         "id, name, country, city, host, current_load, max_clients, max_reservations, is_active, " +
-        "auth_password, masquerade_url, profile, agent_version, last_registered_at";
+        "auth_password, masquerade_url, profile, agent_version, last_registered_at, reserved_count";
 
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
@@ -122,6 +128,35 @@ public class AdminServerService(
         const string sql = "SELECT * FROM users WHERE username = @Username LIMIT 1";
         await using var conn = Connect();
         return await conn.QuerySingleOrDefaultAsync<User>(sql, new { Username = username });
+    }
+
+    public async Task<IReadOnlyList<UserAdminItem>> SearchUsersAsync(string? query)
+    {
+        const string sql = """
+            SELECT u.id, u.username, u.email, u.email_verified, u.is_admin, u.is_active,
+                   u.created_at, u.expires_at, u.current_server_id, s.name AS server_name
+            FROM users u
+            LEFT JOIN vpn_servers s ON s.id = u.current_server_id
+            WHERE @Q = ''
+               OR u.username ILIKE @Pattern
+               OR u.email    ILIKE @Pattern
+               OR u.id = @Id
+            ORDER BY u.id DESC
+            LIMIT 50
+            """;
+
+        var q = (query ?? "").Trim();
+
+        // What the admin typed is a substring, not a pattern: an address like
+        // "first_last@…" must not match "firstXlast@…" because '_' is a LIKE wildcard.
+        // Backslash is PostgreSQL's default LIKE escape, so no ESCAPE clause is needed.
+        var pattern = "%" + q.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_") + "%";
+
+        // A number is also tried as an id — payments and logs name users by id.
+        int? id = int.TryParse(q, out var n) ? n : null;
+
+        await using var conn = Connect();
+        return [.. await conn.QueryAsync<UserAdminItem>(sql, new { Q = q, Pattern = pattern, Id = id })];
     }
 
     // ── xray profiles ────────────────────────────────────────────────────────

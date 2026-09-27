@@ -56,7 +56,7 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
 | `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel` ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
 | `POST /payments/{provider}/webhook` | **anonymous** (secret checked in-adapter, idempotent) | payment provider callbacks |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **evacuate/activate a node**, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **evacuate/activate a node**, user search, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes, `gate` (204 — nginx gates `/panel` on it) |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
@@ -131,6 +131,26 @@ them against the release's `SHA256SUMS.txt`, and only then flips
 `/download/`, so `/download/Horus-win-x64.msi` is always the newest build and
 `/download/latest.json` describes it (version, sizes, checksums). The page uses the
 manifest for labels only — the hrefs are static, so downloads survive a failed fetch.
+
+### Admin panel ([nginx/panel/](nginx/panel/))
+
+`/panel` is a plain page over the `/admin/*` API: nodes (evacuate/activate, profiles, ping,
+add), user search + comp/plan grants, payments + refunds, promo codes. **Everyone but an
+admin gets the same 404 as any missing path** — byte for byte, headers included.
+
+nginx decides with `auth_request` → `GET /admin/gate` (204 for an admin). A browser
+navigation cannot send `X-Session-Key`, so [js/session.js](nginx/html/js/session.js) mirrors
+the session into a `horus_panel` cookie scoped to `Path=/panel` (`SameSite=Lax` so a link
+from Telegram still works) and rewrites it on every page load — an admin who signed in
+before the panel existed only has to open any page of the site once. The gate turns the
+API's 401 into 403 before `auth_request` sees it, because on a 401 `auth_request` copies
+`WWW-Authenticate` from the raw upstream headers, where `proxy_hide_header` does not reach.
+
+The files are **outside the public root** (`/usr/share/nginx/panel`), so a lost gate makes
+them unreachable rather than public. The markup is free to change: JS binds only through
+`data-*` attributes (the contract is at the top of `bind.js`), never classes, and the copy
+lives in the markup. `ask` in `bind.js` is the one place that shows dialogs (currently
+`confirm`/`prompt`) — replace it there when a styled dialog exists.
 
 ### Monitoring ([monitoring/](monitoring/))
 

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Админка — Horus</title>
+<link rel="icon" type="image/svg+xml" href="/logo-gold.svg">
+<!-- Пути абсолютные: страница отдаётся по адресу /panel без слеша, и
+     относительный panel.css искался бы в корне сайта. -->
+<link rel="stylesheet" href="/panel/panel.css">
+<script type="module" src="/panel/panel.js"></script>
+</head>
+<body>
+
+<!--
+  Разметка панели свободна: классы, обёртки, порядок и сами теги можно менять
+  как угодно. JS опирается только на data-атрибуты — их список и смысл в
+  начале bind.js. Тексты живут здесь, в разметке; JS вписывает только значения.
+-->
+
+<header class="top">
+  <strong class="brand">Horus · админка</strong>
+  <nav class="tabs">
+    <a href="#servers"  data-show="servers">Ноды</a>
+    <a href="#users"    data-show="users">Пользователи</a>
+    <a href="#payments" data-show="payments">Платежи</a>
+    <a href="#promos"   data-show="promos">Промокоды</a>
+  </nav>
+  <span class="me"><span data-slot="me"></span> · <a href="/cabinet">на сайт</a></span>
+</header>
+
+<div class="auth-lost" data-auth-lost hidden>
+  Сессия закончилась или больше не админская. <a href="/login">Войти заново</a>
+</div>
+
+<main>
+
+  <!-- ── Ноды ─────────────────────────────────────────────────────────── -->
+  <section data-view="servers" hidden>
+    <div class="head">
+      <h1>Ноды</h1>
+      <div class="tools">
+        <button type="button" data-action="refresh-servers">Обновить</button>
+        <button type="button" data-action="ping-servers">Пинг сайтов-масок</button>
+      </div>
+    </div>
+
+    <p class="muted">
+      Профиль парка: <b data-slot="fleetProfile"></b> ·
+      нод <span data-slot="fleetNodes"></span>, со своим профилем <span data-slot="fleetOverridden"></span>
+      <button type="button" class="link" data-action="fleet-profile">сменить</button>
+    </p>
+
+    <p class="notice" data-notice hidden></p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Нода</th><th>Места</th><th>Онлайн</th><th>Профиль</th><th>Агент</th><th>Пинг</th><th></th>
+          </tr>
+        </thead>
+        <tbody data-list="servers"></tbody>
+      </table>
+    </div>
+    <p class="muted" data-empty="servers" hidden>Нод пока нет.</p>
+
+    <template data-template="servers">
+      <tr>
+        <td data-slot="id"></td>
+        <td>
+          <b data-slot="name"></b>
+          <span class="tag tag--warn" data-when="!active">вне ротации</span>
+          <div class="muted"><span data-slot="place"></span> · <span data-slot="host"></span></div>
+        </td>
+        <td>
+          <span data-slot="seats"></span>
+          <span class="tag tag--warn" data-when="full">заполнена</span>
+        </td>
+        <td data-slot="online"></td>
+        <td>
+          <span data-slot="profile"></span>
+          <span class="tag" data-when="override">свой</span>
+          <div class="muted" data-when="!inSync">ждёт переключения на <span data-slot="assigned"></span></div>
+          <div class="bad" data-when="renderError" data-slot="renderError"></div>
+          <div class="muted" data-when="warnings" data-slot="warnings"></div>
+        </td>
+        <td>
+          <span data-slot="version"></span>
+          <div class="muted" data-slot="seen"></div>
+        </td>
+        <td class="ping" data-slot="ping"></td>
+        <td class="actions">
+          <button type="button" data-action="evacuate" data-when="active"
+                  data-confirm="Вывести {name} из ротации и перенести всех её пользователей на другие ноды?">Эвакуировать</button>
+          <button type="button" data-action="activate" data-when="!active"
+                  data-confirm="Вернуть {name} в ротацию? Новые пользователи снова смогут на неё попадать.">Вернуть</button>
+          <button type="button" data-action="server-profile">Профиль</button>
+          <button type="button" data-action="server-secret">Пароль</button>
+          <button type="button" data-action="remove-server"
+                  data-confirm="Удалить {name} (#{id})? Пользователи с неё никуда не переедут — сначала эвакуируйте.">Удалить</button>
+        </td>
+      </tr>
+    </template>
+
+    <details class="box">
+      <summary>Добавить ноду</summary>
+      <form data-form="add-server" class="grid">
+        <label>Название <input name="name" required maxlength="128"></label>
+        <label>Страна <input name="country" required maxlength="64"></label>
+        <label>Город <input name="city" required maxlength="64"></label>
+        <label>Хост <input name="host" required maxlength="256" placeholder="node1.example.com"></label>
+        <label>Рекомендуемо клиентов <input name="max_clients" type="number" min="1" required></label>
+        <label>Жёсткий предел мест <input name="max_reservations" type="number" min="1" placeholder="×1,5 если пусто"></label>
+        <label>Сайт-маска <input name="masquerade_url" type="url" placeholder="https://…"></label>
+        <label>Пароль ноды <input name="auth_password" placeholder="NODE_API_PASSWORD"></label>
+        <div><button type="submit">Добавить</button></div>
+      </form>
+      <p class="muted">Протоколы, ключи и порты нода сообщит сама при первой регистрации агента.</p>
+    </details>
+  </section>
+
+  <!-- ── Пользователи ─────────────────────────────────────────────────── -->
+  <section data-view="users" hidden>
+    <div class="head">
+      <h1>Пользователи</h1>
+      <form data-form="user-search" class="inline" role="search">
+        <input name="q" type="search" placeholder="имя, e-mail или id" autocomplete="off">
+        <button type="submit">Найти</button>
+      </form>
+    </div>
+
+    <p class="notice" data-notice hidden></p>
+
+    <article class="box" data-card="user" hidden>
+      <div class="head">
+        <h2 data-slot="username"></h2>
+        <button type="button" class="link" data-action="close-user">закрыть</button>
+      </div>
+      <dl class="facts">
+        <dt>id</dt><dd data-slot="id"></dd>
+        <dt>E-mail</dt>
+        <dd><span data-slot="email"></span> <span class="tag tag--warn" data-when="!verified">не подтверждён</span></dd>
+        <dt>Доступ</dt>
+        <dd><span data-slot="access"></span> <span class="tag tag--warn" data-when="!enabled">отключён</span></dd>
+        <dt>Нода</dt><dd data-slot="server"></dd>
+        <dt>Регистрация</dt><dd data-slot="created"></dd>
+      </dl>
+
+      <form data-form="comp" class="inline">
+        <label>Служебный доступ до <input name="until" type="date" required></label>
+        <button type="submit">Выдать</button>
+        <button type="button" data-action="revoke-comp"
+                data-confirm="Снять служебный доступ у {username}? Место на ноде освободится. Оплаченные подписки это не трогает.">Снять</button>
+      </form>
+      <p class="muted">Выдача занимает место на ноде. Если свободных нет во всём парке, API откажет.</p>
+
+      <form data-form="grant-plan" class="inline">
+        <label>Открыть закрытый тариф <input name="plan_code" required placeholder="код тарифа"></label>
+        <label>до <input name="until" type="date"></label>
+        <button type="submit">Открыть</button>
+      </form>
+
+      <p><button type="button" data-action="user-payments">Платежи пользователя →</button></p>
+    </article>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Имя</th><th>E-mail</th><th>Доступ</th><th>Нода</th><th>Регистрация</th></tr>
+        </thead>
+        <tbody data-list="users"></tbody>
+      </table>
+    </div>
+    <p class="muted" data-empty="users" hidden>Никого не нашлось.</p>
+
+    <template data-template="users">
+      <tr>
+        <td data-slot="id"></td>
+        <td>
+          <button type="button" class="link" data-action="pick-user" data-slot="username"></button>
+          <span class="tag" data-when="admin">админ</span>
+        </td>
+        <td>
+          <span data-slot="email"></span>
+          <span class="tag tag--warn" data-when="!verified">не подтверждён</span>
+        </td>
+        <td data-slot="access"></td>
+        <td data-slot="server"></td>
+        <td class="muted" data-slot="created"></td>
+      </tr>
+    </template>
+  </section>
+
+  <!-- ── Платежи ──────────────────────────────────────────────────────── -->
+  <section data-view="payments" hidden>
+    <div class="head">
+      <h1>Платежи</h1>
+      <form data-form="payment-search" class="inline">
+        <input name="user" type="search" placeholder="имя пользователя, пусто — все" autocomplete="off">
+        <button type="submit">Показать</button>
+      </form>
+    </div>
+
+    <p class="muted">
+      Показано <span data-slot="paymentsCount"></span> (не больше 500 последних),
+      оплачено на <span data-slot="paymentsTotal"></span>.
+    </p>
+
+    <p class="notice" data-notice hidden></p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Дата</th><th>Пользователь</th><th>Тариф</th><th>Сумма</th><th>Статус</th><th>У провайдера</th><th></th></tr>
+        </thead>
+        <tbody data-list="payments"></tbody>
+      </table>
+    </div>
+    <p class="muted" data-empty="payments" hidden>Платежей нет.</p>
+
+    <template data-template="payments">
+      <tr>
+        <td data-slot="id"></td>
+        <td data-slot="created"></td>
+        <td>
+          <button type="button" class="link" data-action="payment-user" data-slot="user"></button>
+          <span class="muted">#<span data-slot="userId"></span></span>
+        </td>
+        <td><span data-slot="plan"></span> <span class="muted" data-slot="kind"></span></td>
+        <td><span data-slot="amount"></span> <span class="muted" data-when="discounted" data-slot="discount"></span></td>
+        <td data-slot="status"></td>
+        <td class="muted mono" data-slot="ref"></td>
+        <td class="actions">
+          <button type="button" data-action="refund" data-when="confirmed">Возврат</button>
+        </td>
+      </tr>
+    </template>
+  </section>
+
+  <!-- ── Промокоды ────────────────────────────────────────────────────── -->
+  <section data-view="promos" hidden>
+    <div class="head">
+      <h1>Промокоды</h1>
+    </div>
+
+    <p class="notice" data-notice hidden></p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Код</th><th>Скидка</th><th>Использован</th><th>На человека</th><th>Тариф</th><th>Срок</th><th></th></tr>
+        </thead>
+        <tbody data-list="promos"></tbody>
+      </table>
+    </div>
+    <p class="muted" data-empty="promos" hidden>Промокодов нет.</p>
+
+    <template data-template="promos">
+      <tr>
+        <td class="mono">
+          <span data-slot="code"></span>
+          <span class="tag tag--warn" data-when="!active">выключен</span>
+        </td>
+        <td data-slot="percent"></td>
+        <td data-slot="used"></td>
+        <td data-slot="perUser"></td>
+        <td data-slot="plan"></td>
+        <td data-slot="period"></td>
+        <td class="actions">
+          <button type="button" data-action="deactivate-promo" data-when="active"
+                  data-confirm="Выключить промокод {code}?">Выключить</button>
+        </td>
+      </tr>
+    </template>
+
+    <details class="box">
+      <summary>Новый промокод</summary>
+      <form data-form="add-promo" class="grid">
+        <label>Код <input name="code" required maxlength="64"></label>
+        <label>Скидка, % <input name="percent_off" type="number" min="1" max="100" required></label>
+        <label>Всего использований <input name="max_redemptions" type="number" min="1" placeholder="без предела"></label>
+        <label>На одного человека <input name="per_user_limit" type="number" min="1" placeholder="без предела"></label>
+        <label>Только для тарифа <input name="plan_code" placeholder="код, пусто — любой"></label>
+        <label>С <input name="starts_at" type="date"></label>
+        <label>По <input name="ends_at" type="date"></label>
+        <div><button type="submit">Создать</button></div>
+      </form>
+      <p class="muted">Скидка действует только на разовые покупки: регулярный платёж провайдер списывает фиксированной суммой.</p>
+    </details>
+  </section>
+
+</main>
+</body>
+</html>
