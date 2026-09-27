@@ -38,6 +38,12 @@ public sealed record SubscriptionView(
 
 // ── Admin API DTOs ─────────────────────────────────────────────────────────────
 
+/// <summary>A payment as the admin list shows it: the row, plus who paid, for what, and when.</summary>
+public sealed record PaymentAdminItem(
+    int id, int user_id, string username, int? plan_id, string? plan_code, int? subscription_id,
+    string provider, string? provider_ref, string kind, int amount, string currency,
+    int? promo_code_id, int discount, string status, int? hold_id, DateTime created_at);
+
 public sealed record GrantBody(string plan_code, DateTime? expires_at);
 public sealed record CompBody(DateTime expires_at);
 public sealed record RefundBody(int? amount, string? reason);

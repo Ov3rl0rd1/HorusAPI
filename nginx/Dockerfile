@@ -13,6 +13,9 @@ COPY nginx-http.conf       /etc/nginx/nginx-http-template.conf
 COPY locations.conf        /etc/nginx/locations.conf
 COPY security-headers.conf /etc/nginx/security-headers.conf
 COPY html/                 /usr/share/nginx/html/
+# Outside html/ on purpose: served only through the admin gate in locations.conf,
+# so a lost or broken gate makes the panel unreachable, never public.
+COPY panel/                /usr/share/nginx/panel/
 COPY sync-releases.sh  /sync-releases.sh
 COPY entrypoint.sh     /entrypoint.sh
 RUN chmod +x /entrypoint.sh /sync-releases.sh

@@ -18,4 +18,5 @@ public record ServerAdminItem(
     string?   masquerade_url,
     string    profile,
     string    agent_version,
-    DateTime? last_registered_at);
+    DateTime? last_registered_at,
+    int       reserved_count);   // what capacity is measured on — max_reservations is its cap

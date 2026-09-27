@@ -34,7 +34,7 @@ public interface IPlanService
     Task<bool> CreatePromoAsync(PromoUpsertBody body);
     Task<IReadOnlyList<PromoRow>> ListPromosAsync();
     Task<bool> DeactivatePromoAsync(string code);
-    Task<IReadOnlyList<PaymentRow>> ListPaymentsAsync(string? username);
+    Task<IReadOnlyList<PaymentAdminItem>> ListPaymentsAsync(string? username);
 }
 
 public class PlanService(IConfiguration cfg, IEntitlementService entitlement) : IPlanService
@@ -213,18 +213,25 @@ public class PlanService(IConfiguration cfg, IEntitlementService entitlement) : 
         return await conn.ExecuteAsync("UPDATE promo_codes SET is_active = FALSE WHERE lower(code) = lower(@code)", new { code }) > 0;
     }
 
-    public async Task<IReadOnlyList<PaymentRow>> ListPaymentsAsync(string? username)
+    public async Task<IReadOnlyList<PaymentAdminItem>> ListPaymentsAsync(string? username)
     {
-        const string cols = "id, user_id, plan_id, subscription_id, provider, provider_ref, kind, amount, currency, promo_code_id, discount, status, hold_id";
+        // Column order is the record's parameter order — classic Dapper binds a positional
+        // record through its constructor, and matches it column by column.
+        const string sql = """
+            SELECT p.id, p.user_id, u.username, p.plan_id, pl.code AS plan_code, p.subscription_id,
+                   p.provider, p.provider_ref, p.kind, p.amount, p.currency, p.promo_code_id,
+                   p.discount, p.status, p.hold_id, p.created_at
+            FROM payments p
+            JOIN users u       ON u.id  = p.user_id
+            LEFT JOIN plans pl ON pl.id = p.plan_id
+            WHERE @username::text IS NULL OR u.username = @username
+            ORDER BY p.id DESC
+            LIMIT 500
+            """;
+
+        var filter = string.IsNullOrWhiteSpace(username) ? null : username.Trim();
+
         await using var conn = Connect();
-        if (string.IsNullOrWhiteSpace(username))
-        {
-            var all = await conn.QueryAsync<PaymentRow>($"SELECT {cols} FROM payments ORDER BY id DESC LIMIT 500");
-            return all.ToList();
-        }
-        var rows = await conn.QueryAsync<PaymentRow>(
-            $"SELECT {cols} FROM payments WHERE user_id = (SELECT id FROM users WHERE username = @username) ORDER BY id DESC LIMIT 500",
-            new { username });
-        return rows.ToList();
+        return (await conn.QueryAsync<PaymentAdminItem>(sql, new { username = filter })).ToList();
     }
 }
