@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using HorusAPI.Models;
 using HorusAPI.Services;
 using HorusAPI.Services.Billing;
+using HorusAPI.Services.Auth_Handler;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace HorusAPI.Endpoints;
 
@@ -189,8 +191,8 @@ public static class AdminEndpoints
             [FromRoute] int id,
             IAdminServerService svc,
             IReservationService reservation,
-            IVpnServerService   servers,
             INodeNotifier       notifier,
+            IMemoryCache        cache,
             ILogger<Program>    log) =>
         {
             // First, and before anything is read. The auto-picker only considers active
@@ -205,11 +207,13 @@ public static class AdminEndpoints
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
             IReadOnlyList<BoundUser> bound;
-            ServerRow? source;
+            NodeEndpoint? source;
             try
             {
                 bound = await svc.GetBoundUsersAsync(id);
-                source = await servers.GetConnectDataAsync(id);
+                // Not the connect-path read: that one only returns active nodes, and this one
+                // was just switched off — de-provisioning would silently never happen.
+                source = await svc.GetNodeEndpointAsync(id);
             }
             catch { return Results.Problem("Database error.", statusCode: 503); }
 
@@ -218,8 +222,8 @@ public static class AdminEndpoints
 
             foreach (var user in bound)
             {
-                ReserveResult result;
-                try { result = await reservation.SelectAsync(user.id, null); }
+                MoveResult result;
+                try { result = await reservation.MoveOffAsync(user.id, id, null); }
                 catch (Exception ex)
                 {
                     failed++;
@@ -227,10 +231,13 @@ public static class AdminEndpoints
                     continue;
                 }
 
-                // SelectAsync keeps the existing binding when nothing has room, and reports
-                // success for it — correct for an ordinary move, wrong to count here. The
-                // user is still on the node being evacuated.
-                if (result.status != ReserveStatus.Ok || result.serverId == id)
+                // Left the node on their own between the list being read and now — there is
+                // nothing to do, and moving them again would take them off wherever they went.
+                if (result.status == MoveStatus.NotOnServer) continue;
+
+                // Nowhere in the fleet had room. The user is still on the node being evacuated,
+                // and saying so is the point of the report.
+                if (result.status != MoveStatus.Moved)
                 {
                     stayed++;
                     continue;
@@ -238,35 +245,12 @@ public static class AdminEndpoints
 
                 moved++;
 
-                // After the commit, like every other reservation flow. A node call that
-                // fails must not roll the binding back: the database is already the truth,
-                // and the node reconciles its user set from what central tells it.
-                var uuid = user.vpn_uuid.ToString();
-
-                try
-                {
-                    ServerRow? target = await servers.GetConnectDataAsync(result.serverId!.Value);
-                    if (target is not null)
-                        await notifier.AddUserAsync(new NodeTarget(target.host, target.auth_password), uuid);
-                }
-                catch (Exception ex)
+                var problem = await AfterMoveAsync(user.id, user.username, user.vpn_uuid, source,
+                    result.serverId!.Value, svc, notifier, cache, log);
+                if (problem is not null)
                 {
                     failed++;
-                    problems.Add($"{user.username}: provision failed on {result.serverId}: {ex.Message}");
-                }
-
-                // Best effort by design. The node is very likely the unreachable one — that
-                // is why this is being run — and failing to tidy it up must not stop the
-                // evacuation. It drops its user set on the next reconcile anyway.
-                try
-                {
-                    if (source is not null)
-                        await notifier.RemoveUserAsync(new NodeTarget(source.host, source.auth_password), uuid);
-                }
-                catch (Exception ex)
-                {
-                    log.LogInformation("Evacuation: could not deprovision {User} from {Server}: {Message}",
-                        user.username, id, ex.Message);
+                    problems.Add(problem);
                 }
             }
 
@@ -281,6 +265,81 @@ public static class AdminEndpoints
         .Produces<EvacuationReport>(200)
         .Produces<ApiError>(404)
         .WithSummary("Deactivate a node and move every user off it; re-run to retry what is left");
+
+        // Move ONE user off a node, leaving the node in rotation. For the user whose address is
+        // the one being blocked, or to rebalance by hand. server_id picks the destination;
+        // omitted, it is the least-loaded other active node.
+        group.MapPost("/servers/{id:int}/users/{userId:int}/evacuate", async (
+            [FromRoute] int id,
+            [FromRoute] int userId,
+            [FromBody]  MoveUserRequest? req,
+            IAdminServerService svc,
+            IReservationService reservation,
+            INodeNotifier       notifier,
+            IMemoryCache        cache,
+            ILogger<Program>    log) =>
+        {
+            User? user;
+            NodeEndpoint? source;
+            MoveResult result;
+            try
+            {
+                user = await svc.GetUserByIdAsync(userId);
+                if (user is null) return Results.NotFound(new ApiError($"User {userId} not found.", "user_not_found"));
+
+                source = await svc.GetNodeEndpointAsync(id);
+                result = await reservation.MoveOffAsync(userId, id, req?.server_id);
+            }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            switch (result.status)
+            {
+                case MoveStatus.NotOnServer:
+                    return Results.Json(new ApiError($"{user.username} is not on server {id}.", "not_on_server"), statusCode: 409);
+                case MoveStatus.SameServer:
+                    return Results.BadRequest(new ApiError("The user is already on that server.", "same_server"));
+                case MoveStatus.TargetNotFound:
+                    return Results.NotFound(new ApiError($"Server {req?.server_id} not found.", "target_not_found"));
+                case MoveStatus.TargetInactive:
+                    return Results.Json(new ApiError($"Server {req?.server_id} is out of rotation.", "target_inactive"), statusCode: 409);
+                case MoveStatus.NoCapacity:
+                    return Results.Json(new ApiError(req?.server_id is null
+                        ? "No other node has a free seat."
+                        : $"Server {req.server_id} is full.", "no_capacity"), statusCode: 409);
+            }
+
+            int to = result.serverId!.Value;
+            var problem = await AfterMoveAsync(user.id, user.username, user.vpn_uuid, source, to, svc, notifier, cache, log);
+
+            NodeEndpoint? target = null;
+            try { target = await svc.GetNodeEndpointAsync(to); } catch { /* the name is cosmetic */ }
+
+            log.LogWarning("Admin moved user {User} off server {From} to {To}", user.username, id, to);
+
+            return Results.Ok(new UserMoveReport(
+                user.id, user.username, id, to, target?.name ?? $"#{to}",
+                problem is null ? [] : [problem]));
+        })
+        .Produces<UserMoveReport>(200)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(404)
+        .Produces<ApiError>(409)
+        .WithSummary("Move one user off a node (to server_id, or the least-loaded other node); the node stays in rotation");
+
+        // One node in detail: counters, profile state, the offers it serves, and who is on it.
+        group.MapGet("/servers/{id:int}", async ([FromRoute] int id, IAdminServerService svc) =>
+        {
+            ServerDetail? detail;
+            try { detail = await svc.GetServerDetailAsync(id); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return detail is null
+                ? Results.NotFound(new ApiError($"Server {id} not found.", "server_not_found"))
+                : Results.Ok(detail);
+        })
+        .Produces<ServerDetail>(200)
+        .Produces<ApiError>(404)
+        .WithSummary("One node in detail: capacity counters, profile state, offers, bound users");
 
         // Put a node back into rotation after an evacuation, or after maintenance.
         group.MapPost("/servers/{id:int}/activate", async (
@@ -397,6 +456,97 @@ public static class AdminEndpoints
         .Produces<ApiError>(404)
         .WithSummary("Grant a user access to a non-public plan (для своих).");
 
+        // What a user may buy beyond the public catalogue — for the user card in the panel.
+        group.MapGet("/users/{username}/grants", async ([FromRoute] string username, IPlanService plans) =>
+        {
+            IReadOnlyList<PlanGrantItem>? grants;
+            try { grants = await plans.ListGrantsForUserAsync(username); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return grants is null ? Results.NotFound(new ApiError($"User {username} not found.")) : Results.Ok(grants);
+        })
+        .Produces<IReadOnlyList<PlanGrantItem>>(200)
+        .Produces<ApiError>(404)
+        .WithSummary("A user's grants to non-public plans, expired ones included (expires_at null = never expires).");
+
+        // Take the right to buy a closed plan away. A subscription already bought on it stays.
+        group.MapDelete("/users/{username}/grants/{planCode}", async (
+            [FromRoute] string username, [FromRoute] string planCode, IPlanService plans) =>
+        {
+            bool ok;
+            try { ok = await plans.RevokeGrantAsync(username, planCode); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return ok ? Results.NoContent() : Results.NotFound(new ApiError("No such grant."));
+        })
+        .Produces(204)
+        .Produces<ApiError>(404)
+        .WithSummary("Revoke a user's grant to a non-public plan (an existing subscription on it is untouched).");
+
+        // ── Plans (the tariff catalogue) ────────────────────────────────────────────
+        // There is no DELETE on purpose: payments and subscriptions keep a plan_id, and a promo
+        // tied to a plan is removed with it (ON DELETE CASCADE). is_active = false takes a plan
+        // off sale and keeps the history readable.
+
+        group.MapGet("/plans", async (IPlanService plans) =>
+        {
+            try { return Results.Ok(await plans.ListPlansAdminAsync()); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+        })
+        .Produces<IReadOnlyList<PlanAdminItem>>(200)
+        .WithSummary("Every plan, hidden and inactive ones included, with live subscription and grant counts.");
+
+        group.MapPost("/plans", async ([FromBody] PlanUpsertBody? req, IPlanService plans) =>
+        {
+            if (PlanService.Validate(req, creating: true) is string error)
+                return Results.BadRequest(new ApiError(error, "invalid_plan"));
+
+            (PlanWriteStatus status, int id) res;
+            try { res = await plans.CreatePlanAsync(req!); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return res.status == PlanWriteStatus.Exists
+                ? Results.Json(new ApiError($"A plan with code '{req!.code!.Trim()}' already exists.", "plan_exists"), statusCode: 409)
+                : Results.Created($"/admin/plans/{res.id}", new { id = res.id, code = req!.code!.Trim() });
+        })
+        .Produces(201)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(409)
+        .WithSummary("Create a plan. Codes are unique case-insensitively.");
+
+        group.MapPut("/plans/{id:int}", async ([FromRoute] int id, [FromBody] PlanUpsertBody? req, IPlanService plans) =>
+        {
+            if (PlanService.Validate(req, creating: false) is string error)
+                return Results.BadRequest(new ApiError(error, "invalid_plan"));
+
+            PlanWriteStatus status;
+            try { status = await plans.UpdatePlanAsync(id, req!); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return status switch
+            {
+                PlanWriteStatus.NotFound => Results.NotFound(new ApiError($"Plan {id} not found.", "plan_not_found")),
+                PlanWriteStatus.InUse    => Results.Json(new ApiError(
+                    "The plan has pending or live subscriptions: its kind and interval cannot change. Create a new plan instead.",
+                    "plan_in_use"), statusCode: 409),
+                _ => Results.Ok((await plans.ListPlansAdminAsync(id)).FirstOrDefault()),
+            };
+        })
+        .Produces<PlanAdminItem>(200)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(404)
+        .Produces<ApiError>(409)
+        .WithSummary("Replace a plan's fields (code is fixed). Kind/interval are frozen while subscriptions depend on them.");
+
+        group.MapGet("/plans/{id:int}/grants", async ([FromRoute] int id, IPlanService plans) =>
+        {
+            IReadOnlyList<PlanGrantItem>? grants;
+            try { grants = await plans.ListGrantsForPlanAsync(id); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return grants is null ? Results.NotFound(new ApiError($"Plan {id} not found.", "plan_not_found")) : Results.Ok(grants);
+        })
+        .Produces<IReadOnlyList<PlanGrantItem>>(200)
+        .Produces<ApiError>(404)
+        .WithSummary("Everyone granted a plan, expired grants included.");
+
         // ── Refunds (support only) ──────────────────────────────────────────────────
 
         group.MapPost("/payments/{id:int}/refund", async (
@@ -467,5 +617,54 @@ public static class AdminEndpoints
         .Produces(204)
         .Produces<ApiError>(404)
         .WithSummary("Deactivate a promo code.");
+    }
+
+    /// <summary>
+    /// Everything a move needs after its transaction has committed: provision the new node,
+    /// de-provision the old one, and drop the user's cached sessions (current_server_id moved).
+    ///
+    /// A failure here never rolls the binding back — the database is already the truth, and a
+    /// node reconciles its user set from it. Provisioning the new node is reported, because the
+    /// user cannot connect until it lands; de-provisioning the old one is only logged, because
+    /// that node is very likely the unreachable one and is the reason this is being run.
+    /// </summary>
+    /// <returns>A line for the report when the new node could not be provisioned, else null.</returns>
+    private static async Task<string?> AfterMoveAsync(
+        int userId, string username, Guid vpnUuid, NodeEndpoint? source, int targetId,
+        IAdminServerService svc, INodeNotifier notifier, IMemoryCache cache, ILogger log)
+    {
+        var uuid = vpnUuid.ToString();
+        string? problem = null;
+
+        try
+        {
+            NodeEndpoint? target = await svc.GetNodeEndpointAsync(targetId);
+            // The notifier logs and returns false rather than throwing, so both are failures.
+            if (target is null || !await notifier.AddUserAsync(new NodeTarget(target.host, target.auth_password), uuid))
+                problem = $"{username}: provision failed on {targetId}";
+        }
+        catch (Exception ex)
+        {
+            problem = $"{username}: provision failed on {targetId}: {ex.Message}";
+        }
+
+        if (source is not null)
+        {
+            try
+            {
+                if (!await notifier.RemoveUserAsync(new NodeTarget(source.host, source.auth_password), uuid))
+                    log.LogInformation("Move: could not deprovision {User} from {Server}", username, source.id);
+            }
+            catch (Exception ex)
+            {
+                log.LogInformation("Move: could not deprovision {User} from {Server}: {Message}",
+                    username, source.id, ex.Message);
+            }
+        }
+
+        try { SessionCacheOps.EvictSessions(cache, (await svc.GetUserByIdAsync(userId))?.sessions); }
+        catch (Exception ex) { log.LogWarning("Move: could not evict sessions of {User}: {Message}", username, ex.Message); }
+
+        return problem;
     }
 }

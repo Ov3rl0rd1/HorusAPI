@@ -1,7 +1,11 @@
-// Раздел «Пользователи»: поиск, служебная подписка, закрытые тарифы.
+// Раздел «Пользователи»: поиск, служебная подписка, перенос с ноды, закрытые тарифы.
 
 import * as api from './admin-api.js';
-import { $, fill, attach, renderList, onAction, onForm, notify, go, date, dateTime, endOfDay } from './bind.js';
+import {
+  $, fill, attach, renderList, onAction, onForm, notify, ask, go, options,
+  date, dateTime, endOfDay, intOrNull, grantUntil, grantTerm, period
+} from './bind.js';
+import { moveTargets, moveReport } from './servers.js';
 
 const view  = $('[data-view="users"]');
 const card  = $('[data-card="user"]', view);
@@ -9,9 +13,15 @@ const query = $('[data-form="user-search"] [name="q"]', view);
 
 let selected = null;
 
+// params.pick — открыть карточку этого пользователя, если он нашёлся
+// (переход из ноды или тарифа).
 export async function load(params) {
   if (params && typeof params.q === 'string') query.value = params.q;
-  await search(query.value.trim());
+  const list = await search(query.value.trim());
+  if (params && params.pick) {
+    const hit = list.find((u) => u.username === params.pick);
+    if (hit) await select(hit);
+  }
 }
 
 function access(u) {
@@ -52,23 +62,62 @@ async function search(q) {
   // Карточка открытого пользователя обновляется вместе со списком — иначе после
   // «выдать доступ» в ней остался бы прежний срок.
   const fresh = selected && list.find((u) => u.id === selected.id);
-  if (fresh) select(fresh);
+  if (fresh) await select(fresh);
+  return list;
 }
 
-function select(u) {
+async function select(u) {
   selected = u;
   card.hidden = !u;
   if (!u) return;
   attach(card, u);
   fill(card, values(u), flags(u));
+
+  // Ноды — для выбора «куда перенести», тарифы — для «открыть закрытый».
+  // Грузятся вместе с карточкой, чтобы список не устаревал между открытиями.
+  const [servers, plans] = await Promise.all([api.servers(), api.plans(), loadGrants()]);
+  if (selected !== u) return;   // пока грузилось, открыли другого
+
+  options(card, 'move-targets', moveTargets(servers, u.current_server_id));
+
+  const closed = plans.filter((p) => !p.is_public && p.is_active);
+  options(card, 'closed-plans', closed.map((p) => ({
+    value: p.code,
+    label: `${p.title} (${p.code}) — ${p.amount} ₽ / ${period(p.interval_unit, p.interval_count)}`
+  })));
+  fill(card, {}, { closedPlans: closed.length > 0 });
+}
+
+async function loadGrants() {
+  const u = selected;
+  const grants = await api.userGrants(u.username);
+  if (selected !== u) return;
+
+  renderList('user-grants', grants, function (row, g) {
+    row.dataset.key = g.plan_id;
+    fill(row, {
+      plan: g.plan_title,
+      code: g.plan_code,
+      term: grantTerm(g.expires_at),
+      by: g.granted_by || '—',
+      created: date(g.created_at)
+    }, {
+      public: g.plan_is_public,
+      expired: !!g.expires_at && new Date(g.expires_at) <= new Date()
+    });
+  });
 }
 
 // После действия перечитывается и список, и сам пользователь: в текущую выдачу
 // он может не попадать, а карточка должна показать новое состояние.
+// search() уже обновляет карточку, если пользователь есть в выдаче, — второй раз
+// её не перечитываем: у админки лимит запросов в минуту.
 async function refresh() {
-  await search(query.value.trim());
-  const fresh = (await api.users(String(selected.id))).find((u) => u.id === selected.id);
-  if (fresh) select(fresh);
+  const id = selected.id;
+  const list = await search(query.value.trim());
+  if (list.some((u) => u.id === id)) return;
+  const fresh = (await api.users(String(id))).find((u) => u.id === id);
+  if (fresh) await select(fresh);
 }
 
 onForm('user-search', (v) => search(v.q || ''));
@@ -88,8 +137,30 @@ onAction('revoke-comp', async function () {
   notify(view, 'ok', `${selected.username}: служебный доступ снят, место на ноде освобождено.`);
 });
 
+// Перенос с текущей ноды. Нода остаётся в ротации — это не эвакуация.
+onForm('move-user', async function (v, form) {
+  const u = selected;
+  const to = intOrNull(v.to);
+  const select = $('select[name="to"]', form);
+  const where = to == null ? 'наименее загруженную другую ноду' : select.selectedOptions[0].textContent;
+
+  if (!(await ask.confirm(`Перенести ${u.username} с ${u.server_name} на ${where}?`))) return;
+
+  const r = await api.moveUser(u.current_server_id, u.id, to);
+  await refresh();
+  notify(view, r.problems && r.problems.length ? 'warn' : 'ok', moveReport(r));
+});
+
 onForm('grant-plan', async function (v, form) {
-  await api.grantPlan(selected.username, v.plan_code, endOfDay(v.until));
+  const until = grantUntil(v);
+  await api.grantPlan(selected.username, v.plan_code, until);
   form.reset();
-  notify(view, 'ok', `${selected.username} теперь может купить тариф ${v.plan_code}.`);
+  await loadGrants();
+  notify(view, 'ok', `${selected.username} может купить тариф ${v.plan_code} ${until ? 'до ' + date(until) : 'бессрочно'}.`);
+});
+
+onAction('revoke-user-grant', async function ({ item }) {
+  await api.revokeGrant(item.username, item.plan_code);
+  await loadGrants();
+  notify(view, 'ok', `${item.username}: тариф ${item.plan_code} закрыт.`);
 });

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Dapper;
 using HorusAPI.Models;
 using Npgsql;
@@ -41,6 +42,19 @@ public interface IAdminServerService
 
     /// <summary>Everyone currently bound to a node, for moving them somewhere else.</summary>
     Task<IReadOnlyList<BoundUser>> GetBoundUsersAsync(int serverId);
+
+    /// <summary>
+    /// A node's name and agent address, active or not. The connect-path read
+    /// (IVpnServerService.GetConnectDataAsync) only returns nodes in rotation, which is exactly
+    /// the wrong answer for the node an evacuation has just taken out of it.
+    /// </summary>
+    Task<NodeEndpoint?> GetNodeEndpointAsync(int id);
+
+    /// <summary>The full user row (sessions included, for cache eviction), or null.</summary>
+    Task<User?> GetUserByIdAsync(int id);
+
+    /// <summary>One node in detail — counters, profile state, offers, bound users — or null.</summary>
+    Task<ServerDetail?> GetServerDetailAsync(int id);
 }
 
 [DapperAot]   // compile-time command/materializer generation + mismatch diagnostics
@@ -236,6 +250,69 @@ public class AdminServerService(
             "SELECT id, username, vpn_uuid FROM users WHERE current_server_id = @Id ORDER BY id",
             new { Id = serverId })];
     }
+
+    public async Task<NodeEndpoint?> GetNodeEndpointAsync(int id)
+    {
+        await using var conn = Connect();
+        return await conn.QuerySingleOrDefaultAsync<NodeEndpoint>(
+            "SELECT id, name, host, auth_password FROM vpn_servers WHERE id = @Id", new { Id = id });
+    }
+
+    public async Task<User?> GetUserByIdAsync(int id)
+    {
+        await using var conn = Connect();
+        return await conn.QuerySingleOrDefaultAsync<User>("SELECT * FROM users WHERE id = @Id", new { Id = id });
+    }
+
+    public async Task<ServerDetail?> GetServerDetailAsync(int id)
+    {
+        // Profile resolution is the same expression GetProfileStatesAsync uses, so the detail
+        // view and the list can never disagree about what a node was told to run. The two
+        // counts are what reserved_count is supposed to be the sum of.
+        const string nodeSql = """
+            WITH fleet AS (
+                SELECT NULLIF((SELECT default_profile FROM fleet_settings WHERE id = 1), '') AS default_profile
+            )
+            SELECT s.id, s.name, s.country, s.city, s.host, s.masquerade_url, s.is_active,
+                   s.reserved_count, s.max_reservations, s.max_clients, s.current_load,
+                   (SELECT COUNT(*)::int FROM users u      WHERE u.current_server_id = s.id) AS bound_users,
+                   (SELECT COUNT(*)::int FROM slot_holds h WHERE h.server_id = s.id)         AS pending_holds,
+                   s.agent_version, s.last_registered_at, s.profile,
+                   NULLIF(s.desired_profile, '')                                     AS desired_profile,
+                   COALESCE(NULLIF(s.desired_profile, ''), f.default_profile)         AS assigned_profile,
+                   (COALESCE(NULLIF(s.desired_profile, ''), f.default_profile, s.profile)
+                        IS NOT DISTINCT FROM s.profile)                               AS in_sync,
+                   s.profile_hash, s.config_hash, s.render_error, s.warnings,
+                   s.offers::text                                                     AS offers_json
+            FROM vpn_servers s, fleet f
+            WHERE s.id = @Id
+            """;
+
+        const string usersSql = """
+            SELECT id, username, email, is_admin, expires_at, last_disconnect_at, last_disconnect_reason
+            FROM users
+            WHERE current_server_id = @Id
+            ORDER BY id
+            """;
+
+        await using var conn = Connect();
+        var node = await conn.QuerySingleOrDefaultAsync<ServerNodeInfo>(nodeSql, new { Id = id });
+        if (node is null) return null;
+
+        var users = await conn.QueryAsync<NodeUserItem>(usersSql, new { Id = id });
+        return new ServerDetail(node, Summarize(node.offers_json), [.. users]);
+    }
+
+    /// <summary>
+    /// The protocol is read off the outbound rather than modelled: offers are opaque to this API
+    /// on purpose (see OfferRenderer), and an offer without one is still listed, just unnamed.
+    /// </summary>
+    public static IReadOnlyList<OfferSummary> Summarize(string? offersJson) =>
+        [.. OfferRenderer.Parse(offersJson).Select(o => new OfferSummary(
+            o.Id, o.Label, o.Tag,
+            o.Outbound is JsonObject ob && ob["protocol"] is JsonValue v && v.TryGetValue<string>(out var p) ? p : null,
+            o.Audience,
+            !string.IsNullOrWhiteSpace(o.Uri)))];
 
     public async Task<bool> SetServerProfileAsync(int id, string? profile)
     {

@@ -43,6 +43,30 @@ public class EvacuationTests(ApiFixture fixture) : IntegrationTest(fixture)
     }
 
     [SkippableFact]
+    public async Task Evacuating_removes_the_user_from_the_old_node_too()
+    {
+        RequireDb();
+        var client = Client();
+        var admin = await NewAdminSessionAsync(client);
+
+        var from = await SeedServerAsync();
+        await SeedServerAsync();
+        var userId = await BindUserAsync(client, from);
+
+        await client.PostJsonAsync($"/admin/servers/{from}/evacuate", new { }, TestData.NewIp(), admin);
+
+        // The old node was looked up through the connect-path read, which only returns nodes in
+        // rotation — and evacuation takes the node out of rotation first, so the lookup always
+        // came back empty and the remove was never sent.
+        await using var conn = new NpgsqlConnection(Fixture.ConnectionString);
+        var host = await conn.ExecuteScalarAsync<string>("SELECT host FROM vpn_servers WHERE id = @id", new { id = from });
+        var uuid = await conn.ExecuteScalarAsync<Guid>("SELECT vpn_uuid FROM users WHERE id = @id", new { id = userId });
+
+        Assert.Contains(Fixture.Nodes.For(uuid), c => c.Op == "remove" && c.Host == host);
+        Assert.Contains(Fixture.Nodes.For(uuid), c => c.Op == "add");
+    }
+
+    [SkippableFact]
     public async Task The_evacuated_node_is_taken_out_of_rotation_first()
     {
         RequireDb();

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Dapper;
 using Npgsql;
 
@@ -35,6 +36,31 @@ public interface IPlanService
     Task<IReadOnlyList<PromoRow>> ListPromosAsync();
     Task<bool> DeactivatePromoAsync(string code);
     Task<IReadOnlyList<PaymentAdminItem>> ListPaymentsAsync(string? username);
+
+    // ── Admin: the catalogue itself ──
+
+    /// <summary>Every plan, hidden and switched-off ones included; one plan when <paramref name="id"/> is set.</summary>
+    Task<IReadOnlyList<PlanAdminItem>> ListPlansAdminAsync(int? id = null);
+
+    /// <summary>Ok (with the new id) or Exists — codes are compared case-insensitively, like checkout does.</summary>
+    Task<(PlanWriteStatus status, int id)> CreatePlanAsync(PlanUpsertBody body);
+
+    /// <summary>
+    /// Replace a plan's fields (not its code). InUse when the change would alter the kind or the
+    /// billing interval under subscriptions that still depend on it — see the implementation.
+    /// </summary>
+    Task<PlanWriteStatus> UpdatePlanAsync(int id, PlanUpsertBody body);
+
+    // ── Admin: who may buy a closed plan ──
+
+    /// <summary>A user's grants, expired ones included; null when there is no such user.</summary>
+    Task<IReadOnlyList<PlanGrantItem>?> ListGrantsForUserAsync(string username);
+
+    /// <summary>Everyone granted a plan, expired grants included; null when there is no such plan.</summary>
+    Task<IReadOnlyList<PlanGrantItem>?> ListGrantsForPlanAsync(int planId);
+
+    /// <summary>Remove a grant. False when the user, the plan or the grant does not exist.</summary>
+    Task<bool> RevokeGrantAsync(string username, string planCode);
 }
 
 public class PlanService(IConfiguration cfg, IEntitlementService entitlement) : IPlanService
@@ -233,5 +259,179 @@ public class PlanService(IConfiguration cfg, IEntitlementService entitlement) : 
 
         await using var conn = Connect();
         return (await conn.QueryAsync<PaymentAdminItem>(sql, new { username = filter })).ToList();
+    }
+
+    // ── Admin: the catalogue ────────────────────────────────────────────────────
+
+    private static readonly Regex CodePattern = new(@"^[A-Za-z0-9_.-]{1,64}$", RegexOptions.Compiled);
+    private static readonly Regex TierPattern = new(@"^[a-z0-9_-]{1,16}$", RegexOptions.Compiled);
+
+    public static readonly string[] Kinds = ["recurring", "one_time"];
+    public static readonly string[] Units = ["day", "week", "month", "year"];
+
+    /// <summary>
+    /// What is wrong with a plan body, or null. Pure, so the rules are unit-tested rather than
+    /// discovered through a 500 from a CHECK the schema does not have.
+    /// </summary>
+    public static string? Validate(PlanUpsertBody? b, bool creating)
+    {
+        if (b is null) return "Body is required.";
+        if (creating && (b.code is null || !CodePattern.IsMatch(b.code.Trim())))
+            return "code: 1–64 characters, letters, digits, '-', '_' or '.'.";
+        if (string.IsNullOrWhiteSpace(b.title) || b.title.Trim().Length > 128)
+            return "title is required (up to 128 characters).";
+        if (!string.IsNullOrWhiteSpace(b.tier) && !TierPattern.IsMatch(b.tier.Trim()))
+            return "tier: up to 16 lowercase letters, digits, '-' or '_'.";
+        if (b.kind is null || !Kinds.Contains(b.kind))
+            return "kind must be 'recurring' or 'one_time'.";
+        if (b.interval_unit is null || !Units.Contains(b.interval_unit))
+            return "interval_unit must be day, week, month or year.";
+        if (b.interval_count is not (>= 1 and <= 365))
+            return "interval_count must be 1–365.";
+        if (b.amount is not (>= 1 and <= 1_000_000))
+            return "amount must be 1–1000000 (whole rubles).";
+        return null;
+    }
+
+    private static string TierOf(PlanUpsertBody b) =>
+        string.IsNullOrWhiteSpace(b.tier) ? "standard" : b.tier.Trim();
+
+    public async Task<IReadOnlyList<PlanAdminItem>> ListPlansAdminAsync(int? id = null)
+    {
+        // Column order is the record's parameter order (classic Dapper binds positional records
+        // through the constructor). Access is counted the way EntitlementService grants it.
+        const string sql = """
+            SELECT p.id, p.code, p.title, p.tier, p.kind, p.interval_unit, p.interval_count,
+                   p.amount, p.currency, p.is_public, p.is_active, p.created_at,
+                   (SELECT COUNT(*)::int FROM subscriptions s
+                     WHERE s.plan_id = p.id AND s.current_period_end > NOW()
+                       AND s.status NOT IN ('pending', 'failed'))                AS live_subscriptions,
+                   (SELECT COUNT(*)::int FROM plan_grants g
+                     WHERE g.plan_id = p.id AND (g.expires_at IS NULL OR g.expires_at > NOW())) AS grants
+            FROM plans p
+            WHERE @id::int IS NULL OR p.id = @id
+            ORDER BY p.is_active DESC, p.is_public DESC, p.amount, p.id
+            """;
+
+        await using var conn = Connect();
+        return (await conn.QueryAsync<PlanAdminItem>(sql, new { id })).ToList();
+    }
+
+    public async Task<(PlanWriteStatus status, int id)> CreatePlanAsync(PlanUpsertBody b)
+    {
+        string code = b.code!.Trim();
+
+        await using var conn = Connect();
+
+        // The unique index is case-sensitive but every lookup is lower(code) … LIMIT 1, so
+        // "Monthly" next to "monthly" would make checkout pick one of them at random.
+        if (await conn.ExecuteScalarAsync<int?>("SELECT id FROM plans WHERE lower(code) = lower(@code)", new { code }) is not null)
+            return (PlanWriteStatus.Exists, 0);
+
+        try
+        {
+            int id = await conn.ExecuteScalarAsync<int>("""
+                INSERT INTO plans (code, title, tier, kind, interval_unit, interval_count, amount, is_public, is_active)
+                VALUES (@code, @title, @tier, @kind, @unit, @count, @amount, @pub, @active)
+                RETURNING id
+                """, new
+            {
+                code, title = b.title!.Trim(), tier = TierOf(b), kind = b.kind, unit = b.interval_unit,
+                count = b.interval_count, amount = b.amount, pub = b.is_public ?? true, active = b.is_active ?? true
+            });
+            return (PlanWriteStatus.Ok, id);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            return (PlanWriteStatus.Exists, 0);   // lost a race with an identical create
+        }
+    }
+
+    public async Task<PlanWriteStatus> UpdatePlanAsync(int id, PlanUpsertBody b)
+    {
+        await using var conn = Connect();
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        var current = await conn.QuerySingleOrDefaultAsync<PlanRow>(
+            $"SELECT {PlanCols} FROM plans WHERE id = @id FOR UPDATE", new { id }, tx);
+        if (current is null) { await tx.RollbackAsync(); return PlanWriteStatus.NotFound; }
+
+        // A renewal extends the period by the plan's CURRENT interval (BillingService.PeriodEndFrom),
+        // while the provider keeps charging on the schedule the subscription was created with. So
+        // the interval and kind are frozen while anything still renews or confirms against them:
+        // a pending checkout, a live subscription, a past-due one. The price is not — a new price
+        // applies to new purchases, and existing recurring charges stay at what the provider holds.
+        bool billingChanged = current.kind != b.kind
+                           || current.interval_unit != b.interval_unit
+                           || current.interval_count != b.interval_count;
+        if (billingChanged)
+        {
+            bool inUse = await conn.ExecuteScalarAsync<bool>("""
+                SELECT EXISTS (SELECT 1 FROM subscriptions
+                               WHERE plan_id = @id AND status IN ('pending', 'active', 'past_due'))
+                """, new { id }, tx);
+            if (inUse) { await tx.RollbackAsync(); return PlanWriteStatus.InUse; }
+        }
+
+        await conn.ExecuteAsync("""
+            UPDATE plans SET title = @title, tier = @tier, kind = @kind, interval_unit = @unit,
+                             interval_count = @count, amount = @amount, is_public = @pub, is_active = @active
+            WHERE id = @id
+            """, new
+        {
+            id, title = b.title!.Trim(), tier = TierOf(b), kind = b.kind, unit = b.interval_unit,
+            count = b.interval_count, amount = b.amount,
+            pub = b.is_public ?? current.is_public, active = b.is_active ?? current.is_active
+        }, tx);
+
+        await tx.CommitAsync();
+        return PlanWriteStatus.Ok;
+    }
+
+    // ── Admin: grants ───────────────────────────────────────────────────────────
+
+    // Column order = PlanGrantItem's parameter order.
+    private const string GrantSelect = """
+        SELECT g.user_id, u.username, u.email,
+               g.plan_id, p.code AS plan_code, p.title AS plan_title, p.is_public AS plan_is_public,
+               g.expires_at, g.created_at, a.username AS granted_by
+        FROM plan_grants g
+        JOIN users u       ON u.id = g.user_id
+        JOIN plans p       ON p.id = g.plan_id
+        LEFT JOIN users a  ON a.id = g.granted_by
+        """;
+
+    public async Task<IReadOnlyList<PlanGrantItem>?> ListGrantsForUserAsync(string username)
+    {
+        await using var conn = Connect();
+        int? userId = await conn.ExecuteScalarAsync<int?>("SELECT id FROM users WHERE username = @username", new { username });
+        if (userId is null) return null;
+
+        return (await conn.QueryAsync<PlanGrantItem>(
+            GrantSelect + " WHERE g.user_id = @u ORDER BY p.amount, p.id", new { u = userId })).ToList();
+    }
+
+    public async Task<IReadOnlyList<PlanGrantItem>?> ListGrantsForPlanAsync(int planId)
+    {
+        await using var conn = Connect();
+        if (await conn.ExecuteScalarAsync<int?>("SELECT id FROM plans WHERE id = @planId", new { planId }) is null)
+            return null;
+
+        return (await conn.QueryAsync<PlanGrantItem>(
+            GrantSelect + " WHERE g.plan_id = @planId ORDER BY g.created_at DESC, g.id DESC", new { planId })).ToList();
+    }
+
+    public async Task<bool> RevokeGrantAsync(string username, string planCode)
+    {
+        // Only the right to buy goes. A subscription already bought on the plan is paid for
+        // and stays; ending it is a refund or a cancel, not this.
+        await using var conn = Connect();
+        return await conn.ExecuteAsync("""
+            DELETE FROM plan_grants g
+            USING users u, plans p
+            WHERE g.user_id = u.id AND g.plan_id = p.id
+              AND u.username = @username AND lower(p.code) = lower(@planCode)
+            """, new { username, planCode }) > 0;
     }
 }

@@ -16,7 +16,7 @@ dotnet test           # run the test suite (see below)
 xUnit project (in the solution). Two tiers:
 
 - **Unit** ([HorusAPI.Tests/Unit](HorusAPI.Tests/Unit)) — no DB: `ClientConfigBuilder` link building, `AccountRateLimiter` (3/hour per address). Always run.
-- **Integration** ([HorusAPI.Tests/Integration](HorusAPI.Tests/Integration)) — boot the real app in-memory via `WebApplicationFactory<Program>` ([HorusAPI.Tests/Infrastructure](HorusAPI.Tests/Infrastructure)) against a throwaway PostgreSQL database, exercising the full auth flow (register→verify→login, reset, session revocation), `/whoami`, authorization (session/admin), and all the rate-limit layers. `IEmailSender` is replaced with `RecordingEmailSender` so tests can read the code/link that would have been mailed; each test isolates its rate-limit partition with a unique `X-Forwarded-For` IP and a unique e-mail. `Program` is `public partial` so the factory can use it as the entry point.
+- **Integration** ([HorusAPI.Tests/Integration](HorusAPI.Tests/Integration)) — boot the real app in-memory via `WebApplicationFactory<Program>` ([HorusAPI.Tests/Infrastructure](HorusAPI.Tests/Infrastructure)) against a throwaway PostgreSQL database, exercising the full auth flow (register→verify→login, reset, session revocation), `/whoami`, authorization (session/admin), and all the rate-limit layers. `IEmailSender` is replaced with `RecordingEmailSender` so tests can read the code/link that would have been mailed, and `INodeNotifier` with `RecordingNodeNotifier` (records add/remove per host instead of calling agents that do not exist; a host starting `down-` answers like an unreachable agent); each test isolates its rate-limit partition with a unique `X-Forwarded-For` IP and a unique e-mail. `Program` is `public partial` so the factory can use it as the entry point.
 
 `PostgresFixture` reads `ConnectionStrings__Postgres` (falls back to `localhost:5432`, user/pw `postgres`), creates an isolated `horus_test_*` DB, applies [init.sql](init.sql), and drops it after. **When no server is reachable the integration tests `Skip` (via `Xunit.SkippableFact`) rather than fail**, so unit tests still pass on a bare checkout. Run the full suite locally with a DB up:
 
@@ -56,7 +56,7 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
 | `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel` ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
 | `POST /payments/{provider}/webhook` | **anonymous** (secret checked in-adapter, idempotent) | payment provider callbacks |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **evacuate/activate a node**, user search, comp subscription (grant = reserve slot, revoke = release), grants, refunds, promo codes, `gate` (204 — nginx gates `/panel` on it) |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **node detail** (`GET /servers/{id}`), **evacuate/activate a node**, **move one user off a node**, user search, comp subscription (grant = reserve slot, revoke = release), **plan catalogue** (list/create/edit), closed-plan grants (grant/list/revoke), refunds, promo codes, `gate` (204 — nginx gates `/panel` on it) |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
@@ -87,6 +87,17 @@ a freshly registered non-admin user has no access until they buy (this closed th
 - **[BillingService](Services/Billing/BillingService.cs)** is the money engine: checkout, cancel, idempotent webhook handling (`webhook_events`), refund. Classic Dapper + explicit transactions; node (de)provisioning + session-cache eviction run **after** commit, like the reservation flows.
 - **[PlanService](Services/Billing/PlanService.cs)** owns the catalogue/promo/grants: plans a user may buy (public + granted non-public "для своих"), promo validation, and admin grant/comp/promo-CRUD.
 - **Capacity holds**: checkout charges a seat to `vpn_servers.reserved_count` immediately via `slot_holds` (TTL `Payments:HoldMinutes`), so a full fleet fails the buy *before* payment. [ReservationService](Services/ReservationService.cs) gained `HoldSlotAsync`/`ConfirmHoldAsync`/`ReleaseHoldAsync`/`SweepExpiredHoldsAsync`; because a hold uses the same `reserved_count`, every existing candidate/select/pick query is unchanged. [BillingSweeperService](Services/Billing/BillingSweeperService.cs) (hosted) releases expired holds + fails stale pending payments.
+- **Admin catalogue** (`/admin/plans`, `PlanService.ListPlansAdminAsync`/`CreatePlanAsync`/`UpdatePlanAsync`):
+  no DELETE — `is_active = false` takes a plan off sale (a promo tied to a plan would be cascaded
+  away with it). `code` is fixed once created and unique case-insensitively (checkout looks up
+  `lower(code) … LIMIT 1`). **`kind`/`interval_*` are frozen (`409 plan_in_use`) while any
+  subscription on the plan is `pending`/`active`/`past_due`**: renewals extend the period by the
+  plan's *current* interval (`BillingService.PeriodEndFrom`) while the provider charges on the
+  schedule the subscription was created with. The price is free to change — it applies to new
+  purchases. Body rules are the pure `PlanService.Validate` (unit-tested).
+- **Closed-plan grants**: `plan_grants.expires_at = NULL` is **бессрочно**; `GET /admin/users/{u}/grants`,
+  `GET /admin/plans/{id}/grants`, `DELETE /admin/users/{u}/grants/{code}`. Revoking takes away the
+  right to buy only — a subscription already bought on the plan is untouched.
 - **Promo caveat**: promos are percent-off, first-charge-only → they apply to **one-time** buys; a promo on a recurring plan is refused (`promo_not_applicable`) because Platega recurring charges a fixed amount every period.
 - **Provider reconciliation** (polling for missed webhooks) is a documented follow-up, not yet implemented.
 
@@ -103,6 +114,21 @@ being moved off. And **`SelectAsync` returning Ok is not enough** — it keeps t
 binding when nothing in the fleet has room, which is right for an ordinary move and a lie
 here, so the result is compared against the source id and counted as `stayed` rather than
 `moved`.
+
+**One user** is moved with `POST /admin/servers/{id}/users/{userId}/evacuate {server_id?}`, which
+leaves the node in rotation. Both flows go through `ReservationService.MoveOffAsync(user, from, to?)`:
+it refuses (`409 not_on_server`) when the user is no longer on `from` — a stale admin view must
+not take someone off the node they have since chosen — and its auto-pick **excludes the source
+explicitly**, because a node still in rotation with a seat just freed is the least-loaded one.
+A full fleet is `409 no_capacity` there, never `SelectAsync`'s "keep the binding and say Ok".
+The after-commit part (`AdminEndpoints.AfterMoveAsync`) is shared too: provision the new node,
+de-provision the old one, evict the user's cached sessions.
+
+The source node is read with `IAdminServerService.GetNodeEndpointAsync`, **not**
+`IVpnServerService.GetConnectDataAsync` — that one only returns active nodes, and evacuation has
+just deactivated this one, so de-provisioning used to be silently skipped. `INodeNotifier`
+returns `false` rather than throwing, and a `false` from provisioning the new node is a
+reported problem.
 
 Node calls happen after the commit, like every other reservation flow, and a failure there
 does not roll the binding back: the database is the truth and the node reconciles its user set
@@ -135,7 +161,9 @@ manifest for labels only — the hrefs are static, so downloads survive a failed
 ### Admin panel ([nginx/panel/](nginx/panel/))
 
 `/panel` is a plain page over the `/admin/*` API: nodes (evacuate/activate, profiles, ping,
-add), user search + comp/plan grants, payments + refunds, promo codes. **Everyone but an
+add, a **detail card** with offers and bound users, **move one user**), user search + comp,
+move off a node and closed-plan grants (select + «бессрочно»), **tariffs** (list, create, edit,
+take off sale, who a closed plan is open to), payments + refunds, promo codes. **Everyone but an
 admin gets the same 404 as any missing path** — byte for byte, headers included.
 
 nginx decides with `auth_request` → `GET /admin/gate` (204 for an admin). A browser
@@ -150,7 +178,9 @@ The files are **outside the public root** (`/usr/share/nginx/panel`), so a lost 
 them unreachable rather than public. The markup is free to change: JS binds only through
 `data-*` attributes (the contract is at the top of `bind.js`), never classes, and the copy
 lives in the markup. `ask` in `bind.js` is the one place that shows dialogs (currently
-`confirm`/`prompt`) — replace it there when a styled dialog exists.
+`confirm`/`prompt`) — replace it there when a styled dialog exists. `data-options` marks a
+`<select>` whose options JS writes (options with `data-fixed` stay), `setForm` fills a form for
+editing, and `REFUSALS` in `bind.js` maps API refusal codes to Russian text with the way out.
 
 ### Monitoring ([monitoring/](monitoring/))
 

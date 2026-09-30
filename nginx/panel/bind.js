@@ -13,7 +13,12 @@
 //   data-when="active"           показать, когда флаг строки истинен; "!active" — наоборот
 //   data-action="evacuate"       кнопка; к какой строке относится — ближайший [data-key]
 //   data-confirm="… {name} …"    спросить перед действием; {поле} берётся из строки
-//   data-form="add-server"       форма; значения — по name полей, разметка внутри любая
+//   data-form="add-server"       форма; значения — по name полей, разметка внутри любая;
+//                                галочка даёт "on", снятая в значения не попадает
+//   data-card="user"             карточка выбранной записи; JS её показывает, прячет и
+//                                привязывает к ней запись — кнопки внутри получают её поля
+//   data-options="closed-plans"  <select>, чьи варианты JS пишет сам; варианты с
+//                                data-fixed (например, «авто») остаются из разметки
 //   data-notice                  место для сообщений своего раздела
 //
 // Флаги строки JS пишет на её корень как data-* ("true"/"false"), так что
@@ -77,6 +82,35 @@ export function renderList(name, items, build) {
   if (empty) empty.hidden = items.length > 0;
 }
 
+// ── Формы и списки выбора ────────────────────────────────────────────────
+
+// Заполнить поля формы, например, для редактирования записи. Ключи — name полей;
+// чего нет в values, не трогается.
+export function setForm(form, values) {
+  for (const [name, value] of Object.entries(values)) {
+    const el = form.elements[name];
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!value;
+    else el.value = value == null ? '' : String(value);
+  }
+}
+
+// Варианты для всех <select data-options="name"> внутри root: [{ value, label, disabled }].
+// Выбранное значение сохраняется, если такой вариант остался.
+export function options(root, name, items) {
+  for (const select of $$(`select[data-options="${name}"]`, root)) {
+    const keep = select.value;
+    for (const opt of Array.from(select.options)) if (!opt.hasAttribute('data-fixed')) opt.remove();
+    for (const it of items) {
+      const opt = new Option(it.label, String(it.value));
+      opt.disabled = !!it.disabled;
+      select.add(opt);
+    }
+    if (Array.from(select.options).some((o) => o.value === keep && !o.disabled)) select.value = keep;
+    else select.selectedIndex = 0;
+  }
+}
+
 // ── Диалоги ──────────────────────────────────────────────────────────────
 // Единственное место, где панель что-то спрашивает. Сейчас это системные
 // confirm/prompt; когда появится свой диалог, менять нужно только здесь.
@@ -101,10 +135,23 @@ export function notify(scope, kind, text) {
   box.hidden = !text;
 }
 
+// Отказы, у которых есть понятный выход, — по-русски и с этим выходом. Остальное
+// показывается как пришло от API.
+const REFUSALS = {
+  no_capacity:      'Свободных мест нет — ни на выбранной ноде, ни (при автовыборе) в остальном парке.',
+  not_on_server:    'Пользователь уже не на этой ноде — обновите карточку.',
+  same_server:      'Пользователь уже на этой ноде.',
+  target_inactive:  'Нода назначения выведена из ротации.',
+  target_not_found: 'Ноды назначения нет — обновите список.',
+  plan_exists:      'Тариф с таким кодом уже есть (регистр букв не различается).',
+  plan_in_use:      'По тарифу есть ожидающие оплаты или действующие подписки: тип и период менять нельзя. ' +
+                    'Создайте новый тариф, а этот снимите с продажи.'
+};
+
 export function errorText(err) {
   if (err instanceof ApiError) {
     const body = err.body || {};
-    return err.message || body.detail || body.title || ('Ошибка ' + (err.status || 'сети'));
+    return REFUSALS[err.code] || err.message || body.detail || body.title || ('Ошибка ' + (err.status || 'сети'));
   }
   return String((err && err.message) || err);
 }
@@ -205,3 +252,24 @@ export function intOrNull(value) {
 }
 
 export const orNull = (value) => (value === '' || value == null ? null : value);
+
+// Срок доступа к закрытому тарифу из формы: галочка «бессрочно» важнее даты.
+// null — бессрочно; без галочки дата обязательна, иначе ошибка, а не молчаливое «навсегда».
+export function grantUntil(v) {
+  if (v.forever) return null;
+  if (!v.until) throw new Error('Укажите дату или отметьте «бессрочно».');
+  return endOfDay(v.until);
+}
+
+export function grantTerm(expiresAt) {
+  if (!expiresAt) return 'бессрочно';
+  const end = new Date(expiresAt);
+  return (end > new Date() ? 'до ' : 'истёк ') + date(end);
+}
+
+const UNITS = { day: 'дн', week: 'нед', month: 'мес', year: 'г' };
+
+// «1 мес», «3 мес», «1 г», «7 дн».
+export function period(unit, count) {
+  return count + ' ' + (UNITS[unit] || unit);
+}

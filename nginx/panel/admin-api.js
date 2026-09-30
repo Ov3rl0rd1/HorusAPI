@@ -28,9 +28,20 @@ export const removeServer = (id)   => del(`/admin/servers/${id}`);
 // PingResult[] { id, name, reachable, statusCode, error }
 export const pingServers = () => post('/admin/servers/ping', {});
 
+// ServerDetail { node: ServerNodeInfo { …, bound_users, pending_holds, offers_json, … },
+//   offers: OfferSummary[] { id, label, tag, protocol, audience[], has_uri },
+//   users: NodeUserItem[] { id, username, email, is_admin, expires_at, last_disconnect_at, … } }
+export const server = (id) => get(`/admin/servers/${id}`);
+
 // EvacuationReport { serverId, total, moved, stayed, failed, problems[] }
 export const evacuate = (id) => post(`/admin/servers/${id}/evacuate`, {});
 export const activate = (id) => post(`/admin/servers/${id}/activate`, {});
+
+// Один пользователь с ноды; to — id ноды, null — наименее загруженная другая.
+// 200 UserMoveReport { user_id, username, from_server_id, server_id, server_name, problems[] }
+// 400 same_server · 404 user_not_found/target_not_found · 409 not_on_server/target_inactive/no_capacity
+export const moveUser = (serverId, userId, to) =>
+  post(`/admin/servers/${serverId}/users/${userId}/evacuate`, { server_id: to == null ? null : to });
 
 // ── Пользователи ─────────────────────────────────────────────────────────
 // UserAdminItem[] { id, username, email, email_verified, is_admin, is_active,
@@ -43,8 +54,26 @@ export const grantComp  = (username, expiresAt) =>
 export const revokeComp = (username) => del(`/admin/users/${enc(username)}/subscription`);
 
 // Открыть непубличный тариф («для своих») — купить его пользователь сможет сам.
+// expiresAt null — бессрочно. Повторная выдача заменяет срок.
 export const grantPlan = (username, planCode, expiresAt) =>
   post(`/admin/users/${enc(username)}/grant`, { plan_code: planCode, expires_at: expiresAt });
+
+// PlanGrantItem[] { user_id, username, email, plan_id, plan_code, plan_title,
+//   plan_is_public, expires_at (null — бессрочно), created_at, granted_by }
+export const userGrants  = (username) => get(`/admin/users/${enc(username)}/grants`);
+export const revokeGrant = (username, planCode) =>
+  del(`/admin/users/${enc(username)}/grants/${enc(planCode)}`);
+
+// ── Тарифы ───────────────────────────────────────────────────────────────
+// PlanAdminItem[] { id, code, title, tier, kind, interval_unit, interval_count, amount,
+//   currency, is_public, is_active, created_at, live_subscriptions, grants }
+export const plans = () => get('/admin/plans');
+// body { code, title, tier, kind, interval_unit, interval_count, amount, is_public, is_active }
+// 201 { id, code } · 400 invalid_plan · 409 plan_exists
+export const createPlan = (body) => post('/admin/plans', body);
+// code не меняется. 200 PlanAdminItem · 409 plan_in_use (тип/период при живых подписках)
+export const updatePlan = (id, body) => put(`/admin/plans/${id}`, body);
+export const planGrants = (id) => get(`/admin/plans/${id}/grants`);
 
 // ── Платежи ──────────────────────────────────────────────────────────────
 // PaymentAdminItem[] { id, user_id, username, plan_code, kind, amount, discount,

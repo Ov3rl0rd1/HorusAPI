@@ -24,6 +24,7 @@
   <nav class="tabs">
     <a href="#servers"  data-show="servers">Ноды</a>
     <a href="#users"    data-show="users">Пользователи</a>
+    <a href="#plans"    data-show="plans">Тарифы</a>
     <a href="#payments" data-show="payments">Платежи</a>
     <a href="#promos"   data-show="promos">Промокоды</a>
   </nav>
@@ -54,6 +55,104 @@
 
     <p class="notice" data-notice hidden></p>
 
+    <article class="box" data-card="server" hidden>
+      <div class="head">
+        <h2>
+          <span data-slot="name"></span> <span class="muted">#<span data-slot="id"></span></span>
+          <span class="tag tag--warn" data-when="!active">вне ротации</span>
+        </h2>
+        <div class="tools">
+          <button type="button" data-action="refresh-server">Обновить</button>
+          <button type="button" class="link" data-action="close-server">закрыть</button>
+        </div>
+      </div>
+
+      <dl class="facts">
+        <dt>Где</dt><dd data-slot="place"></dd>
+        <dt>Хост</dt><dd class="mono" data-slot="host"></dd>
+        <dt>Сайт-маска</dt><dd data-slot="masquerade"></dd>
+        <dt>Места</dt>
+        <dd>
+          <span data-slot="seats"></span> <span class="tag tag--warn" data-when="full">заполнена</span>
+          <div class="muted">привязано <span data-slot="bound"></span>, ждут оплаты <span data-slot="holds"></span></div>
+          <div class="bad" data-when="drift">
+            Счётчик мест (<span data-slot="reserved"></span>) не равен привязкам + ожидающим оплаты.
+            Ёмкость считается по счётчику.
+          </div>
+        </dd>
+        <dt>Рекомендуемо</dt><dd data-slot="soft"></dd>
+        <dt>Онлайн</dt><dd data-slot="online"></dd>
+        <dt>Агент</dt><dd><span data-slot="version"></span> · регистрация <span data-slot="seen"></span></dd>
+        <dt>Профиль</dt>
+        <dd>
+          работает <b data-slot="profile"></b>, назначен <b data-slot="assigned"></b>
+          <span class="tag" data-when="override">свой</span>
+          <span class="tag tag--warn" data-when="!inSync">ждёт переключения</span>
+        </dd>
+        <dt>Хэши</dt>
+        <dd class="mono">профиль <span data-slot="profileHash"></span><br>конфиг <span data-slot="configHash"></span></dd>
+        <div data-when="renderError"><dt>Ошибка профиля</dt><dd class="bad" data-slot="renderError"></dd></div>
+        <div data-when="warnings"><dt>Предупреждения</dt><dd data-slot="warnings"></dd></div>
+      </dl>
+
+      <h3>Что нода даёт клиентам (<span data-slot="offerCount"></span>)</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>id</th><th>Название</th><th>Протокол</th><th>Кому</th><th>Ссылка для подписки</th></tr></thead>
+          <tbody data-list="offers"></tbody>
+        </table>
+      </div>
+      <p class="muted" data-empty="offers" hidden>Нода ничего не сообщила — к ней нельзя подключиться. Дождитесь регистрации агента.</p>
+      <template data-template="offers">
+        <tr>
+          <td class="mono" data-slot="id"></td>
+          <td><span data-slot="label"></span> <span class="muted" data-slot="tag"></span></td>
+          <td data-slot="protocol"></td>
+          <td data-slot="audience"></td>
+          <td data-slot="uri"></td>
+        </tr>
+      </template>
+      <details>
+        <summary>JSON, как его прислала нода</summary>
+        <pre class="mono json" data-slot="offersJson"></pre>
+      </details>
+
+      <h3>Пользователи на ноде (<span data-slot="bound"></span>)</h3>
+      <div class="inline">
+        <label>Переносить на
+          <select name="to" data-options="move-targets">
+            <option value="" data-fixed>наименее загруженную другую</option>
+          </select>
+        </label>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>#</th><th>Имя</th><th>E-mail</th><th>Доступ</th><th>Отключался</th><th></th></tr></thead>
+          <tbody data-list="node-users"></tbody>
+        </table>
+      </div>
+      <p class="muted" data-empty="node-users" hidden>На ноде никого.</p>
+      <template data-template="node-users">
+        <tr>
+          <td data-slot="id"></td>
+          <td>
+            <button type="button" class="link" data-action="node-user-open" data-slot="username"></button>
+            <span class="tag" data-when="admin">админ</span>
+          </td>
+          <td data-slot="email"></td>
+          <td data-slot="access"></td>
+          <td class="muted" data-slot="lastSeen"></td>
+          <td class="actions">
+            <button type="button" data-action="move-node-user">Перенести</button>
+          </td>
+        </tr>
+      </template>
+      <p class="muted">
+        Перенос одного пользователя не выводит ноду из ротации — для этого «Эвакуировать».
+        Ноды вне ротации и заполненные в список «куда» не попадают.
+      </p>
+    </article>
+
     <div class="scroll">
       <table>
         <thead>
@@ -70,7 +169,7 @@
       <tr>
         <td data-slot="id"></td>
         <td>
-          <b data-slot="name"></b>
+          <button type="button" class="link" data-action="open-server" data-slot="name"></button>
           <span class="tag tag--warn" data-when="!active">вне ротации</span>
           <div class="muted"><span data-slot="place"></span> · <span data-slot="host"></span></div>
         </td>
@@ -148,6 +247,15 @@
         <dt>Регистрация</dt><dd data-slot="created"></dd>
       </dl>
 
+      <form data-form="move-user" class="inline" data-when="bound">
+        <label>Перенести с ноды на
+          <select name="to" data-options="move-targets">
+            <option value="" data-fixed>наименее загруженную другую</option>
+          </select>
+        </label>
+        <button type="submit">Перенести</button>
+      </form>
+
       <form data-form="comp" class="inline">
         <label>Служебный доступ до <input name="until" type="date" required></label>
         <button type="submit">Выдать</button>
@@ -156,11 +264,45 @@
       </form>
       <p class="muted">Выдача занимает место на ноде. Если свободных нет во всём парке, API откажет.</p>
 
+      <h3>Закрытые тарифы</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Тариф</th><th>Срок</th><th>Открыл</th><th>Когда</th><th></th></tr></thead>
+          <tbody data-list="user-grants"></tbody>
+        </table>
+      </div>
+      <p class="muted" data-empty="user-grants" hidden>Закрытых тарифов не открыто.</p>
+      <template data-template="user-grants">
+        <tr>
+          <td>
+            <span data-slot="plan"></span> <span class="muted mono" data-slot="code"></span>
+            <span class="tag" data-when="public">публичный</span>
+          </td>
+          <td data-slot="term"></td>
+          <td data-slot="by"></td>
+          <td class="muted" data-slot="created"></td>
+          <td class="actions">
+            <button type="button" data-action="revoke-user-grant"
+                    data-confirm="Закрыть {username} тариф {plan_code}? Уже купленная подписка останется.">Закрыть</button>
+          </td>
+        </tr>
+      </template>
+
       <form data-form="grant-plan" class="inline">
-        <label>Открыть закрытый тариф <input name="plan_code" required placeholder="код тарифа"></label>
-        <label>до <input name="until" type="date"></label>
+        <label>Открыть тариф
+          <select name="plan_code" required data-options="closed-plans">
+            <option value="" data-fixed>— выберите —</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" name="forever" checked> бессрочно</label>
+        <label>или до <input name="until" type="date"></label>
         <button type="submit">Открыть</button>
       </form>
+      <p class="muted" data-when="!closedPlans">Закрытых тарифов в продаже нет — создайте во вкладке «Тарифы», сняв «публичный».</p>
+      <p class="muted">
+        Открытый тариф пользователь видит в кабинете и покупает сам. «Бессрочно» — пока его не закроют здесь.
+        Закрытие отнимает только право купить: оплаченная подписка остаётся.
+      </p>
 
       <p><button type="button" data-action="user-payments">Платежи пользователя →</button></p>
     </article>
@@ -189,6 +331,132 @@
         <td data-slot="access"></td>
         <td data-slot="server"></td>
         <td class="muted" data-slot="created"></td>
+      </tr>
+    </template>
+  </section>
+
+  <!-- ── Тарифы ───────────────────────────────────────────────────────── -->
+  <section data-view="plans" hidden>
+    <div class="head">
+      <h1>Тарифы</h1>
+      <div class="tools">
+        <button type="button" data-action="refresh-plans">Обновить</button>
+        <button type="button" data-action="new-plan">Новый тариф</button>
+      </div>
+    </div>
+
+    <p class="notice" data-notice hidden></p>
+
+    <article class="box" data-card="plan" hidden>
+      <div class="head">
+        <h2>
+          <span data-when="creating">Новый тариф</span>
+          <span data-when="!creating"><span data-slot="title"></span> <span class="muted mono" data-slot="code"></span></span>
+        </h2>
+        <button type="button" class="link" data-action="close-plan">закрыть</button>
+      </div>
+
+      <form data-form="plan" class="grid">
+        <label data-when="creating">Код <input name="code" maxlength="64" placeholder="monthly"></label>
+        <label>Название <input name="title" required maxlength="128"></label>
+        <label>Тип
+          <select name="kind">
+            <option value="recurring">подписка с автопродлением</option>
+            <option value="one_time">разовая покупка</option>
+          </select>
+        </label>
+        <label>Период <input name="interval_count" type="number" min="1" max="365" required></label>
+        <label>Единица периода
+          <select name="interval_unit">
+            <option value="day">день</option>
+            <option value="week">неделя</option>
+            <option value="month">месяц</option>
+            <option value="year">год</option>
+          </select>
+        </label>
+        <label>Цена, ₽ <input name="amount" type="number" min="1" max="1000000" required></label>
+        <label>Уровень <input name="tier" list="plan-tiers" maxlength="16" placeholder="standard"></label>
+        <label class="check"><input type="checkbox" name="is_public"> публичный — виден всем</label>
+        <label class="check"><input type="checkbox" name="is_active"> в продаже</label>
+        <div><button type="submit">Сохранить</button></div>
+      </form>
+      <datalist id="plan-tiers"><option value="standard"><option value="insider"></datalist>
+
+      <p class="muted" data-when="creating">Код — то, по чему тариф знают оплата, промокоды и сайт; потом его не поменять.</p>
+      <p class="muted" data-when="!creating">
+        Новая цена действует на новые покупки: регулярные платежи уже оформленных подписок провайдер
+        списывает по прежней. Тип и период нельзя менять, пока по тарифу есть ожидающие оплаты
+        или действующие подписки — создайте новый тариф.
+      </p>
+
+      <div data-when="closed">
+        <h3>Кому открыт (<span data-slot="grantCount"></span>)</h3>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Пользователь</th><th>E-mail</th><th>Срок</th><th>Открыл</th><th>Когда</th><th></th></tr></thead>
+            <tbody data-list="plan-grants"></tbody>
+          </table>
+        </div>
+        <p class="muted" data-empty="plan-grants" hidden>Пока никому.</p>
+        <template data-template="plan-grants">
+          <tr>
+            <td><button type="button" class="link" data-action="plan-grant-user" data-slot="username"></button></td>
+            <td data-slot="email"></td>
+            <td data-slot="term"></td>
+            <td data-slot="by"></td>
+            <td class="muted" data-slot="created"></td>
+            <td class="actions">
+              <button type="button" data-action="revoke-plan-grant"
+                      data-confirm="Закрыть {username} тариф {plan_code}? Уже купленная подписка останется.">Закрыть</button>
+            </td>
+          </tr>
+        </template>
+
+        <form data-form="plan-grant" class="inline">
+          <label>Открыть пользователю <input name="username" required autocomplete="off" placeholder="имя пользователя"></label>
+          <label class="check"><input type="checkbox" name="forever" checked> бессрочно</label>
+          <label>или до <input name="until" type="date"></label>
+          <button type="submit">Открыть</button>
+        </form>
+        <p class="muted">Закрытый тариф видят и покупают только те, кому он открыт. Открыть можно и из карточки пользователя.</p>
+      </div>
+    </article>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Код</th><th>Название</th><th>Тип</th><th>Цена</th><th>Видимость</th><th>Подписок</th><th>Открыт</th><th></th></tr>
+        </thead>
+        <tbody data-list="plans"></tbody>
+      </table>
+    </div>
+    <p class="muted" data-empty="plans" hidden>Тарифов нет — без них купить доступ нельзя.</p>
+
+    <template data-template="plans">
+      <tr>
+        <td class="mono">
+          <button type="button" class="link" data-action="edit-plan" data-slot="code"></button>
+        </td>
+        <td>
+          <span data-slot="title"></span>
+          <span class="tag tag--warn" data-when="!active">снят с продажи</span>
+          <div class="muted" data-slot="tier"></div>
+        </td>
+        <td><span data-slot="kind"></span><div class="muted" data-slot="period"></div></td>
+        <td data-slot="amount"></td>
+        <td>
+          <span class="tag" data-when="!public">закрытый</span>
+          <span data-when="public">публичный</span>
+        </td>
+        <td data-slot="subs"></td>
+        <td data-slot="grants"></td>
+        <td class="actions">
+          <button type="button" data-action="edit-plan">Изменить</button>
+          <button type="button" data-action="toggle-plan" data-when="active"
+                  data-confirm="Снять {code} с продажи? Купить его станет нельзя; оформленные подписки продолжат продлеваться.">Снять</button>
+          <button type="button" data-action="toggle-plan" data-when="!active"
+                  data-confirm="Вернуть {code} в продажу?">Вернуть</button>
+        </td>
       </tr>
     </template>
   </section>
