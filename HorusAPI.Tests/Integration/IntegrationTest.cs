@@ -40,6 +40,19 @@ public abstract class IntegrationTest(ApiFixture fixture)
         return (username, email, session);
     }
 
+    /// <summary>A verified user promoted to admin, with a fresh session that carries the Admin role.</summary>
+    protected async Task<string> AdminSessionAsync(HttpClient client)
+    {
+        var (username, _, _) = await RegisterVerifiedUserAsync(client);
+
+        await using (var conn = new Npgsql.NpgsqlConnection(Fixture.ConnectionString))
+            await Dapper.SqlMapper.ExecuteAsync(conn,
+                "UPDATE users SET is_admin = TRUE WHERE username = @username", new { username });
+
+        var login = await client.PostJsonAsync("/auth/login", new { username, password = Password }, TestData.NewIp());
+        return (await login.ReadStringPropAsync("session"))!;
+    }
+
     protected static string TokenFromLink(string link)
     {
         string query = new Uri(link).Query.TrimStart('?');

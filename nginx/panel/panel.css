@@ -77,6 +77,7 @@ section[aria-busy="true"] { opacity: .6; }
 }
 h1 { font-size: 20px; margin: 0; }
 h2 { font-size: 17px; margin: 0; }
+h3 { font-size: 15px; margin: 20px 0 6px; }
 
 .muted { color: var(--muted); }
 .bad { color: var(--bad); }
@@ -128,7 +129,7 @@ button:hover { border-color: var(--muted); }
 button[aria-busy="true"] { cursor: wait; opacity: .6; }
 button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; }
 
-input {
+input, select {
   font: inherit;
   padding: 4px 8px;
   border: 1px solid var(--line);
@@ -137,7 +138,7 @@ input {
   color: var(--fg);
 }
 
-form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
 form.grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -146,7 +147,9 @@ form.grid {
   margin-top: 8px;
 }
 form.grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
-form.grid input { color: var(--fg); }
+form.grid input, form.grid select { color: var(--fg); }
+label.check { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; color: var(--fg); }
+form.grid label.check { flex-direction: row; align-self: center; }
 
 .box {
   margin: 16px 0;
@@ -159,3 +162,15 @@ summary { cursor: pointer; font-weight: 600; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
+/* Группа dt+dd, которую JS прячет целиком, не должна ломать сетку. */
+.facts > div { display: contents; }
+
+pre.json {
+  max-height: 360px;
+  overflow: auto;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--soft);
+  white-space: pre;
+}
+tr[data-expired="true"] > td { color: var(--muted); }

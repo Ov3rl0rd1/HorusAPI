@@ -18,6 +18,7 @@ public sealed class HorusApiFactory(string connectionString) : WebApplicationFac
 {
     public RecordingEmailSender Email { get; } = new();
     public FakePaymentProvider Payments { get; } = new();
+    public RecordingNodeNotifier Nodes { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -44,6 +45,10 @@ public sealed class HorusApiFactory(string connectionString) : WebApplicationFac
             // Swap the real acquirer for the deterministic fake (no network in tests).
             services.RemoveAll<IPaymentProvider>();
             services.AddSingleton<IPaymentProvider>(Payments);
+
+            // Record node calls instead of making them: seeded hosts do not exist.
+            services.RemoveAll<INodeNotifier>();
+            services.AddSingleton<INodeNotifier>(Nodes);
         });
     }
 }

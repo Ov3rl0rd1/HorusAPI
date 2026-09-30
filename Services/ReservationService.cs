@@ -29,6 +29,12 @@ public record HoldResult(HoldStatus status, int? serverId, int? holdId, bool alr
 /// <param name="newlyBound">True when this call created the binding (caller must provision the node).</param>
 public record ConfirmResult(int? serverId, bool newlyBound);
 
+public enum MoveStatus { Moved, NotOnServer, SameServer, TargetNotFound, TargetInactive, NoCapacity }
+
+/// <summary>Outcome of moving one user off a node.</summary>
+/// <param name="serverId">The node the user is bound to now — the new one on <see cref="MoveStatus.Moved"/>.</param>
+public record MoveResult(MoveStatus status, int? serverId);
+
 /// <summary>
 /// Owns the slot ("reservation") model: a user is bound to exactly one node
 /// (<c>users.current_server_id</c>), and each node counts its bound users in
@@ -44,6 +50,15 @@ public interface IReservationService
 
     /// <summary>Bind/move the user to <paramref name="serverId"/> (or the least-loaded node when null).</summary>
     Task<ReserveResult> SelectAsync(int userId, int? serverId);
+
+    /// <summary>
+    /// Move the user off <paramref name="fromServerId"/>: to <paramref name="toServerId"/>, or to
+    /// the least-loaded OTHER active node when null. Refuses (<see cref="MoveStatus.NotOnServer"/>)
+    /// when the user is no longer bound to that node — an admin acting on a stale view must not
+    /// move someone off the node they have since moved to themselves. Unlike
+    /// <see cref="SelectAsync"/>, a fleet with no room is a failure here, never "stay put".
+    /// </summary>
+    Task<MoveResult> MoveOffAsync(int userId, int fromServerId, int? toServerId);
 
     /// <summary>Drop the user's slot entirely; returns the node they were on (for de-provision).</summary>
     Task<int?> ReleaseAsync(int userId);
@@ -155,6 +170,68 @@ public class ReservationService(IConfiguration cfg, ILogger<ReservationService> 
         await conn.ExecuteAsync("UPDATE users SET current_server_id = @s WHERE id = @u", new { s = target, u = userId }, tx);
         await tx.CommitAsync();
         return new ReserveResult(ReserveStatus.Ok, target, cur is null, cur);
+    }
+
+    public async Task<MoveResult> MoveOffAsync(int userId, int fromServerId, int? toServerId)
+    {
+        if (toServerId == fromServerId) return new MoveResult(MoveStatus.SameServer, fromServerId);
+
+        await using var conn = Connect();
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        int? cur = await conn.ExecuteScalarAsync<int?>(
+            "SELECT current_server_id FROM users WHERE id = @u FOR UPDATE", new { u = userId }, tx);
+
+        if (cur != fromServerId)
+        {
+            await tx.RollbackAsync();
+            return new MoveResult(MoveStatus.NotOnServer, cur);
+        }
+
+        int target;
+        if (toServerId.HasValue)
+        {
+            var row = await conn.QuerySingleOrDefaultAsync<TargetRow>(
+                "SELECT is_active, (reserved_count < max_reservations) AS has_capacity FROM vpn_servers WHERE id = @s FOR UPDATE",
+                new { s = toServerId.Value }, tx);
+
+            MoveStatus? refusal = row is null ? MoveStatus.TargetNotFound
+                                : !row.is_active ? MoveStatus.TargetInactive
+                                : !row.has_capacity ? MoveStatus.NoCapacity
+                                : null;
+            if (refusal is MoveStatus status)
+            {
+                await tx.RollbackAsync();
+                return new MoveResult(status, cur);
+            }
+            target = toServerId.Value;
+        }
+        else
+        {
+            // The source is excluded explicitly rather than trusted to be inactive: moving one
+            // user leaves the node in rotation, and with the seat just freed it would be the pick.
+            int? pick = await conn.ExecuteScalarAsync<int?>("""
+                SELECT id FROM vpn_servers
+                WHERE is_active AND reserved_count < max_reservations AND id <> @from
+                ORDER BY reserved_count ASC, id ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """, new { from = fromServerId }, tx);
+
+            if (!pick.HasValue)
+            {
+                await tx.RollbackAsync();
+                return new MoveResult(MoveStatus.NoCapacity, cur);
+            }
+            target = pick.Value;
+        }
+
+        await conn.ExecuteAsync("UPDATE vpn_servers SET reserved_count = GREATEST(reserved_count - 1, 0) WHERE id = @s", new { s = fromServerId }, tx);
+        await conn.ExecuteAsync("UPDATE vpn_servers SET reserved_count = reserved_count + 1 WHERE id = @s", new { s = target }, tx);
+        await conn.ExecuteAsync("UPDATE users SET current_server_id = @s WHERE id = @u", new { s = target, u = userId }, tx);
+        await tx.CommitAsync();
+        return new MoveResult(MoveStatus.Moved, target);
     }
 
     public async Task<int?> ReleaseAsync(int userId)

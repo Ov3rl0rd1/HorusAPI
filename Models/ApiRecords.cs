@@ -115,3 +115,62 @@ public record UserAdminItem(
 
 /// <summary><c>Code</c> is a stable machine-readable tag for clients that need to branch on the failure.</summary>
 public record ApiError(string Message, string? Code = null);
+
+// ── Admin: one node in detail ────────────────────────────────────────────────
+
+/// <summary>Body of POST /admin/servers/{id}/users/{userId}/evacuate. Null = the least-loaded other node.</summary>
+public record MoveUserRequest(int? server_id);
+
+/// <summary>What moving one user off a node did. <c>problems</c> holds node calls that failed after the move committed.</summary>
+public record UserMoveReport(
+    int user_id, string username, int from_server_id, int server_id, string server_name,
+    IReadOnlyList<string> problems);
+
+/// <summary>
+/// Everything the admin panel shows about one node: the row, what it offers, and who is on it.
+/// <c>bound_users + pending_holds</c> is what <c>reserved_count</c> should equal; the panel
+/// flags the node when it does not, since capacity is measured on the counter, not the rows.
+/// </summary>
+public record ServerDetail(ServerNodeInfo node, IReadOnlyList<OfferSummary> offers, IReadOnlyList<NodeUserItem> users);
+
+public record ServerNodeInfo(
+    int       id,
+    string    name,
+    string    country,
+    string    city,
+    string    host,
+    string?   masquerade_url,
+    bool      is_active,
+    int       reserved_count,
+    int       max_reservations,
+    int       max_clients,
+    int       current_load,
+    int       bound_users,
+    int       pending_holds,
+    string    agent_version,
+    DateTime? last_registered_at,
+    string    profile,
+    string?   desired_profile,
+    string?   assigned_profile,
+    bool      in_sync,
+    string    profile_hash,
+    string    config_hash,
+    string?   render_error,
+    string[]  warnings,
+    string    offers_json);
+
+/// <summary>One client offer the node reported, reduced to what tells offers apart.</summary>
+public record OfferSummary(string id, string label, string tag, string? protocol, string[] audience, bool has_uri);
+
+/// <summary>A user bound to a node, as its detail view lists them.</summary>
+public record NodeUserItem(
+    int       id,
+    string    username,
+    string?   email,
+    bool      is_admin,
+    DateTime? expires_at,
+    DateTime? last_disconnect_at,
+    string?   last_disconnect_reason);
+
+/// <summary>How to reach a node's agent, whether or not it is in rotation — an evacuated node is not, and still needs de-provisioning.</summary>
+public record NodeEndpoint(int id, string name, string host, string auth_password);

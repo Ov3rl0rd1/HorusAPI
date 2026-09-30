@@ -8,11 +8,13 @@ import * as api from './admin-api.js';
 import { $, $$, fill, notify, report, whenAuthLost } from './bind.js';
 import * as servers from './servers.js';
 import * as users from './users.js';
+import * as plans from './plans.js';
 import { loadPayments, loadPromos } from './billing.js';
 
 const views = {
   servers: servers.load,
   users: users.load,
+  plans: plans.load,
   payments: loadPayments,
   promos: loadPromos
 };

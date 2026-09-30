@@ -48,6 +48,32 @@ public sealed record GrantBody(string plan_code, DateTime? expires_at);
 public sealed record CompBody(DateTime expires_at);
 public sealed record RefundBody(int? amount, string? reason);
 
+/// <summary>
+/// Create/replace a tariff. On update <c>code</c> is ignored: it is how checkouts, promos and the
+/// site name the plan, so it is fixed once created. Amounts are whole rubles.
+/// </summary>
+public sealed record PlanUpsertBody(
+    string? code, string? title, string? tier, string? kind,
+    string? interval_unit, int? interval_count, int? amount,
+    bool? is_public, bool? is_active);
+
+/// <summary>A tariff as the admin list shows it, with how many people it concerns right now.</summary>
+/// <param name="live_subscriptions">Subscriptions on this plan with access at this moment.</param>
+/// <param name="grants">Live grants to it (never-expiring, or not expired yet) — only meaningful for a non-public plan.</param>
+public sealed record PlanAdminItem(
+    int id, string code, string title, string tier, string kind,
+    string interval_unit, int interval_count, int amount, string currency,
+    bool is_public, bool is_active, DateTime created_at,
+    int live_subscriptions, int grants);
+
+/// <summary>One user's access to a non-public plan. <c>expires_at</c> null = бессрочно.</summary>
+public sealed record PlanGrantItem(
+    int user_id, string username, string? email,
+    int plan_id, string plan_code, string plan_title, bool plan_is_public,
+    DateTime? expires_at, DateTime created_at, string? granted_by);
+
+public enum PlanWriteStatus { Ok, NotFound, Exists, InUse }
+
 public sealed record PromoUpsertBody(
     string code, short percent_off, int? max_redemptions, int? per_user_limit,
     string? plan_code, DateTime? starts_at, DateTime? ends_at);
