@@ -1,0 +1,126 @@
+# ==============================================================================
+#  Caddy — HTTPS for the monitoring box, and the only way into it from outside.
+#
+#  Certificate: Let's Encrypt, obtained on first start and renewed by Caddy
+#  itself — no certbot, no renewal cron. It needs MONITOR_DOMAIN to resolve to
+#  this server and ports 80 + 443 open. Certificates live in the caddy-data
+#  volume: do not delete it casually, Let's Encrypt rate-limits re-issuing.
+#
+#  Who gets in is decided by the gate service (gate/gate.py), asked about every
+#  request (forward_auth). What they get is a READ-ONLY slice of VictoriaMetrics,
+#  listed path by path below. VictoriaMetrics has no authentication of its own
+#  and runs destructive calls on a plain GET — /api/v1/admin/tsdb/delete_series
+#  answers 204 to a link — so "everything but the dangerous bits" is not a safe
+#  default. "Only what vmui reads" is.
+#
+#  Checked against VictoriaMetrics v1.111.0 (the vmui bundle's own requests) and
+#  caddy 2.10. After raising VM_TAG, if a vmui tab shows 404, its path is missing
+#  from @read below.
+# ==============================================================================
+{
+	# HTTP/1.1 and HTTP/2 only: HTTP/3 would need UDP 443 opened as well, and a
+	# dashboard for one person gains nothing from it.
+	servers {
+		protocols h1 h2
+	}
+}
+
+(hardening) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+}
+
+{$MONITOR_DOMAIN} {
+	import hardening
+	encode zstd gzip
+
+	# ── 1. Paths that could mean one thing here and another upstream ──────────
+	# Caddy matches path_regexp against the CLEANED path but forwards the raw one:
+	# "/api/v1/admin/tsdb/delete_series/../../../query" cleans to an allowed
+	# /api/v1/query. VictoriaMetrics, for its part, collapses "//". Nothing vmui
+	# sends contains "..", "//" or a backslash, so such a path is refused outright.
+	# This looks at the decoded path, so %2e%2e, %2F and %5C are caught too; the
+	# query string is not looked at (PromQL may legitimately contain any of it).
+	@unsafe vars_regexp unsafe {http.request.uri.path} (\.\.|//|\\)
+	handle @unsafe {
+		respond "Bad path" 400
+	}
+
+	# ── 2. The gate itself: login page, Telegram / key login, logout ──────────
+	# /auth/check and /auth/check-probe are forward_auth's, never the internet's.
+	@gate {
+		path /auth /auth/*
+		not path /auth/check /auth/check-probe
+	}
+	handle @gate {
+		reverse_proxy gate:8080
+	}
+
+	# ── 3. Remote write from ru-probe (optional) ───────────────────────────────
+	# Basic auth with PROBE_PASSWORD; the gate answers 404 while it is empty, which
+	# switches this route off. A browser session does NOT open it.
+	@probe {
+		method POST
+		path /api/v1/write
+	}
+	handle @probe {
+		forward_auth gate:8080 {
+			uri /auth/check-probe
+		}
+		reverse_proxy victoria-metrics:8428 {
+			header_up -Authorization
+		}
+	}
+
+	# ── 4. VictoriaMetrics, read-only ──────────────────────────────────────────
+	# vmui talks to /prometheus/…; the bare forms are there for bookmarks and curl.
+	#   /vmui/*                  the UI, custom dashboards, timezone
+	#   /vmalert/*               vmalert's own pages (rules, firing alerts), via VM
+	#   /api/v1/query…export     queries and raw export
+	#   labels/label/series      the metric and label pickers
+	#   metadata, status/*       cardinality, top and active queries, build info
+	#   targets, service-disc.   is every scrape target up, and why not
+	#   *-relabel-debug, expand-with-exprs, prettify-query — vmui's playgrounds;
+	#                            they compute on their input and store nothing
+	#   /flags                   vmui reads VM's settings from it on every tab.
+	#                            Nothing secret is on VM's command line here (the
+	#                            scrape password is a file), and VM masks secrets
+	# Not listed, and so unreachable from outside: /api/v1/admin/*, /api/v1/import*,
+	# /api/v1/write (except the probe route above), /snapshot/*, /internal/*,
+	# /-/reload, /debug/pprof/*, /metrics, every other ingestion protocol.
+	@read {
+		method GET HEAD POST
+		path_regexp ^(/prometheus)?(/vmui(/.*)?|/vmalert(/.*)?|/api/v1/(query|query_range|query_exemplars|export|export/csv|export/native|labels|label/[^/]+/values|series|series/count|metadata|targets|status/[a-z_]+)|/expand-with-exprs|/prettify-query|/metric-relabel-debug|/target-relabel-debug|/targets|/service-discovery|/flags)$
+	}
+	handle @read {
+		forward_auth gate:8080 {
+			uri /auth/check
+		}
+		# The Mini App runs in an iframe on Telegram Web; nobody else may frame this.
+		header Content-Security-Policy "frame-ancestors 'self' https://web.telegram.org"
+		reverse_proxy victoria-metrics:8428 {
+			# VictoriaMetrics needs neither, and should never see the session.
+			header_up -Cookie
+			header_up -Authorization
+			# VM answers CORS with "*"; nothing cross-origin has any business here.
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Methods
+		}
+	}
+
+	# `*` is required: `redir /vmui/ 302` would read /vmui/ as a MATCHER and 302
+	# as the target — a silent empty 200.
+	handle / {
+		redir * /vmui/ 302
+	}
+
+	handle {
+		respond 404
+	}
+}

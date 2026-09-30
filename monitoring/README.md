@@ -1,7 +1,9 @@
 # Horus — мониторинг
 
 VictoriaMetrics + vmalert + Alertmanager. Веб-морда с графиками за любой период,
-алерты в Telegram, метрики со всех серверов и их контейнеров.
+алерты в Telegram, метрики со всех серверов и их контейнеров. Графики открываются по
+HTTPS — из Telegram кнопкой в боте или в браузере по ключу
+([WEB-ACCESS.md](WEB-ACCESS.md)).
 
 Без Prometheus (VictoriaMetrics скрейпит сама) и без Grafana (у vmui есть
 кастомные дашборды). На всё про всё ~350 МБ RAM и ~500 МБ диска за 30 дней.
@@ -32,6 +34,7 @@ vmagent, ни vector — только экспортёры.
 │  + vmui          │  basic    │        /metrics/containers   │→ cadvisor
 │ vmalert          │   auth    │        /metrics/agent        │→ node-agent (только нода)
 │ alertmanager ────┼──► TG     └──────────────────────────────┘
+│ caddy + gate  ◄──┼──── HTTPS: вы, из Telegram или браузера
 └──────────────────┘
 ```
 
@@ -71,7 +74,8 @@ chmod 600 vm/secrets/metrics_password
 
 # Telegram: бот от @BotFather, chat_id из
 # https://api.telegram.org/bot<TOKEN>/getUpdates
-nano .env          # TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+nano .env          # TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                   # MONITOR_DOMAIN, TG_ALLOWED_USERS, ACCESS_KEY — см. WEB-ACCESS.md
 
 docker compose up -d
 ```
@@ -101,14 +105,19 @@ docker compose up -d
 
 ### 4. Открыть графики
 
-vmui слушает только `127.0.0.1` — у VictoriaMetrics **нет аутентификации**.
+`https://<MONITOR_DOMAIN>` — в Telegram кнопкой «Мониторинг» в боте (вход сам, только для
+`TG_ALLOWED_USERS`), в браузере — по ключу `ACCESS_KEY`. Сразу открываются дашборды
+«Horus — серверы» и «Horus — сервис». Как это устроено, что открыто снаружи и что нет —
+**[WEB-ACCESS.md](WEB-ACCESS.md)**.
+
+У самой VictoriaMetrics **нет аутентификации**, поэтому её порт по-прежнему слушает только
+`127.0.0.1` и служит запасным входом, если веб сломан:
 
 ```bash
 ssh -L 8428:127.0.0.1:8428 root@<монитор>
 ```
 
-и `http://localhost:8428/vmui` → вкладка **Dashboards** → «Horus — серверы» и
-«Horus — сервис».
+и `http://localhost:8428/vmui`.
 
 ## Алерты
 
@@ -186,21 +195,13 @@ ssh root@<ru-vps> 'cd /opt/horus-probe && cp .env.example .env && nano .env && d
 
 ### Что нужно включить на монитор-сервере
 
-У VictoriaMetrics **нет аутентификации**, а пробнику надо писать в неё снаружи. Поэтому перед
-тем, как открывать порт:
+Пробник пишет через тот же HTTPS, что и веб-доступ: `PROBE_PASSWORD` в `.env` монитора
+(`openssl rand -hex 24`), а у пробника `MONITOR_URL=https://<MONITOR_DOMAIN>` и
+`MONITOR_PASSWORD=<тот же пароль>`. Пароль открывает только `POST /api/v1/write`; пока он
+пуст, маршрута нет вовсе. Подробности — [WEB-ACCESS.md](WEB-ACCESS.md#пробник-из-россии-через-тот-же-https).
 
-```yaml
-# monitoring/docker-compose.yml, сервис victoria-metrics
-command:
-  - -httpAuth.username=horus
-  - -httpAuth.password=<тот же, что MONITOR_PASSWORD у пробника>
-```
-
-и `VM_BIND=0.0.0.0` в `.env`. Тогда vmalert тоже надо снабдить
-`-datasource.basicAuth.*` и `-remoteWrite.basicAuth.*` — он ходит в ту же VictoriaMetrics.
-
-**Открывать порт без `-httpAuth.*` нельзя**: наружу смотрит и запись метрик, и vmui, и API
-удаления рядов.
+Порт VictoriaMetrics наружу **не открывается** и `-httpAuth.*` ей не нужен: у неё нет своей
+аутентификации, а на том же порту и запись метрик, и vmui, и API удаления рядов.
 
 ### Третий сигнал, если захочется
 

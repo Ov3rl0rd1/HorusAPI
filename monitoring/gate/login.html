@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Horus · мониторинг</title>
+<link rel="stylesheet" href="/auth/static/login.css">
+<script src="/auth/static/login.js" defer></script>
+</head>
+<!--
+  Тексты живут здесь. JS только снимает hidden с нужного блока [data-state] и
+  вписывает значения в [data-slot]. data-tg / data-key на <body> подставляет gate:
+  какие способы входа включены в его .env.
+-->
+<body data-tg="__TG_LOGIN__" data-key="__KEY_LOGIN__">
+<main class="card">
+  <h1>Horus · мониторинг</h1>
+
+  <section data-state="telegram" hidden>
+    <p class="muted">Вход через Telegram…</p>
+  </section>
+
+  <section data-state="denied" hidden>
+    <p class="bad">Этому аккаунту Telegram вход в мониторинг не разрешён.</p>
+    <p class="muted">Разрешённые аккаунты перечислены в <code>TG_ALLOWED_USERS</code> на монитор-сервере.</p>
+  </section>
+
+  <section data-state="expired" hidden>
+    <p class="bad">Данные входа от Telegram устарели.</p>
+    <p class="muted">Закройте мини-приложение и откройте его снова кнопкой в боте.</p>
+  </section>
+
+  <section data-state="invalid" hidden>
+    <p class="bad">Telegram прислал данные, которые не прошли проверку подписи.</p>
+    <p class="muted">Так бывает, если бот, из которого открыто приложение, — не тот, чей токен
+      записан на монитор-сервере. Откройте мониторинг кнопкой в своём боте.</p>
+  </section>
+
+  <section data-state="no-cookie" hidden>
+    <p class="bad">Вход прошёл, но браузер не сохранил cookie во встроенном окне.</p>
+    <p class="muted">Так ведёт себя браузер с полностью запрещёнными сторонними cookie.
+      Откройте мониторинг в приложении Telegram на телефоне или компьютере — или в обычном
+      браузере по ключу доступа.</p>
+  </section>
+
+  <section data-state="frame-blocked" hidden>
+    <p>Вход выполнен, но этот браузер не даёт встроенному окну Telegram Web хранить данные, и
+      графики в нём не откроются.</p>
+    <p><a class="button" data-link="handoff" target="_blank" rel="noopener">Открыть в новой вкладке</a></p>
+    <p class="muted">Ссылка одноразовая и действует минуту. Насовсем помогает разрешить сторонние
+      cookie для web.telegram.org — или открывать мониторинг в приложении Telegram.</p>
+  </section>
+
+  <section data-state="tg-off" hidden>
+    <p class="bad">Вход через Telegram на этом сервере выключен.</p>
+  </section>
+
+  <section data-state="bye" hidden>
+    <p class="ok">Вы вышли.</p>
+  </section>
+
+  <section data-state="key" hidden>
+    <form method="post" action="/auth/key" class="key">
+      <label for="key">Ключ доступа</label>
+      <input id="key" name="key" type="password" autocomplete="current-password"
+             autocapitalize="off" spellcheck="false" required autofocus>
+      <input type="hidden" name="next" data-field="next">
+      <input type="hidden" name="embedded" value="0" data-field="embedded">
+      <button type="submit">Войти</button>
+    </form>
+    <p class="bad" data-error="key" hidden>Ключ не подошёл.</p>
+    <p class="bad" data-error="disabled" hidden>Вход по ключу на этом сервере выключен.</p>
+    <p class="bad" data-error="handoff" hidden>Ссылка из Telegram Web устарела или уже открывалась.
+      Откройте мини-приложение снова.</p>
+  </section>
+
+  <section data-state="nothing" hidden>
+    <p class="muted">Откройте мониторинг кнопкой в Telegram-боте.</p>
+  </section>
+
+  <section data-state="slow" hidden>
+    <p class="bad">Слишком много неудачных попыток входа с этого адреса. Повторите через
+      <span data-slot="retry"></span> мин.</p>
+  </section>
+
+  <section data-state="network" hidden>
+    <p class="bad">Сервер не ответил. Проверьте связь и обновите страницу.</p>
+  </section>
+</main>
+</body>
+</html>
