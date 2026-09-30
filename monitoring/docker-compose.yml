@@ -13,8 +13,11 @@
 #  go quiet, which looks identical to "nothing is wrong".
 #
 #  Ports on this host:
-#    ${VM_PORT}/tcp    vmui + the query API. Bind it to a VPN/SSH tunnel or put
-#                      a password in front of it — it is NOT authenticated.
+#    80, 443/tcp       Caddy: HTTPS for vmui, behind a login (Telegram Mini App
+#                      or access key) — see caddy/Caddyfile and gate/gate.py.
+#                      80 only serves the Let's Encrypt challenge and redirects.
+#    ${VM_PORT}/tcp    vmui + the whole API, unauthenticated, on 127.0.0.1 only:
+#                      the SSH-tunnel way in, for when the web one is broken.
 #
 #  Bring up:  docker compose --env-file .env up -d
 # ==============================================================================
@@ -51,6 +54,9 @@ services:
       # Cap the cache on a small box. VM sizes caches from total RAM otherwise
       # and will happily take most of a 1 GB VPS.
       - -memory.allowedPercent=${VM_MEMORY_PERCENT:-40}
+      # vmalert's pages (rules, what is firing now) under /vmalert/ — vmui links
+      # there from its menu, and on a phone that is the page you want first.
+      - -vmalert.proxyURL=http://vmalert:8880
     volumes:
       - vm-storage:/storage
       - ./vm/scrape.yml:/etc/vm/scrape.yml:ro
@@ -84,8 +90,8 @@ services:
       - -notifier.url=http://alertmanager:9093
       - -rule=/etc/vmalert/rules/*.yml
       - -evaluationInterval=${EVAL_INTERVAL:-30s}
-      # Makes the "source" link in a Telegram message open the right vmui.
-      - -external.url=${PUBLIC_VM_URL:-http://localhost:8428}
+      # Where links to an alert point: the web UI, through the login.
+      - -external.url=https://${MONITOR_DOMAIN:?set MONITOR_DOMAIN in .env}
       - -httpListenAddr=:8880
     volumes:
       - ./vmalert/rules:/etc/vmalert/rules:ro
@@ -164,7 +170,70 @@ services:
         limits:
           memory: 64M
 
+  # ── Who may look: Telegram Mini App or access key ──────────────────────────
+  # Standard library Python, mounted rather than built — nothing to compile on a
+  # 1 GB box. Caddy asks it about every request; it is never published and must
+  # not be (it trusts X-Forwarded-For, which only Caddy sets honestly).
+  gate:
+    image: python:${PY_TAG:-3.13-alpine}
+    restart: unless-stopped
+    command: ["python", "-u", "/gate/gate.py"]
+    environment:
+      MONITOR_DOMAIN:     ${MONITOR_DOMAIN:?set MONITOR_DOMAIN in .env}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      TG_ALLOWED_USERS:   ${TG_ALLOWED_USERS:-}
+      ACCESS_KEY:         ${ACCESS_KEY:-}
+      PROBE_PASSWORD:     ${PROBE_PASSWORD:-}
+      SESSION_HOURS_TG:   ${SESSION_HOURS_TG:-12}
+      SESSION_HOURS_KEY:  ${SESSION_HOURS_KEY:-720}
+      SESSION_SALT:       ${SESSION_SALT:-}
+      # `-`, not `:-`: an explicitly empty value means "leave the bot's menu alone".
+      TG_MENU_BUTTON:     ${TG_MENU_BUTTON-Мониторинг}
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./gate:/gate:ro
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── HTTPS ───────────────────────────────────────────────────────────────────
+  # Gets and renews the Let's Encrypt certificate for MONITOR_DOMAIN by itself.
+  # What is reachable, and why only that, is in caddy/Caddyfile.
+  caddy:
+    image: caddy:${CADDY_TAG:-2.10-alpine}
+    restart: unless-stopped
+    depends_on:
+      - gate
+      - victoria-metrics
+    environment:
+      MONITOR_DOMAIN: ${MONITOR_DOMAIN:?set MONITOR_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificate and the ACME account. Losing it means re-issuing, and
+      # Let's Encrypt rate-limits that — keep it.
+      - caddy-data:/data
+      - caddy-config:/config
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
 volumes:
   vm-storage:
   am-config:
   am-data:
+  caddy-data:
+  caddy-config:

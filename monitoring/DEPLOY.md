@@ -37,7 +37,8 @@ git checkout release && git merge --ff-only dev && git push origin release
 | | |
 |---|---|
 | VPS под мониторинг | 1 vCPU / 1 ГБ / 10 ГБ, **отдельный от всего остального** |
-| Telegram | бот от @BotFather + chat_id |
+| Домен | A-запись (например, `monitor.<ваш домен>`) на этот VPS, открытые 80 и 443/tcp |
+| Telegram | бот от @BotFather + chat_id + ваш числовой user id |
 | (по желанию) VPS в России | для пробника блокировок, самый дешёвый |
 
 **Почему отдельный сервер.** Не ради ресурсов — всё это занимает ~350 МБ. Сторож,
@@ -73,15 +74,21 @@ cp .env.example .env
 openssl rand -hex 24 | tr -d '\n' > vm/secrets/metrics_password   # ← тот самый токен из шага 2
 chmod 600 vm/secrets/metrics_password
 
-nano .env        # TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+nano .env        # TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                 # MONITOR_DOMAIN, TG_ALLOWED_USERS, ACCESS_KEY (см. WEB-ACCESS.md)
 docker compose up -d
 ```
+
+Перед запуском нажмите Start в боте (с каждого аккаунта из `TG_ALLOWED_USERS`) — туда gate
+поставит кнопку «Мониторинг».
 
 **Проверка:**
 
 ```bash
-docker compose ps                 # пять сервисов, am-init в Exited(0) — так и задумано
+docker compose ps                 # семь сервисов, am-init в Exited(0) — так и задумано
 curl -s localhost:8428/health     # должно ответить
+docker compose logs gate caddy | grep -E "gate for|menu button|certificate obtained"
+curl -sI https://<MONITOR_DOMAIN>/vmui/ | head -1    # 302 — без входа не пускает
 ```
 
 ---
@@ -166,14 +173,16 @@ curl -s localhost:8428/api/v1/targets \
 curl -s localhost:8880/api/v1/rules | jq '.data.groups[].name'
 ```
 
-**Графики.** vmui слушает только `127.0.0.1` — у VictoriaMetrics **нет аутентификации**:
+**Графики.** В Telegram — кнопка «Мониторинг» в боте; в браузере —
+`https://<MONITOR_DOMAIN>` и ключ `ACCESS_KEY`. Открываются дашборды «Horus — серверы» и
+«Horus — сервис». Запасной путь, если веб сломан, — SSH-туннель к порту, который слушает
+только `127.0.0.1` (у VictoriaMetrics **нет аутентификации**):
 
 ```bash
 ssh -L 8428:127.0.0.1:8428 root@<монитор>
 ```
 
-и `http://localhost:8428/vmui` → вкладка **Dashboards** → «Horus — серверы» и
-«Horus — сервис».
+и `http://localhost:8428/vmui`.
 
 **Телеграм.** Проверьте живьём, а не на глаз: остановите `node-exporter` на одной ноде и
 дождитесь `ServerUnreachable` (3 минуты). Потом верните.
@@ -185,20 +194,16 @@ ssh -L 8428:127.0.0.1:8428 root@<монитор>
 Косвенный сигнал (`NodeReachableButNobodyConnects`) работает сразу и ничего не требует.
 Прямой требует площадки в стране.
 
-Сначала на **монитор-сервере** включить аутентификацию, иначе открытый наружу порт — это
-и запись метрик, и vmui, и API удаления рядов:
+Сначала на **монитор-сервере** задать пароль для записи — пробник пишет через тот же
+HTTPS, порт VictoriaMetrics наружу не открывается:
 
-```yaml
-# monitoring/docker-compose.yml, victoria-metrics
-command:
-  - -httpAuth.username=horus
-  - -httpAuth.password=<пароль>
+```bash
+echo "PROBE_PASSWORD=$(openssl rand -hex 24)" >> .env
+docker compose up -d gate
 ```
 
-плюс `VM_BIND=0.0.0.0` в `.env`, и те же `-datasource.basicAuth.*` /
-`-remoteWrite.basicAuth.*` для vmalert — он ходит в ту же VictoriaMetrics.
-
-Затем:
+Затем (в `.env` пробника `MONITOR_URL=https://<MONITOR_DOMAIN>`,
+`MONITOR_PASSWORD=<тот же PROBE_PASSWORD>`):
 
 ```bash
 scp -r monitoring/ru-probe root@<ru-vps>:/opt/horus-probe
@@ -221,6 +226,10 @@ ssh root@<ru-vps> 'cd /opt/horus-probe && cp .env.example .env && nano .env && d
 | `/metrics/containers` на ноде 502 | cadvisor там выключен по умолчанию. Так и задумано: 50–80 МБ на 700 МБ и одном ядре не лишние. Включается `COMPOSE_PROFILES=containers` в .env ноды |
 | vmui пустой на вкладке Dashboards | Формат кастомных дашбордов зависит от версии VM. Скажите — поправлю схему по факту |
 | Телеграм молчит | `docker compose logs alertmanager`. Чаще всего chat_id: для группы он отрицательный |
+| Сертификат не выпускается | A-запись не на этот сервер, закрыт порт 80 или домен проксирует Cloudflare. `docker compose logs caddy` |
+| Веб отвечает 502 на всё | gate не стартовал — `docker compose logs gate` скажет, что не так в `.env` |
+| В боте нет кнопки «Мониторинг» | Не нажат Start. После Start — `docker compose restart gate` |
+| Прочее про веб-доступ | [WEB-ACCESS.md](WEB-ACCESS.md#если-что-то-не-так) |
 
 ---
 
@@ -229,7 +238,8 @@ ssh root@<ru-vps> 'cd /opt/horus-probe && cp .env.example .env && nano .env && d
 Мониторинг ничего не меняет в работе сервиса — он только читает. Полный откат:
 
 ```bash
-# Монитор-сервер
+# Монитор-сервер (том caddy-data с сертификатом тоже удалится — при повторной
+# установке Caddy выпустит новый)
 cd /opt/horus/monitoring && docker compose down -v
 
 # На каждом сервере: убрать токен и пересоздать nginx

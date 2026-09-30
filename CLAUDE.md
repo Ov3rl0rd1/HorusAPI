@@ -211,9 +211,20 @@ and vmagent on a small Russian VPS that **push** TCP-connect results; it pushes 
 serving so nothing has to be opened on it, and it knows only addresses and ports, because a
 box in that jurisdiction should be worthless if seized. `NodeBlockedFromRussia` fires only
 when the probe fails **and we can still reach the node** — otherwise it is an outage, which
-`ServerUnreachable` already covers. Accepting a remote push means turning on VictoriaMetrics'
-`-httpAuth.*` first: it has no authentication of its own, and the same port serves vmui and
-the delete API.
+`ServerUnreachable` already covers. The probe pushes through the same HTTPS as the web UI
+(`POST /api/v1/write`, basic auth with `PROBE_PASSWORD`) — VictoriaMetrics' own port is never
+published: it has no authentication, and the same port serves vmui and the delete API.
+
+**Web access** ([monitoring/WEB-ACCESS.md](monitoring/WEB-ACCESS.md)): Caddy terminates HTTPS
+for `MONITOR_DOMAIN` (Let's Encrypt, automatic) and asks `gate` (stdlib Python,
+[monitoring/gate/gate.py](monitoring/gate/gate.py), tests alongside) about every request via
+`forward_auth`. Two ways in: a Telegram Mini App (initData HMAC with the bot token, user id in
+`TG_ALLOWED_USERS`; the menu button is set per allowed chat) or `ACCESS_KEY` (form, or
+`Authorization: Bearer`). Only an **allow-list of read-only VictoriaMetrics paths** is proxied
+— VM runs `delete_series` on a plain GET — and any path with `..`, `//` or `\` is refused
+first, because Caddy matches the cleaned path but forwards the raw one. The session is a signed
+`__Host-` cookie (key derived from bot token + `ACCESS_KEY` + `SESSION_SALT`), `SameSite=None;
+Partitioned` only inside Telegram Web's iframe.
 
 `cadvisor` runs here by default and is **opt-in on nodes** (`COMPOSE_PROFILES=containers`):
 50-80 MB is affordable on this host and is not on a 700 MB/1-core node, where xray's health
