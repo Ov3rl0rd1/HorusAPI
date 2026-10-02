@@ -43,6 +43,7 @@ public partial class Program
 
         // Billing: catalogue/promo/grants, the payment engine, and the pluggable provider.
         builder.Services.AddScoped<IPlanService, PlanService>();
+        builder.Services.AddScoped<IReferralService, ReferralService>();
         builder.Services.AddScoped<IBillingService, BillingService>();
         AddPaymentProvider(builder);
         builder.Services.AddHostedService<BillingSweeperService>();

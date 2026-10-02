@@ -91,3 +91,17 @@ export const refund = (id, amount, reason) =>
 export const promos          = () => get('/admin/promocodes');
 export const createPromo     = (body) => post('/admin/promocodes', body);
 export const deactivatePromo = (code) => del(`/admin/promocodes/${enc(code)}`);
+
+// ── Партнёры (реферальная программа) ─────────────────────────────────────
+// ReferralPartnerAdminItem[] { user_id, username, email, code, discount_percent, reward_percent,
+//   is_active, note, created_at, invited, paying, revenue, earned, paid_out, balance } — рубли целые
+export const referrals = () => get('/admin/referrals');
+// ReferralPartnerDetail { partner, link, invited[], rewards[], payouts[] } · 404 not_partner
+export const referral  = (username) => get(`/admin/referrals/${enc(username)}`);
+// Создать: { code, discount_percent, reward_percent, is_active?, note? }. Изменить — только то,
+// что меняется ({ is_active: false } — выключить). 200 ReferralPartnerAdminItem ·
+// 400 invalid_referral · 404 user_not_found · 409 code_taken
+export const saveReferral = (username, body) => put(`/admin/users/${enc(username)}/referral`, body);
+// 200 ReferralPartnerAdminItem · 404 not_partner · 409 payout_exceeds_balance
+export const referralPayout = (username, amount, note) =>
+  post(`/admin/users/${enc(username)}/referral/payouts`, { amount, note });

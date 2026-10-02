@@ -125,6 +125,22 @@ loginForm.addEventListener('submit', async function (e) {
 const regForm = byId('register-form');
 const regSubmit = byId('register-submit');
 
+// Код партнёра из ссылки (?ref=КОД). Запоминается, чтобы пережить переход между
+// «Входом» и «Регистрацией» и перезагрузку; забывается, когда сервер его принял.
+const REF_KEY = 'horus.ref';
+function storedRef() {
+  try { return localStorage.getItem(REF_KEY) || ''; } catch (e) { return ''; }
+}
+(function rememberRef() {
+  const ref = (queryParam('ref') || '').trim();
+  if (ref) { try { localStorage.setItem(REF_KEY, ref); } catch (e) {} }
+  const code = ref || storedRef();
+  if (!code) return;
+  const note = byId('ref-note');
+  note.querySelector('[data-slot="ref"]').textContent = code;
+  note.hidden = false;
+})();
+
 regForm.addEventListener('submit', async function (e) {
   e.preventDefault();
   clearMsg('register-msg');
@@ -138,7 +154,9 @@ regForm.addEventListener('submit', async function (e) {
 
   busy(regSubmit, true, 'Отправляем код…');
   try {
-    const r = await register(username, email, password);
+    const r = await register(username, email, password, storedRef());
+    // Принятый код больше не нужен; неверный тоже — второй раз он не подойдёт.
+    if (r && r.referral) { try { localStorage.removeItem(REF_KEY); } catch (e) {} }
     // Тикет с регистрации — то, что делает «Не мой адрес» доступным сразу.
     // Опечатку замечают именно здесь, через секунду после того, как её сделали.
     pendingToken = (r && r.pendingToken) || '';

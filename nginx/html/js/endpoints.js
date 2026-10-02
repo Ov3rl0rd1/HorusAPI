@@ -19,8 +19,10 @@ export const login = (username, password) =>
 
 // 202 RegisterResponse { status, email, codeExpiresInSeconds,
 //                        resendAvailableInSeconds } · 400/409/429
-export const register = (username, email, password) =>
-  post('/auth/register', { username, password, email }, { auth: false });
+// referralCode — код партнёра из ссылки ?ref=; в ответе referral: 'applied' | 'invalid'.
+// Неверный код регистрацию не останавливает.
+export const register = (username, email, password, referralCode) =>
+  post('/auth/register', { username, password, email, referral_code: referralCode || null }, { auth: false });
 
 // 200 LoginResponse · 400 (invalid_code | code_expired | invalid_ticket) ·
 // 409 already_verified · 429 too_many_attempts
@@ -64,6 +66,10 @@ export const logoutOthers = () => post('/auth/logout-others', {});
 // 200 WhoAmIResponse { ip, ipVersion, username, email, emailVerified,
 //                      subscriptionExpiresAt, currentServerId, observedAt }
 export const whoAmI = () => get('/whoami');
+
+// ReferralMeView { partner: { code, link, discount_percent, reward_percent, is_active, invited,
+//   paying, earned, paid_out, balance } | null, invited: { code, discount_percent, active } | null }
+export const referralMe = () => get('/billing/referral');
 
 // ── Servers ───────────────────────────────────────────────────────────────
 // 200 PingCandidate[] { id, country, city, host,

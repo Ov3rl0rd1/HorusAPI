@@ -124,6 +124,7 @@ onForm('user-search', (v) => search(v.q || ''));
 onAction('pick-user', ({ item }) => select(item));
 onAction('close-user', () => select(null));
 onAction('user-payments', () => go('payments', { user: selected.username }));
+onAction('user-referral', () => go('referrals', { username: selected.username }));
 
 onForm('comp', async function (v) {
   await api.grantComp(selected.username, endOfDay(v.until));

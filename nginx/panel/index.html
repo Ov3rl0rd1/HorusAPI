@@ -27,6 +27,7 @@
     <a href="#plans"    data-show="plans">Тарифы</a>
     <a href="#payments" data-show="payments">Платежи</a>
     <a href="#promos"   data-show="promos">Промокоды</a>
+    <a href="#referrals" data-show="referrals">Партнёры</a>
   </nav>
   <span class="me"><span data-slot="me"></span> · <a href="/cabinet">на сайт</a></span>
 </header>
@@ -304,7 +305,10 @@
         Закрытие отнимает только право купить: оплаченная подписка остаётся.
       </p>
 
-      <p><button type="button" data-action="user-payments">Платежи пользователя →</button></p>
+      <p>
+        <button type="button" data-action="user-payments">Платежи пользователя →</button>
+        <button type="button" data-action="user-referral">Партнёрская программа →</button>
+      </p>
     </article>
 
     <div class="scroll">
@@ -557,6 +561,155 @@
       </form>
       <p class="muted">Скидка действует только на разовые покупки: регулярный платёж провайдер списывает фиксированной суммой.</p>
     </details>
+  </section>
+
+  <!-- ── Партнёры (реферальная программа) ─────────────────────────────── -->
+  <section data-view="referrals" hidden>
+    <div class="head">
+      <h1>Партнёры</h1>
+      <div class="tools">
+        <button type="button" data-action="refresh-referrals">Обновить</button>
+        <button type="button" data-action="new-referral">Новый партнёр</button>
+      </div>
+    </div>
+
+    <p class="notice" data-notice hidden></p>
+
+    <article class="box" data-card="referral" hidden>
+      <div class="head">
+        <h2>
+          <span data-when="creating">Новый партнёр</span>
+          <span data-when="!creating">
+            <span data-slot="username"></span> <span class="muted mono" data-slot="code"></span>
+            <span class="tag tag--warn" data-when="!active">выключен</span>
+          </span>
+        </h2>
+        <button type="button" class="link" data-action="close-referral">закрыть</button>
+      </div>
+
+      <dl class="facts" data-when="!creating">
+        <dt>Ссылка</dt>
+        <dd><span class="mono" data-slot="link"></span> <button type="button" class="link" data-action="copy-referral-link">скопировать</button></dd>
+        <dt>Приглашено</dt><dd><span data-slot="invited"></span>, из них платили <span data-slot="paying"></span></dd>
+        <dt>Оплачено приглашёнными</dt><dd data-slot="revenue"></dd>
+        <dt>Начислено партнёру</dt><dd data-slot="earned"></dd>
+        <dt>Выплачено</dt><dd data-slot="paidOut"></dd>
+        <dt>К выплате</dt><dd><strong data-slot="balance"></strong></dd>
+      </dl>
+
+      <form data-form="referral" class="grid">
+        <label data-when="creating">Пользователь <input name="username" autocomplete="off" placeholder="имя пользователя"></label>
+        <label>Код <input name="code" maxlength="32" placeholder="BLOGGER" autocomplete="off"></label>
+        <label>Скидка приглашённым, % <input name="discount_percent" type="number" min="0" max="90" required></label>
+        <label>Доля партнёра, % <input name="reward_percent" type="number" min="0" max="100" required></label>
+        <label>Заметка <input name="note" maxlength="256" placeholder="кто это, куда платить"></label>
+        <label class="check"><input type="checkbox" name="is_active"> включён</label>
+        <div><button type="submit">Сохранить</button></div>
+      </form>
+      <p class="muted">
+        Код — 3–32 латинских буквы, цифры, «-» или «_»; вводится в то же поле, что промокод, поэтому
+        совпадать с промокодом не может. Приглашённый — только новый клиент (до первой оплаты),
+        привязывается навсегда, первым кодом. Скидка действует на все его покупки, в том числе на
+        автопродление, пока партнёр включён. Доля начисляется с каждого реально оплаченного рубля,
+        округляется вниз и списывается обратно при возврате.
+      </p>
+
+      <div data-when="!creating">
+        <h3>Выплата</h3>
+        <form data-form="referral-payout" class="inline">
+          <label>Сумма, ₽ <input name="amount" type="number" min="1" required></label>
+          <label>Комментарий <input name="note" maxlength="256" placeholder="СБП, 12.10"></label>
+          <button type="submit">Записать выплату</button>
+        </form>
+        <p class="muted">Деньги переводятся вручную, здесь — только отметка. Больше остатка к выплате записать нельзя.</p>
+
+        <h3>Приглашённые (<span data-slot="invitedCount"></span>)</h3>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Пользователь</th><th>Пришёл</th><th>Оплатил</th><th>Доступ</th></tr></thead>
+            <tbody data-list="referral-invited"></tbody>
+          </table>
+        </div>
+        <p class="muted" data-empty="referral-invited" hidden>Пока никого.</p>
+        <template data-template="referral-invited">
+          <tr>
+            <td><button type="button" class="link" data-action="referral-user" data-slot="username"></button></td>
+            <td class="muted" data-slot="since"></td>
+            <td data-slot="paid"></td>
+            <td><span data-when="access">есть</span><span class="muted" data-when="!access">нет</span></td>
+          </tr>
+        </template>
+
+        <h3>Начисления</h3>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Дата</th><th>Клиент</th><th>Оплачено</th><th>Доля</th><th>Начислено</th><th></th></tr></thead>
+            <tbody data-list="referral-rewards"></tbody>
+          </table>
+        </div>
+        <p class="muted" data-empty="referral-rewards" hidden>Начислений нет.</p>
+        <template data-template="referral-rewards">
+          <tr>
+            <td class="muted" data-slot="created"></td>
+            <td data-slot="username"></td>
+            <td data-slot="paid"></td>
+            <td data-slot="percent"></td>
+            <td data-slot="amount"></td>
+            <td><span class="tag tag--warn" data-when="reversed">сторно (возврат)</span></td>
+          </tr>
+        </template>
+
+        <h3>Выплаты</h3>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Дата</th><th>Сумма</th><th>Комментарий</th><th>Записал</th></tr></thead>
+            <tbody data-list="referral-payouts"></tbody>
+          </table>
+        </div>
+        <p class="muted" data-empty="referral-payouts" hidden>Выплат не было.</p>
+        <template data-template="referral-payouts">
+          <tr>
+            <td class="muted" data-slot="created"></td>
+            <td data-slot="amount"></td>
+            <td data-slot="note"></td>
+            <td data-slot="by"></td>
+          </tr>
+        </template>
+      </div>
+    </article>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Партнёр</th><th>Код</th><th>Скидка</th><th>Доля</th><th>Пригласил</th><th>Оплачено</th><th>Начислено</th><th>Выплачено</th><th>К выплате</th><th></th></tr>
+        </thead>
+        <tbody data-list="referrals"></tbody>
+      </table>
+    </div>
+    <p class="muted" data-empty="referrals" hidden>Партнёров нет. Партнёром может стать любой пользователь — нажмите «Новый партнёр» или откройте его карточку в «Пользователях».</p>
+
+    <template data-template="referrals">
+      <tr>
+        <td>
+          <button type="button" class="link" data-action="open-referral" data-slot="username"></button>
+          <span class="tag tag--warn" data-when="!active">выключен</span>
+        </td>
+        <td class="mono" data-slot="code"></td>
+        <td data-slot="discount"></td>
+        <td data-slot="reward"></td>
+        <td><span data-slot="invited"></span> / <span data-slot="paying"></span></td>
+        <td data-slot="revenue"></td>
+        <td data-slot="earned"></td>
+        <td data-slot="paidOut"></td>
+        <td><strong data-slot="balance"></strong></td>
+        <td class="actions">
+          <button type="button" data-action="toggle-referral" data-when="active"
+                  data-confirm="Выключить партнёра {username}? Новые покупки его клиентов пойдут без скидки и без начислений; уже начисленное останется.">Выключить</button>
+          <button type="button" data-action="toggle-referral" data-when="!active"
+                  data-confirm="Включить партнёра {username}?">Включить</button>
+        </td>
+      </tr>
+    </template>
   </section>
 
 </main>

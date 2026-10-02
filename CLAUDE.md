@@ -54,9 +54,9 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 | `GET /servers` | `X-Session-Key` | ping candidates: least-loaded-with-capacity, one per country ([ServerEndpoints](Endpoints/ServerEndpoints.cs)) |
 | `POST /servers/select` | `X-Session-Key` | reserve/move the caller to a node (auto-picks when `server_id` omitted) |
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
-| `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel` ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
+| `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel`, `referral` (own partner code/earnings, invited discount) ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
 | `POST /payments/{provider}/webhook` | **anonymous** (secret checked in-adapter, idempotent) | payment provider callbacks |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **node detail** (`GET /servers/{id}`), **evacuate/activate a node**, **move one user off a node**, user search, comp subscription (grant = reserve slot, revoke = release), **plan catalogue** (list/create/edit), closed-plan grants (grant/list/revoke), refunds, promo codes, `gate` (204 — nginx gates `/panel` on it) |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **node detail** (`GET /servers/{id}`), **evacuate/activate a node**, **move one user off a node**, user search, comp subscription (grant = reserve slot, revoke = release), **plan catalogue** (list/create/edit), closed-plan grants (grant/list/revoke), refunds, promo codes, **referral partners** (appoint/edit/switch off, detail, payouts), `gate` (204 — nginx gates `/panel` on it) |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
@@ -100,6 +100,45 @@ a freshly registered non-admin user has no access until they buy (this closed th
   right to buy only — a subscription already bought on the plan is untouched.
 - **Promo caveat**: promos are percent-off, first-charge-only → they apply to **one-time** buys; a promo on a recurring plan is refused (`promo_not_applicable`) because Platega recurring charges a fixed amount every period.
 - **Provider reconciliation** (polling for missed webhooks) is a documented follow-up, not yet implemented.
+- **Recurring activation confirms the checkout's payment row.** It used to stay `pending`, and
+  `BillingSweeperService` then marked a paid subscription's first payment `failed`; activation now
+  sets it `confirmed` (also from `failed`, for an activation arriving after the sweep).
+
+### Referral partners ([ReferralService](Services/Billing/ReferralService.cs), [ReferralTests](HorusAPI.Tests/Integration/ReferralTests.cs))
+
+A **partner** is any user the admin appoints (`PUT /admin/users/{u}/referral {code, discount_percent,
+reward_percent, is_active, note}` — no self-service). Their **code** reaches customers as a link
+(`{PublicUrl}/login?mode=register&ref=CODE`, sent by `/auth/register` as `referral_code`) or typed
+into the checkout's **promo field** — the two share one namespace, enforced both ways (`409 code_taken`).
+
+- **Binding** (`users.referred_by`, `AttachAsync`): once, first code wins, **new customers only**
+  (no confirmed/refunded payment, no non-manual live subscription — comp grants don't count),
+  never yourself. One `UPDATE … WHERE referred_by IS NULL AND NOT customer`, so racing codes can't
+  both win. Refusals at checkout are `400 referral_not_applicable` with `self_referral` /
+  `already_referred` / `existing_customer` in the message; at sign-up an unknown code never blocks —
+  the 202 says `referral: "applied" | "invalid"`.
+- **Discount**: `discount_percent` (0–90) on **every** purchase while the partner is active —
+  recurring included, because a permanent discount is exactly what Platega's fixed recurring
+  amount carries (unlike first-charge promos). It does not stack with a promo: the bigger applies,
+  and a losing promo is not redeemed. `payments.referrer_id` records the partner considered.
+- **Reward**: `reward_percent` (0–100) of what was **actually paid**, rounded down, at the partner's
+  current percent and only while active. Accrued when money lands: one-time confirm (**inside**
+  its transaction — `ReferralService.AccrueInAsync`), recurring activation and each renewal
+  (best effort + `LogError`: those webhooks are not idempotent on replay without a provider period
+  end, so a failed accrual must not become a retry that extends access twice). `referral_rewards.source`
+  is the idempotency key: `payment:{id}` for one-time, `subscription:{id}:{period end date}` for a
+  recurring period — so a provider reporting the first charge both as activation and as a charge
+  pays once. **Refund/chargeback** (`RevokeAndReleaseAsync`) reverses the purchase's latest reward.
+- **Payouts** are manual; `POST /admin/users/{u}/referral/payouts {amount, note}` records one and is
+  refused above the balance (`409 payout_exceeds_balance`). Balance = accrued − payouts (can go
+  negative after a reversal of already-paid money). Switching a partner off (`{is_active:false}`)
+  stops the discount on new checkouts and new accruals; existing recurring prices stay (the
+  provider holds them) and earned money stays. No DELETE — rewards and payouts are money history.
+- Schema: `referral_partners` (PK `user_id`, unique `lower(code)`), `users.referred_by/referred_at`
+  (`ON DELETE SET NULL`), `payments.referrer_id`, `referral_rewards`, `referral_payouts`.
+  Existing DB: `migrations/003_referrals.sql`. The site: `?ref=` is remembered in `localStorage`
+  (`horus.ref`) by `login.html`, the pay page's code field shows for subscriptions too, and the
+  cabinet shows a partner tile from `GET /billing/referral`.
 
 ### Evacuating a node
 
@@ -163,7 +202,9 @@ manifest for labels only — the hrefs are static, so downloads survive a failed
 `/panel` is a plain page over the `/admin/*` API: nodes (evacuate/activate, profiles, ping,
 add, a **detail card** with offers and bound users, **move one user**), user search + comp,
 move off a node and closed-plan grants (select + «бессрочно»), **tariffs** (list, create, edit,
-take off sale, who a closed plan is open to), payments + refunds, promo codes. **Everyone but an
+take off sale, who a closed plan is open to), payments + refunds, promo codes, **partners**
+(referral programme: appoint from the user card or the list, card with link, invited customers,
+rewards incl. reversals, payouts; switch on/off). **Everyone but an
 admin gets the same 404 as any missing path** — byte for byte, headers included.
 
 nginx decides with `auth_request` → `GET /admin/gate` (204 for an admin). A browser
@@ -199,7 +240,8 @@ indistinguishable from healthy.
 
 Targets live in `monitoring/targets/*.yml` (file_sd, re-read every minute — adding a node
 restarts nothing). Dashboards are vmui custom dashboards in `monitoring/dashboards/`.
-Alert rules: `infra.yml` (host), `horus.yml` (xray, olcrtc rooms, profile render,
+Alert rules: `infra.yml` (host), `horus.yml` (xray, **per-user limits** — not applied, xray without
+TariffService, server monthly traffic ≥ 80 % / exhausted —, olcrtc rooms, profile render,
 certificate expiry **and name coverage**, container limits) and `blocking.yml`.
 
 **Detecting an RKN IP block needs a vantage point inside Russia** — no check from a foreign
@@ -283,7 +325,7 @@ username and an address against unique indexes forever, so the person who mistyp
 sign up again. **Every FK into `users` is `ON DELETE CASCADE`**, so the SQL guards in
 `DeleteStaleUnverifiedAsync` are deliberately broader than the invariants require: no session,
 no `current_server_id`, no `expires_at`, and no row in `subscriptions`/`payments`/`slot_holds`/
-`plan_grants`/`promo_redemptions`. Each guard has a test.
+`plan_grants`/`promo_redemptions`/`referral_partners`. Each guard has a test.
 
 Codes are stored as `sha256("{userId}:{code}")` in `email_verifications` (one row per user, upserted; dies after 5 wrong attempts or 15 min). Reset tokens are stored as `sha256(token)` in `password_resets` (single-use, 60 min). `POST /auth/reset-request {email}` always answers `202 {status:"sent"}` regardless of whether the address exists (no account enumeration) and mails a link to `{PublicUrl}/reset?token=…`. The static reset form ([nginx/html/reset.html](nginx/html/reset.html)) validates the token via `GET /auth/reset-check?token=` then posts to `POST /auth/reset-confirm {token, password}`, which sets the new hash, **wipes every session** (evicting their `IMemoryCache` entries) and marks the email verified.
 
@@ -332,6 +374,9 @@ PostgreSQL. Schema in [init.sql](init.sql). Key columns:
 - `vpn_servers.auth_password` — per-node shared secret, sent to the agent as `X-API-PASSWORD`
 - `vpn_servers.reality_*` / `olcrtc_*` / ports — reported by the node via `/node/register`
 - `vpn_servers.masquerade_url` — optional target for admin ping; falls back to `https://{host}`
+
+Referral tables: `referral_partners`, `referral_rewards`, `referral_payouts`, plus `users.referred_by`,
+`users.referred_at`, `payments.referrer_id` — see "Referral partners" above.
 
 Billing tables (all amounts **whole rubles**; see [docs/payments.md](docs/payments.md)):
 - `plans` — tariff catalogue (`code`, `kind` recurring/one_time, `interval_*`, `amount`, `is_public`). Ships empty; seeded by the operator

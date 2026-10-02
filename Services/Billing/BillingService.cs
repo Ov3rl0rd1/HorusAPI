@@ -30,6 +30,7 @@ public class BillingService(
     IConfiguration cfg,
     IPaymentProvider provider,
     IPlanService plans,
+    IReferralService referrals,
     IReservationService reservation,
     IEntitlementService entitlement,
     IVpnServerService servers,
@@ -77,23 +78,49 @@ public class BillingService(
         if (plan.kind is not ("recurring" or "one_time"))
             return new CheckoutResult(CheckoutStatus.PlanNotFound, Detail: "bad_plan_kind");
 
-        // Price + promo. Amounts are whole rubles; the discount is computed on the server.
+        // Price + promo + referral. Amounts are whole rubles; discounts are computed on the server.
         int amount = plan.amount;
         int discount = 0;
         int? promoId = null;
+        string? code = string.IsNullOrWhiteSpace(body.promo_code) ? null : body.promo_code.Trim();
 
-        if (!string.IsNullOrWhiteSpace(body.promo_code))
+        // A partner's code arrives in the same field as a promo code (the two share one
+        // namespace). Presenting it binds a new customer to the partner — the same thing a
+        // ?ref= link does at sign-up — and from then on their discount applies on its own.
+        if (code is not null && await referrals.FindActiveByCodeAsync(code) is not null)
+        {
+            var bound = await referrals.AttachAsync(user.id, code);
+            if (bound != ReferralAttach.Bound)
+                return new CheckoutResult(CheckoutStatus.ReferralNotApplicable, Detail: ReferralRefusal(bound));
+            code = null;   // consumed: it was not a promo
+        }
+
+        PromoRow? promo = null;
+        if (code is not null)
         {
             // Platega recurring charges a fixed amount every period, so a "first charge only"
             // discount can't be represented on a subscription — promos apply to one-time buys.
             if (plan.kind == "recurring")
                 return new CheckoutResult(CheckoutStatus.PromoNotApplicable, Detail: "promo_not_applicable_to_recurring");
 
-            var (promo, reason) = await plans.ValidatePromoAsync(body.promo_code.Trim(), user.id, plan);
+            (promo, string? reason) = await plans.ValidatePromoAsync(code, user.id, plan);
             if (promo is null) return new CheckoutResult(CheckoutStatus.PromoInvalid, Detail: reason);
+        }
 
-            discount = Pricing.Discount(amount, promo.percent_off);
+        // A referred customer's discount is permanent — every purchase, recurring included,
+        // which a fixed recurring amount can carry. It does not stack with a promo: the bigger
+        // one applies, and a promo that loses is not spent.
+        ReferralPartnerRow? partner = await referrals.PartnerOfAsync(user.id);
+        int promoDiscount    = promo is null ? 0 : Pricing.Discount(amount, promo.percent_off);
+        int referralDiscount = partner is null ? 0 : Pricing.Discount(amount, partner.discount_percent);
+        if (promo is not null && promoDiscount >= referralDiscount)
+        {
+            discount = promoDiscount;
             promoId = promo.id;
+        }
+        else
+        {
+            discount = referralDiscount;
         }
 
         int finalAmount = amount - discount;
@@ -120,10 +147,10 @@ public class BillingService(
                 """, new { u = user.id, plan = plan.id, prov = provider.Name, kind = plan.kind, srv = hold.serverId }, tx);
 
             paymentId = await conn.ExecuteScalarAsync<int>("""
-                INSERT INTO payments (user_id, plan_id, subscription_id, provider, kind, amount, currency, promo_code_id, discount, status, hold_id)
-                VALUES (@u, @plan, @sub, @prov, @kind, @amt, @cur, @promo, @disc, 'pending', @hold)
+                INSERT INTO payments (user_id, plan_id, subscription_id, provider, kind, amount, currency, promo_code_id, discount, status, hold_id, referrer_id)
+                VALUES (@u, @plan, @sub, @prov, @kind, @amt, @cur, @promo, @disc, 'pending', @hold, @referrer)
                 RETURNING id
-                """, new { u = user.id, plan = plan.id, sub = subscriptionId, prov = provider.Name, kind = plan.kind, amt = finalAmount, cur = plan.currency, promo = promoId, disc = discount, hold = hold.holdId }, tx);
+                """, new { u = user.id, plan = plan.id, sub = subscriptionId, prov = provider.Name, kind = plan.kind, amt = finalAmount, cur = plan.currency, promo = promoId, disc = discount, hold = hold.holdId, referrer = partner?.user_id }, tx);
 
             await tx.CommitAsync();
         }
@@ -312,6 +339,24 @@ public class BillingService(
             .Set("current_period_end", periodEnd)
             .Set("server_id", bind.serverId ?? sub.server_id));
 
+        // The checkout's payment row is what the admin sees and refunds against. It used to stay
+        // 'pending' after activation, and the sweeper then marked a paid subscription's first
+        // payment 'failed'. 'failed' is included for that reason: an activation arriving after
+        // the sweep still means the money was taken.
+        PaymentRow? first;
+        await using (var conn = Connect())
+            first = await conn.QuerySingleOrDefaultAsync<PaymentRow>($"""
+                UPDATE payments SET status = 'confirmed', updated_at = NOW()
+                WHERE id = (SELECT id FROM payments
+                            WHERE subscription_id = @sub AND kind = 'recurring'
+                            ORDER BY id DESC LIMIT 1)
+                  AND status IN ('created', 'pending', 'failed', 'confirmed')
+                RETURNING {PaymentCols}
+                """, new { sub = sub.id });
+
+        await AccrueReferralAsync(sub.user_id, sub.id, first?.id,
+            first?.amount ?? ev.Amount, ReferralService.PeriodSource(sub.id, periodEnd));
+
         await ProvisionAndEvictAsync(sub.user_id, bind.serverId, bind.newlyBound);
         log.LogInformation("Subscription {Ref} activated for user {UserId} until {End:o}", ev.ProviderRef, sub.user_id, periodEnd);
     }
@@ -339,6 +384,11 @@ public class BillingService(
             new { end = periodEnd, id = sub.id });
         await EntitlementService.ApplyAsync(conn, null, sub.user_id);
         await EvictUserAsync(conn, sub.user_id);
+
+        // Keyed by the period this charge pays for: a provider that also reports the FIRST
+        // charge (already rewarded at activation, for the same period) does not pay twice.
+        int paid = ev.Amount > 0 ? ev.Amount : await LatestPaymentAmountAsync(sub.id);
+        await AccrueReferralAsync(sub.user_id, sub.id, null, paid, ReferralService.PeriodSource(sub.id, periodEnd));
         log.LogInformation("Subscription {Ref} charged; period now until {End:o}", ev.ProviderRef, periodEnd);
     }
 
@@ -398,6 +448,12 @@ public class BillingService(
             }
 
             await EntitlementService.ApplyAsync(conn, tx, pay.user_id);
+
+            // In the same transaction: if the reward cannot be written, the confirmation rolls
+            // back too, and the provider's retry starts from a payment that is still pending.
+            await ReferralService.AccrueInAsync(conn, tx, pay.user_id, pay.subscription_id, pay.id,
+                pay.amount, ReferralService.PaymentSource(pay.id));
+
             await tx.CommitAsync();
         }
 
@@ -533,6 +589,32 @@ public class BillingService(
         int? previous = await reservation.ReleaseAsync(sub.user_id);
         await EntitlementRecomputeEvictAsync(sub.user_id);
         if (previous is int oldId) await DeprovisionAsync(sub.user_id, oldId);
+
+        // The money went back (refund or chargeback), so the partner's share of it does too.
+        try { await referrals.ReverseLatestAsync(sub.id); }
+        catch (Exception ex) { log.LogError(ex, "Could not reverse the referral reward of subscription {SubId}", sub.id); }
+    }
+
+    /// <summary>
+    /// The referral share of a recurring payment. Best effort, unlike the one-time path: these
+    /// webhooks are not idempotent when replayed without a provider period end, so a failure
+    /// here must not turn into a retry that extends access a second time. Logged loudly instead.
+    /// </summary>
+    private async Task AccrueReferralAsync(int userId, int subscriptionId, int? paymentId, int paid, string source)
+    {
+        try { await referrals.AccrueAsync(userId, subscriptionId, paymentId, paid, source); }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Could not accrue the referral reward {Source} for user {UserId} ({Paid} RUB)", source, userId, paid);
+        }
+    }
+
+    private async Task<int> LatestPaymentAmountAsync(int subscriptionId)
+    {
+        await using var conn = Connect();
+        return await conn.ExecuteScalarAsync<int?>(
+            "SELECT amount FROM payments WHERE subscription_id = @s ORDER BY id DESC LIMIT 1",
+            new { s = subscriptionId }) ?? 0;
     }
 
     private async Task<DateTime?> CurrentAccessEndAsync(int userId)
@@ -670,6 +752,14 @@ public class BillingService(
 
     private static bool IsProviderActive(string? status) =>
         !string.IsNullOrEmpty(status) && status.Contains("activ", StringComparison.OrdinalIgnoreCase);
+
+    private static string ReferralRefusal(ReferralAttach a) => a switch
+    {
+        ReferralAttach.SelfReferral     => "self_referral",
+        ReferralAttach.AlreadyReferred  => "already_referred",
+        ReferralAttach.ExistingCustomer => "existing_customer",
+        _                               => "invalid",
+    };
 
     private static string DescriptionFor(PlanRow plan) =>
         string.IsNullOrWhiteSpace(plan.title) ? $"Horus VPN — {plan.code}" : $"Horus VPN — {plan.title}";

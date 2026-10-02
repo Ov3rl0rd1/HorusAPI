@@ -54,6 +54,10 @@ public static class BillingEndpoints
                 CheckoutStatus.PlanNotFound       => Results.NotFound(new ApiError("Plan not available.", "plan_not_found")),
                 CheckoutStatus.PromoInvalid       => Results.BadRequest(new ApiError($"Promo code is not valid ({res.Detail}).", "promo_invalid")),
                 CheckoutStatus.PromoNotApplicable => Results.BadRequest(new ApiError("Promo codes don't apply to subscriptions.", "promo_not_applicable")),
+                // A partner's code that cannot bind this customer. detail says why:
+                // self_referral | already_referred | existing_customer.
+                CheckoutStatus.ReferralNotApplicable => Results.BadRequest(new ApiError(
+                    $"This invitation code cannot be applied to your account ({res.Detail}).", "referral_not_applicable")),
                 CheckoutStatus.NoCapacity         => Results.Json(new ApiError("No free slots available.", "no_capacity"), statusCode: 409),
                 _                                 => Results.Json(new ApiError("Payment provider error.", "provider_error"), statusCode: 502),
             };
@@ -76,6 +80,18 @@ public static class BillingEndpoints
         })
         .Produces<SubscriptionView>(200)
         .WithSummary("The caller's current subscription (status 'none' when there is none).");
+
+        // The referral programme as the caller sees it: their own partner code, link and
+        // earnings if the admin made them a partner, and the discount they get if a partner
+        // brought them. Both null for everyone else.
+        group.MapGet("/referral", async (HttpContext ctx, IReferralService referrals) =>
+        {
+            if (ctx.Items[ApiConsts.UserHttpContext] is not User user) return Results.Unauthorized();
+            try { return Results.Ok(await referrals.GetMineAsync(user.id)); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+        })
+        .Produces<ReferralMeView>(200)
+        .WithSummary("The caller's referral state: own partner code/link/earnings, and the discount they were invited with.");
 
         // Turn off auto-renew (access continues until the period ends).
         group.MapPost("/cancel", async (HttpContext ctx, IBillingService billing) =>

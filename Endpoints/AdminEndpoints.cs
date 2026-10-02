@@ -594,12 +594,18 @@ public static class AdminEndpoints
         .Produces<IReadOnlyList<PromoRow>>(200)
         .WithSummary("List promo codes.");
 
-        group.MapPost("/promocodes", async ([FromBody] PromoUpsertBody req, IPlanService plans) =>
+        group.MapPost("/promocodes", async ([FromBody] PromoUpsertBody req, IPlanService plans, IReferralService referrals) =>
         {
             if (req is null || string.IsNullOrWhiteSpace(req.code) || req.percent_off is <= 0 or > 100)
                 return Results.BadRequest(new ApiError("code and percent_off (1–100) are required."));
             bool ok;
-            try { ok = await plans.CreatePromoAsync(req); }
+            try
+            {
+                // Partner codes arrive in the same checkout field: one code, one meaning.
+                if (await referrals.IsPartnerCodeAsync(req.code))
+                    return Results.Json(new ApiError($"'{req.code.Trim()}' is a partner's referral code.", "code_taken"), statusCode: 409);
+                ok = await plans.CreatePromoAsync(req);
+            }
             catch { return Results.Problem("Database error.", statusCode: 503); }
             return ok ? Results.Created($"/admin/promocodes", new { code = req.code }) : Results.BadRequest(new ApiError("Invalid promo (bad plan_code?)."));
         })
@@ -617,6 +623,98 @@ public static class AdminEndpoints
         .Produces(204)
         .Produces<ApiError>(404)
         .WithSummary("Deactivate a promo code.");
+
+        MapReferralEndpoints(group);
+    }
+
+    /// <summary>
+    /// Referral partners: who has a code, what it gives and earns, who it brought, payouts.
+    /// Making someone a partner is the admin's call only — there is no self-service sign-up.
+    /// </summary>
+    private static void MapReferralEndpoints(RouteGroupBuilder group)
+    {
+        group.MapGet("/referrals", async (IReferralService referrals) =>
+        {
+            try { return Results.Ok(await referrals.ListAsync()); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+        })
+        .Produces<IReadOnlyList<ReferralPartnerAdminItem>>(200)
+        .WithSummary("Every referral partner with invited/paying counts, revenue, earned, paid out and balance (whole rubles).");
+
+        group.MapGet("/referrals/{username}", async ([FromRoute] string username, IReferralService referrals) =>
+        {
+            ReferralPartnerDetail? detail;
+            try { detail = await referrals.DetailAsync(username); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return detail is null
+                ? Results.NotFound(new ApiError($"{username} is not a referral partner.", "not_partner"))
+                : Results.Ok(detail);
+        })
+        .Produces<ReferralPartnerDetail>(200)
+        .Produces<ApiError>(404)
+        .WithSummary("One partner: their link, the customers they brought, rewards (latest 200) and payouts.");
+
+        // Create or change. Creating needs code + both percents; on a change, absent fields stay
+        // as they are — { "is_active": false } is how a partner is switched off (no DELETE: the
+        // rewards and payouts are money history).
+        group.MapPut("/users/{username}/referral", async (
+            [FromRoute] string username, [FromBody] ReferralUpsertBody? req, HttpContext ctx, IReferralService referrals) =>
+        {
+            if (ctx.Items[ApiConsts.UserHttpContext] is not User admin) return Results.Unauthorized();
+
+            ReferralWriteStatus status;
+            try
+            {
+                bool exists = await referrals.DetailAsync(username) is not null;
+                if (ReferralService.Validate(req, creating: !exists) is string error)
+                    return Results.BadRequest(new ApiError(error, "invalid_referral"));
+                status = await referrals.UpsertAsync(admin.id, username, req!);
+            }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return status switch
+            {
+                ReferralWriteStatus.UserNotFound => Results.NotFound(new ApiError($"User {username} not found.", "user_not_found")),
+                ReferralWriteStatus.CodeTaken    => Results.Json(new ApiError(
+                    "This code is already a partner's or a promo code (case does not matter).", "code_taken"), statusCode: 409),
+                ReferralWriteStatus.NotPartner   => Results.BadRequest(new ApiError(
+                    "To make a partner, send code, discount_percent and reward_percent.", "invalid_referral")),
+                _ => Results.Ok((await referrals.DetailAsync(username))!.partner),
+            };
+        })
+        .Produces<ReferralPartnerAdminItem>(200)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(404)
+        .Produces<ApiError>(409)
+        .WithSummary("Make a user a referral partner, or change one (code, discount %, reward %, on/off, note).");
+
+        // Record money actually handed to a partner. Refused above the balance.
+        group.MapPost("/users/{username}/referral/payouts", async (
+            [FromRoute] string username, [FromBody] ReferralPayoutBody? req, HttpContext ctx, IReferralService referrals) =>
+        {
+            if (ctx.Items[ApiConsts.UserHttpContext] is not User admin) return Results.Unauthorized();
+            if (req?.amount is not (>= 1 and <= 10_000_000))
+                return Results.BadRequest(new ApiError("amount must be 1–10000000 (whole rubles).", "invalid_payout"));
+            if (req.note is { Length: > 256 })
+                return Results.BadRequest(new ApiError("note: up to 256 characters.", "invalid_payout"));
+
+            ReferralWriteStatus status;
+            try { status = await referrals.AddPayoutAsync(admin.id, username, req); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+
+            return status switch
+            {
+                ReferralWriteStatus.NotPartner     => Results.NotFound(new ApiError($"{username} is not a referral partner.", "not_partner")),
+                ReferralWriteStatus.ExceedsBalance => Results.Json(new ApiError(
+                    "The payout is more than the partner's balance.", "payout_exceeds_balance"), statusCode: 409),
+                _ => Results.Ok((await referrals.DetailAsync(username))!.partner),
+            };
+        })
+        .Produces<ReferralPartnerAdminItem>(200)
+        .Produces<ApiError>(400)
+        .Produces<ApiError>(404)
+        .Produces<ApiError>(409)
+        .WithSummary("Record a payout to a partner (whole rubles); refused when it exceeds their balance.");
     }
 
     /// <summary>

@@ -3,7 +3,8 @@ namespace HorusAPI.Models;
 /// <summary><c>username</c> accepts either a username or an e-mail address (single-field login).</summary>
 public record LoginRequest(string username, string password);
 public record LoginResponse(string session, DateTime? expiresAt);
-public record RegisterRequest(string username, string password, string email);
+/// <summary><c>referral_code</c>: a partner's code from a <c>?ref=</c> link. Optional, never blocks sign-up.</summary>
+public record RegisterRequest(string username, string password, string email, string? referral_code = null);
 public record LogoutOthersRequest();
 
 // ── E-mail confirmation ──────────────────────────────────────────────────────
@@ -40,8 +41,13 @@ public record VerifyCodeError(string Message, string? Code, int attemptsLeft);
 /// answers for any address, so handing out a ticket there would let anyone claim any
 /// account by naming its address.
 /// </param>
+/// <param name="referral">
+/// Only on /auth/register, and only when a <c>referral_code</c> was sent: "applied", or
+/// "invalid" (unknown or switched-off code). The account is created either way — a stale link
+/// must not stop anyone signing up, and the code can still be entered at checkout.
+/// </param>
 public record RegisterResponse(string status, string email, int codeExpiresInSeconds,
-    int resendAvailableInSeconds = 0, string? pendingToken = null);
+    int resendAvailableInSeconds = 0, string? pendingToken = null, string? referral = null);
 
 /// <summary>
 /// Answer to logging in to an account whose address is not confirmed. Carries
