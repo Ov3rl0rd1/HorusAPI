@@ -54,8 +54,26 @@ public record NodeRegisterResponse(int server_id, string? assigned_profile);
 public record NodeUserEvent(string uuid, string type, string reason, DateTimeOffset at);
 
 /// <summary>POST /node/events — batched online telemetry from a node. <c>online_count</c>
-/// is the live connected count (drives vpn_servers.current_load).</summary>
-public record NodeEventsRequest(int provisioned_count, int online_count, NodeUserEvent[] events);
+/// is the live connected count (drives vpn_servers.current_load). <c>usage</c> carries the
+/// month-to-date traffic of users whose figure moved (absent from nodes that predate it).</summary>
+public record NodeEventsRequest(int provisioned_count, int online_count, NodeUserEvent[] events,
+    NodeUserUsage[]? usage = null);
+
+/// <summary>
+/// A user's traffic in one calendar month (UTC; <c>month</c> = "yyyy-MM"): <c>total_bytes</c> is
+/// everything counted against the monthly allowance, <c>olcrtc_bytes</c> the olcRTC part of it.
+/// Absolute month-to-date, never a delta — see <see cref="Services.TrafficService"/>.
+/// </summary>
+public record MonthUsage(string month, long total_bytes, long olcrtc_bytes);
+
+/// <summary><see cref="MonthUsage"/> with the user (vpn_uuid) it belongs to.</summary>
+public record NodeUserUsage(string uuid, string month, long total_bytes, long olcrtc_bytes);
+
+/// <summary>What a node answers to DELETE /users/{uuid}: the user's month as it leaves (may be null).</summary>
+public record NodeRemoveResponse(string? removed, MonthUsage? usage);
+
+/// <summary>One month of a user's traffic, for the admin user card.</summary>
+public record TrafficMonthItem(DateTime month, long total_bytes, long olcrtc_bytes, string? server_name, DateTime updated_at);
 
 /// <summary>
 /// Response to events, carrying the same assignment as register. Telemetry doubles as the

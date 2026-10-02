@@ -409,6 +409,29 @@ CREATE TABLE IF NOT EXISTS referral_payouts (
 CREATE INDEX IF NOT EXISTS idx_referral_payouts_partner ON referral_payouts (partner_id);
 
 -- ============================================================================
+--  traffic_usage  (see Services/TrafficService.cs)
+--
+--  Each user's traffic per calendar month (UTC), counted against their monthly
+--  allowances: total_bytes is everything, olcrtc_bytes the olcRTC part of it.
+--  Kept HERE, per user, and not on the nodes, so a month's allowance follows the
+--  user from server to server: nodes report it as it grows (/node/events, and the
+--  answer to DELETE /users/{uuid}), and POST /users hands it to the next node,
+--  which restores it into xray before the user's first byte there.
+--
+--  Reports are absolute month-to-date figures and are merged with GREATEST, so a
+--  retried, repeated or late report can never add anything twice.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS traffic_usage (
+    user_id      INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    month        DATE        NOT NULL,          -- first day of the month, UTC
+    total_bytes  BIGINT      NOT NULL DEFAULT 0 CHECK (total_bytes >= 0),
+    olcrtc_bytes BIGINT      NOT NULL DEFAULT 0 CHECK (olcrtc_bytes >= 0),
+    server_id    INT         REFERENCES vpn_servers(id) ON DELETE SET NULL,   -- who reported last
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, month)
+);
+
+-- ============================================================================
 --  First-run
 --  1) POST /auth/register  {"username":"admin","password":"…","email":"…"}
 --  2) UPDATE users SET is_admin = TRUE WHERE username = 'admin';

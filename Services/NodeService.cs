@@ -36,7 +36,7 @@ public sealed record NodeTarget(string Host, string AuthPassword);
 /// protocol switch reaches the fleet: set it here, and every node picks it up on its next
 /// telemetry post without anyone touching a server.
 /// </summary>
-public class NodeService(IConfiguration cfg, ILogger<NodeService> log) : INodeService
+public class NodeService(IConfiguration cfg, ITrafficService traffic, ILogger<NodeService> log) : INodeService
 {
     private NpgsqlConnection Connect() => new(cfg.GetConnectionString("Postgres"));
 
@@ -148,6 +148,11 @@ public class NodeService(IConfiguration cfg, ILogger<NodeService> log) : INodeSe
         if (req.events is { Length: > 0 })
             log.LogInformation("Node {ServerId}: {Online} online, {Events} event(s)",
                 serverId, req.online_count, req.events.Length);
+
+        // Month-to-date traffic of the users whose figure moved. Kept per user, here, so it
+        // follows them to the next server — see TrafficService.
+        if (req.usage is { Length: > 0 })
+            await traffic.RecordAsync(req.usage, serverId);
 
         return await ResolveAssignedProfileAsync(serverId);
     }

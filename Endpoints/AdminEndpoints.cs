@@ -625,6 +625,19 @@ public static class AdminEndpoints
         .WithSummary("Deactivate a promo code.");
 
         MapReferralEndpoints(group);
+
+        // A user's monthly traffic as central keeps it (per user, so it survives a change of
+        // server). For "why is it slow?": a user past the monthly allowance is throttled.
+        group.MapGet("/users/{username}/traffic", async ([FromRoute] string username, ITrafficService traffic) =>
+        {
+            IReadOnlyList<TrafficMonthItem>? months;
+            try { months = await traffic.HistoryAsync(username); }
+            catch { return Results.Problem("Database error.", statusCode: 503); }
+            return months is null ? Results.NotFound(new ApiError($"User {username} not found.", "user_not_found")) : Results.Ok(months);
+        })
+        .Produces<IReadOnlyList<TrafficMonthItem>>(200)
+        .Produces<ApiError>(404)
+        .WithSummary("A user's monthly traffic (total and olcRTC, bytes), latest 6 months, newest first.");
     }
 
     /// <summary>
@@ -733,10 +746,11 @@ public static class AdminEndpoints
     {
         var uuid = vpnUuid.ToString();
         string? problem = null;
+        NodeEndpoint? target = null;
 
         try
         {
-            NodeEndpoint? target = await svc.GetNodeEndpointAsync(targetId);
+            target = await svc.GetNodeEndpointAsync(targetId);
             // The notifier logs and returns false rather than throwing, so both are failures.
             if (target is null || !await notifier.AddUserAsync(new NodeTarget(target.host, target.auth_password), uuid))
                 problem = $"{username}: provision failed on {targetId}";
@@ -752,6 +766,12 @@ public static class AdminEndpoints
             {
                 if (!await notifier.RemoveUserAsync(new NodeTarget(source.host, source.auth_password), uuid))
                     log.LogInformation("Move: could not deprovision {User} from {Server}", username, source.id);
+                else if (problem is null && target is not null)
+                    // The old node answered with the user's month as they left it, which can be
+                    // ahead of what the new node was just given (traffic since the old node's
+                    // last telemetry). Provisioning is idempotent and only ever raises the month,
+                    // so hand it over again rather than lose those bytes.
+                    await notifier.AddUserAsync(new NodeTarget(target.host, target.auth_password), uuid);
             }
             catch (Exception ex)
             {

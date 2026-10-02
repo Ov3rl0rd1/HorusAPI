@@ -56,7 +56,7 @@ Auth is a custom scheme, not JWT (there is no `JwtService`). [Services/Auth Hand
 | `GET /servers/connect` | **anonymous** (session in header **or** `?key=`) | header → JSON `{server,vless[],hysteria2,olcrtc}`; `?key=` → base64 subscription (vless+hysteria2) ([ConnectEndpoints](Endpoints/ConnectEndpoints.cs)) |
 | `/billing` | `X-Session-Key` | `plans`, `checkout` (recurring/one-time), `subscription`, `cancel`, `referral` (own partner code/earnings, invited discount) ([BillingEndpoints](Endpoints/BillingEndpoints.cs)) |
 | `POST /payments/{provider}/webhook` | **anonymous** (secret checked in-adapter, idempotent) | payment provider callbacks |
-| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **node detail** (`GET /servers/{id}`), **evacuate/activate a node**, **move one user off a node**, user search, comp subscription (grant = reserve slot, revoke = release), **plan catalogue** (list/create/edit), closed-plan grants (grant/list/revoke), refunds, promo codes, **referral partners** (appoint/edit/switch off, detail, payouts), `gate` (204 — nginx gates `/panel` on it) |
+| `/admin` | `X-Session-Key` + `Admin` role (`AdminOnly` policy) | server CRUD, ping, **node detail** (`GET /servers/{id}`), **evacuate/activate a node**, **move one user off a node**, user search, comp subscription (grant = reserve slot, revoke = release), **a user's monthly traffic** (`GET /users/{u}/traffic`), **plan catalogue** (list/create/edit), closed-plan grants (grant/list/revoke), refunds, promo codes, **referral partners** (appoint/edit/switch off, detail, payouts), `gate` (204 — nginx gates `/panel` on it) |
 | `/whoami` | `X-Session-Key` | egress IP as the API sees it + caller account state |
 | `/health` | anonymous | liveness check |
 
@@ -71,7 +71,7 @@ The connection model is split into **selection** and **connection**, and every u
 - [ReservationService](Services/ReservationService.cs) (classic Dapper, **not** `[DapperAot]`) owns reserve/move/release in a single transaction with `FOR UPDATE SKIP LOCKED`, so parallel purchases can't oversell. `EnsureReservedAsync` auto-picks; `SelectAsync` binds/moves; `ReleaseAsync` frees. Node (de)provisioning + session-cache eviction ([SessionCacheOps](Services/Auth Handler/SessionCacheOps.cs)) are done by the caller *after* the commit.
 - **Purchase**: admin `PUT …/subscription` reserves first → `409 no_capacity` when every node is full (so a subscription can't be sold with no seats). `DELETE …/subscription` releases the slot + de-provisions the node.
 - **`/connect` is node-free on the hot path**: provisioning happens at reserve/select; a normal connect reads one row and builds strings. The node persists its user set and reconciles xray from it on restart.
-- **Node protocol is keyed by `vpn_uuid`** (not e-mail): control `POST /users {uuid}` / `DELETE /users/{uuid}`; telemetry `/node/events` events carry `uuid`, and `online_count` drives `current_load`.
+- **Node protocol is keyed by `vpn_uuid`** (not e-mail): control `POST /users {uuid, usage?}` / `DELETE /users/{uuid}` (answers `{removed, usage}`); telemetry `/node/events` events carry `uuid`, `online_count` drives `current_load`, and `usage[]` carries users' months (see "Monthly traffic" below).
 
 ### Billing, subscriptions & access model ([Services/Billing](Services/Billing), [docs/payments.md](docs/payments.md))
 
@@ -140,6 +140,31 @@ into the checkout's **promo field** — the two share one namespace, enforced bo
   (`horus.ref`) by `login.html`, the pay page's code field shows for subscriptions too, and the
   cabinet shows a partner tile from `GET /billing/referral`.
 
+### Monthly traffic follows the user ([TrafficService](Services/TrafficService.cs), [TrafficTests](HorusAPI.Tests/Integration/TrafficTests.cs))
+
+Speed and monthly allowances are enforced on the node, by xray's TariffService — but xray's
+ledger is per node, and moving a user used to hand them a fresh month there. The month now
+lives **here, per user**: `traffic_usage (user_id, month DATE, total_bytes, olcrtc_bytes,
+server_id, updated_at)`, PK `(user_id, month)`, `ON DELETE CASCADE`. Existing DB:
+`migrations/004_traffic_usage.sql`.
+
+- **Figures are absolute month-to-date** (`"yyyy-MM"` + bytes), never deltas, so recording is
+  `ON CONFLICT … GREATEST(old, new)` per counter: a repeated, late or stale report — an old node
+  still holding a user who has moved — can never lower or double a month. Bad lines (not a
+  month, negative, unknown uuid) are skipped, not failed.
+- **Three ways in, all through [NodeNotifier](Services/NodeNotifier.cs) / NodeService:**
+  `/node/events` `usage[]` (the node's periodic report); `POST /users` carries the month so far
+  (`CurrentMonthAsync`) so the new node restores it into xray before the first byte; and the
+  old node's `DELETE` answer brings back the bytes since its last report. A lookup failure
+  provisions without `usage` (logged) — a user who cannot connect is worse.
+- **Order of a move matters.** The user's own `POST /servers/select` (`ReprovisionAsync`)
+  removes the old node first, so the new one is handed the full month. The admin move
+  (`AfterMoveAsync`) provisions the new node first — evacuation must not wait on an
+  unreachable old node — and so **re-provisions it after the old node answers**; the node only
+  ever raises its counter *up to* a figure (never adds it on top), so that is safe.
+- Nodes that predate this send no `usage` and answer DELETE with 204; both are fine.
+- The panel's user card shows the current month (`GET /admin/users/{u}/traffic`, last 6 months).
+
 ### Evacuating a node
 
 `POST /admin/servers/{id}/evacuate` moves every user off a node and takes it out of rotation;
@@ -200,7 +225,8 @@ manifest for labels only — the hrefs are static, so downloads survive a failed
 ### Admin panel ([nginx/panel/](nginx/panel/))
 
 `/panel` is a plain page over the `/admin/*` API: nodes (evacuate/activate, profiles, ping,
-add, a **detail card** with offers and bound users, **move one user**), user search + comp,
+add, a **detail card** with offers and bound users, **move one user**), user search + comp
++ **traffic this month**,
 move off a node and closed-plan grants (select + «бессрочно»), **tariffs** (list, create, edit,
 take off sale, who a closed plan is open to), payments + refunds, promo codes, **partners**
 (referral programme: appoint from the user card or the list, card with link, invited customers,
@@ -374,6 +400,7 @@ PostgreSQL. Schema in [init.sql](init.sql). Key columns:
 - `vpn_servers.auth_password` — per-node shared secret, sent to the agent as `X-API-PASSWORD`
 - `vpn_servers.reality_*` / `olcrtc_*` / ports — reported by the node via `/node/register`
 - `vpn_servers.masquerade_url` — optional target for admin ping; falls back to `https://{host}`
+- `traffic_usage` — a user's monthly traffic across all nodes (PK `user_id, month`); see "Monthly traffic follows the user"
 
 Referral tables: `referral_partners`, `referral_rewards`, `referral_payouts`, plus `users.referred_by`,
 `users.referred_at`, `payments.referrer_id` — see "Referral partners" above.
