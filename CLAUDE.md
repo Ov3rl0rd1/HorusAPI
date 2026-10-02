@@ -144,9 +144,12 @@ into the checkout's **promo field** — the two share one namespace, enforced bo
 
 Speed and monthly allowances are enforced on the node, by xray's TariffService — but xray's
 ledger is per node, and moving a user used to hand them a fresh month there. The month now
-lives **here, per user**: `traffic_usage (user_id, month DATE, total_bytes, olcrtc_bytes,
+lives **here, per user**: `traffic_usage (user_id, month DATE, total_bytes, whitelist_bypass_bytes,
 server_id, updated_at)`, PK `(user_id, month)`, `ON DELETE CASCADE`. Existing DB:
-`migrations/004_traffic_usage.sql`.
+`migrations/004_traffic_usage.sql`. `whitelist_bypass_bytes` is the part of the month that went
+round mobile whitelists — it has its own, smaller allowance because that transport is what
+costs a node CPU. Central names it by what it is for, not by transport: which of its inbounds
+that is, is the node's business (`TARIFF_OLCRTC_TAGS` there today).
 
 - **Figures are absolute month-to-date** (`"yyyy-MM"` + bytes), never deltas, so recording is
   `ON CONFLICT … GREATEST(old, new)` per counter: a repeated, late or stale report — an old node

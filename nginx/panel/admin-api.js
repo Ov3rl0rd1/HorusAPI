@@ -47,7 +47,7 @@ export const moveUser = (serverId, userId, to) =>
 // UserAdminItem[] { id, username, email, email_verified, is_admin, is_active,
 //   created_at, expires_at, current_server_id, server_name }
 export const users = (q) => get('/admin/users?q=' + enc(q || ''));
-// TrafficMonthItem[] { month, total_bytes, olcrtc_bytes, server_name, updated_at } — до 6 месяцев, новые первыми
+// TrafficMonthItem[] { month, total_bytes, whitelist_bypass_bytes, server_name, updated_at } — до 6 месяцев, новые первыми
 export const userTraffic = (username) => get(`/admin/users/${enc(username)}/traffic`);
 
 // 204 · 404 · 409 no_capacity

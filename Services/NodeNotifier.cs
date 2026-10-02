@@ -61,7 +61,7 @@ public class NodeNotifier(
         // The user's month as they left this node. A node that predates it answers 204.
         if (body?.usage is { } usage)
         {
-            try { await traffic.RecordAsync([new NodeUserUsage(uuid, usage.month, usage.total_bytes, usage.olcrtc_bytes)], null); }
+            try { await traffic.RecordAsync([new NodeUserUsage(uuid, usage.month, usage.total_bytes, usage.whitelist_bypass_bytes)], null); }
             catch (Exception ex) { log.LogWarning("Could not record {Uuid}'s final month from {Host}: {Msg}", uuid, target.Host, ex.Message); }
         }
         return ok;

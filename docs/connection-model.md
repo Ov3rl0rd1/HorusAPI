@@ -135,11 +135,13 @@ GET https://<domain>/servers/connect?key=<session>
   → добавить пользователя в inbound `clients` (id = uuid, email/label = uuid). **Идемпотентно.**
 - `DELETE {scheme}://{host}:{ControlPort}/users/{uuid}` → удалить. **Идемпотентно.**
 - **Месяц трафика едет вместе с пользователем.** `POST /users` несёт ещё
-  `"usage": { "month": "2026-10", "total_bytes": …, "olcrtc_bytes": … }` (или `null`) —
+  `"usage": { "month": "2026-10", "total_bytes": …, "whitelist_bypass_bytes": … }` (или `null`) —
   сколько пользователь уже потратил в этом месяце на других серверах (`traffic_usage`).
   Нода кладёт это в счётчики xray **до** первого байта, поэтому смена сервера не обнуляет
   месячные лимиты. `DELETE` отвечает `200 { "removed": "<uuid>", "usage": {…} }` — месяц
   в момент ухода (байты после последней телеметрии); старая нода может ответить `204`.
+  `whitelist_bypass_bytes` — часть месяца, прошедшая в обход белых списков (у неё свой,
+  меньший лимит: этот транспорт нагружает CPU ноды). Какие инбаунды это, решает нода.
 
 Раньше слали `{ email, uuid }` и удаляли по e-mail — **больше не делаем**. Идентичность
 везде — `vpn_uuid`.
@@ -154,7 +156,7 @@ GET https://<domain>/servers/connect?key=<session>
   ```
   `online_count` → `vpn_servers.current_load`. `events` необязательны; `reason` пишется в
   `users.last_disconnect_reason` (по `uuid`).
-  Необязательное `"usage": [ { "uuid", "month": "yyyy-MM", "total_bytes", "olcrtc_bytes" } ]` —
+  Необязательное `"usage": [ { "uuid", "month": "yyyy-MM", "total_bytes", "whitelist_bypass_bytes" } ]` —
   месяц пользователей, у которых он изменился. Цифры **абсолютные** (с начала месяца, вместе
   с перенесённым с других серверов), центр хранит по пользователю `GREATEST(старое, новое)`,
   так что повтор, опоздавший или устаревший отчёт ничего не портит.

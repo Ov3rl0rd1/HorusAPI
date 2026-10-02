@@ -43,20 +43,20 @@ public class TrafficService(IConfiguration cfg, ILogger<TrafficService> log) : I
 
     /// <summary>Whether a report line is worth storing. Pure, so the rule is tested on its own.</summary>
     public static bool IsValid(NodeUserUsage u) =>
-        Guid.TryParse(u.uuid, out _) && ParseMonth(u.month) is not null && u.total_bytes >= 0 && u.olcrtc_bytes >= 0;
+        Guid.TryParse(u.uuid, out _) && ParseMonth(u.month) is not null && u.total_bytes >= 0 && u.whitelist_bypass_bytes >= 0;
 
     public async Task<MonthUsage?> CurrentMonthAsync(Guid vpnUuid)
     {
         await using var conn = Connect();
         var row = await conn.QuerySingleOrDefaultAsync<MonthRow>("""
-            SELECT t.month::timestamp AS month, t.total_bytes, t.olcrtc_bytes
+            SELECT t.month::timestamp AS month, t.total_bytes, t.whitelist_bypass_bytes
             FROM traffic_usage t JOIN users u ON u.id = t.user_id
             WHERE u.vpn_uuid = @vpnUuid AND t.month = date_trunc('month', NOW() AT TIME ZONE 'UTC')::date
             """, new { vpnUuid });
-        return row is null ? null : new MonthUsage(FormatMonth(row.month), row.total_bytes, row.olcrtc_bytes);
+        return row is null ? null : new MonthUsage(FormatMonth(row.month), row.total_bytes, row.whitelist_bypass_bytes);
     }
 
-    private sealed record MonthRow(DateTime month, long total_bytes, long olcrtc_bytes);
+    private sealed record MonthRow(DateTime month, long total_bytes, long whitelist_bypass_bytes);
 
     public async Task<int> RecordAsync(IEnumerable<NodeUserUsage> reports, int? serverId)
     {
@@ -71,16 +71,16 @@ public class TrafficService(IConfiguration cfg, ILogger<TrafficService> log) : I
             // GREATEST per counter: see the class comment. A user unknown here (deleted, or a
             // node's stale record) matches no row in users and inserts nothing.
             written += await conn.ExecuteAsync("""
-                INSERT INTO traffic_usage (user_id, month, total_bytes, olcrtc_bytes, server_id, updated_at)
-                SELECT id, @month::date, @total, @olcrtc, @serverId, NOW() FROM users WHERE vpn_uuid = @uuid::uuid
+                INSERT INTO traffic_usage (user_id, month, total_bytes, whitelist_bypass_bytes, server_id, updated_at)
+                SELECT id, @month::date, @total, @bypass, @serverId, NOW() FROM users WHERE vpn_uuid = @uuid::uuid
                 ON CONFLICT (user_id, month) DO UPDATE SET
-                    total_bytes  = GREATEST(traffic_usage.total_bytes,  EXCLUDED.total_bytes),
-                    olcrtc_bytes = GREATEST(traffic_usage.olcrtc_bytes, EXCLUDED.olcrtc_bytes),
-                    server_id    = CASE WHEN EXCLUDED.total_bytes  > traffic_usage.total_bytes
-                                          OR EXCLUDED.olcrtc_bytes > traffic_usage.olcrtc_bytes
-                                        THEN EXCLUDED.server_id ELSE traffic_usage.server_id END,
-                    updated_at   = NOW()
-                """, new { uuid = u.uuid, month = ParseMonth(u.month)!.Value, total = u.total_bytes, olcrtc = u.olcrtc_bytes, serverId });
+                    total_bytes            = GREATEST(traffic_usage.total_bytes, EXCLUDED.total_bytes),
+                    whitelist_bypass_bytes = GREATEST(traffic_usage.whitelist_bypass_bytes, EXCLUDED.whitelist_bypass_bytes),
+                    server_id              = CASE WHEN EXCLUDED.total_bytes > traffic_usage.total_bytes
+                                                    OR EXCLUDED.whitelist_bypass_bytes > traffic_usage.whitelist_bypass_bytes
+                                                  THEN EXCLUDED.server_id ELSE traffic_usage.server_id END,
+                    updated_at             = NOW()
+                """, new { uuid = u.uuid, month = ParseMonth(u.month)!.Value, total = u.total_bytes, bypass = u.whitelist_bypass_bytes, serverId });
         }
 
         if (written < lines.Count)
@@ -96,7 +96,7 @@ public class TrafficService(IConfiguration cfg, ILogger<TrafficService> log) : I
 
         // Column order = TrafficMonthItem's parameter order.
         return (await conn.QueryAsync<TrafficMonthItem>("""
-            SELECT t.month::timestamp AS month, t.total_bytes, t.olcrtc_bytes, s.name AS server_name, t.updated_at
+            SELECT t.month::timestamp AS month, t.total_bytes, t.whitelist_bypass_bytes, s.name AS server_name, t.updated_at
             FROM traffic_usage t LEFT JOIN vpn_servers s ON s.id = t.server_id
             WHERE t.user_id = @userId
             ORDER BY t.month DESC

@@ -100,7 +100,7 @@ function trafficText(months) {
   const now = new Date().toISOString().slice(0, 7);
   const m = (months || []).find((x) => String(x.month).slice(0, 7) === now);
   if (!m) return 'нет данных';
-  return gb(m.total_bytes) + (m.olcrtc_bytes ? ', из них olcRTC ' + gb(m.olcrtc_bytes) : '') +
+  return gb(m.total_bytes) + (m.whitelist_bypass_bytes ? ', из них в обход белых списков ' + gb(m.whitelist_bypass_bytes) : '') +
     (m.server_name ? ' · последний отчёт: ' + m.server_name : '');
 }
 

@@ -114,7 +114,7 @@ public class TrafficTests(ApiFixture fixture) : IntegrationTest(fixture)
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         var month = (await res.ReadJsonAsync())[0];
         Assert.Equal(42 * GB, month.GetProperty("total_bytes").GetInt64());
-        Assert.Equal(2 * GB, month.GetProperty("olcrtc_bytes").GetInt64());
+        Assert.Equal(2 * GB, month.GetProperty("whitelist_bypass_bytes").GetInt64());
     }
 
     // ── The node channel carries the month across a move ─────────────────────────
@@ -129,7 +129,7 @@ public class TrafficTests(ApiFixture fixture) : IntegrationTest(fixture)
         var (_, password) = await SeedServerAsync();
         await PostUsageAsync(client, password, new NodeUserUsage(uuid, ThisMonth, 300 * GB, 20 * GB));
 
-        var handler = new CapturingHandler(removeAnswer: new { removed = uuid, usage = new { month = ThisMonth, total_bytes = 307 * GB, olcrtc_bytes = 20 * GB } });
+        var handler = new CapturingHandler(removeAnswer: new { removed = uuid, usage = new { month = ThisMonth, total_bytes = 307 * GB, whitelist_bypass_bytes = 20 * GB } });
         var notifier = NewNotifier(handler);
         var node = new NodeTarget("node-b.example", "pw");
 
@@ -139,7 +139,7 @@ public class TrafficTests(ApiFixture fixture) : IntegrationTest(fixture)
         Assert.Equal(uuid, sent.GetProperty("uuid").GetString());
         Assert.Equal(ThisMonth, sent.GetProperty("usage").GetProperty("month").GetString());
         Assert.Equal(300 * GB, sent.GetProperty("usage").GetProperty("total_bytes").GetInt64());
-        Assert.Equal(20 * GB, sent.GetProperty("usage").GetProperty("olcrtc_bytes").GetInt64());
+        Assert.Equal(20 * GB, sent.GetProperty("usage").GetProperty("whitelist_bypass_bytes").GetInt64());
 
         // DELETE's answer — the month as the user left that node — is kept.
         Assert.True(await notifier.RemoveUserAsync(node, uuid));
@@ -230,15 +230,15 @@ public class TrafficTests(ApiFixture fixture) : IntegrationTest(fixture)
         return (await conn.ExecuteScalarAsync<Guid>("SELECT vpn_uuid FROM users WHERE username = @username", new { username })).ToString();
     }
 
-    private async Task<(long total, long olcrtc)?> MonthAsync(string username, string month)
+    private async Task<(long total, long bypass)?> MonthAsync(string username, string month)
     {
         await using var conn = new NpgsqlConnection(Fixture.ConnectionString);
         var row = await conn.QuerySingleOrDefaultAsync<UsageRow>("""
-            SELECT t.total_bytes, t.olcrtc_bytes FROM traffic_usage t JOIN users u ON u.id = t.user_id
+            SELECT t.total_bytes, t.whitelist_bypass_bytes FROM traffic_usage t JOIN users u ON u.id = t.user_id
             WHERE u.username = @username AND t.month = @month::date
             """, new { username, month = month + "-01" });
-        return row is null ? null : (row.total_bytes, row.olcrtc_bytes);
+        return row is null ? null : (row.total_bytes, row.whitelist_bypass_bytes);
     }
 
-    private sealed record UsageRow(long total_bytes, long olcrtc_bytes);
+    private sealed record UsageRow(long total_bytes, long whitelist_bypass_bytes);
 }
