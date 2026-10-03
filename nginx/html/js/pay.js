@@ -152,7 +152,8 @@ function renderGroup() {
     ? 'Списывается автоматически каждый период. Автопродление можно отключить в любой момент — доступ доработает до конца оплаченного срока.'
     : 'Один платёж за выбранный срок. Ничего не списывается автоматически, продлевать нужно вручную.';
 
-  byId('promo-wrap').hidden = kind === 'recurring';
+  // Код приглашения действует и на подписку, поэтому поле есть у обоих видов оплаты.
+  byId('promo-wrap').hidden = false;
   byId('kind-recurring').classList.toggle('is-on', kind === 'recurring');
   byId('kind-onetime').classList.toggle('is-on', kind === 'onetime');
   byId('kind-recurring').setAttribute('aria-selected', String(kind === 'recurring'));
@@ -293,8 +294,9 @@ async function onCancel() {
 function checkoutError(err) {
   switch (err.code) {
     case 'no_capacity':          return 'Свободных мест на серверах сейчас нет. Попробуйте позже или напишите в поддержку.';
-    case 'promo_not_applicable': return 'Промокод действует только для разовой оплаты.';
+    case 'promo_not_applicable': return 'Промокод действует только для разовой оплаты. На подписку подходит код приглашения.';
     case 'promo_invalid':        return 'Промокод не найден или больше не действует.';
+    case 'referral_not_applicable': return referralRefusal(err.message);
     case 'plan_not_found':       return 'Тариф больше не доступен. Обновите страницу.';
     case 'provider_error':       return 'Платёжный сервис не отвечает. Попробуйте через пару минут.';
     default:                     return err.isNetwork
@@ -303,10 +305,21 @@ function checkoutError(err) {
   }
 }
 
+// Причина приходит в скобках в тексте ошибки: (self_referral) и т. п.
+function referralRefusal(message) {
+  const why = (/\((\w+)\)/.exec(message || '') || [])[1];
+  switch (why) {
+    case 'self_referral':     return 'Свой код приглашения использовать нельзя.';
+    case 'already_referred':  return 'Вы уже пришли по другому приглашению — скидка по нему действует сама, вводить код не нужно.';
+    case 'existing_customer': return 'Код приглашения — для новых клиентов, а у вас уже была оплата.';
+    default:                  return 'Этот код приглашения к вашему аккаунту не подходит.';
+  }
+}
+
 async function onPay() {
   if (!selected) return;
   const btn = byId('pay-btn'), msg = byId('pay-msg');
-  const promo = kind === 'onetime' ? byId('promo').value.trim() : '';
+  const promo = byId('promo').value.trim();
   msg.className = 'msg msg--error';
   btn.disabled = true;
   btn.textContent = 'Готовим оплату…';

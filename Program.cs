@@ -37,12 +37,14 @@ public partial class Program
         builder.Services.AddScoped<IReservationService, ReservationService>();
         builder.Services.AddScoped<IEntitlementService, EntitlementService>();
         builder.Services.AddScoped<INodeService, NodeService>();
+        builder.Services.AddScoped<ITrafficService, TrafficService>();
         builder.Services.AddScoped<INodeNotifier, NodeNotifier>();
         builder.Services.AddScoped<IAccountService, AccountService>();
         builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
         // Billing: catalogue/promo/grants, the payment engine, and the pluggable provider.
         builder.Services.AddScoped<IPlanService, PlanService>();
+        builder.Services.AddScoped<IReferralService, ReferralService>();
         builder.Services.AddScoped<IBillingService, BillingService>();
         AddPaymentProvider(builder);
         builder.Services.AddHostedService<BillingSweeperService>();

@@ -344,6 +344,96 @@ CREATE TABLE IF NOT EXISTS promo_redemptions (
 CREATE INDEX IF NOT EXISTS idx_promo_redemptions_code_user ON promo_redemptions(promo_code_id, user_id);
 
 -- ============================================================================
+--  Referral partners  (see Services/Billing/ReferralService.cs)
+--
+--  A partner is a user the admin has given a code. A NEW customer who signs up
+--  with it (?ref=CODE, or the code typed into the promo field at checkout) is
+--  bound to that partner for good — first code wins — gets discount_percent off
+--  every purchase while the partner stays active, and the partner earns
+--  reward_percent of every ruble that customer pays. Payouts are made by hand
+--  and recorded here; balance = accrued rewards − payouts.
+--  Codes share one namespace with promo_codes (both arrive in the same field).
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS referral_partners (
+    user_id          INT          PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    code             VARCHAR(64)  NOT NULL,
+    discount_percent SMALLINT     NOT NULL DEFAULT 0 CHECK (discount_percent BETWEEN 0 AND 90),
+    reward_percent   SMALLINT     NOT NULL DEFAULT 0 CHECK (reward_percent BETWEEN 0 AND 100),
+    is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
+    note             VARCHAR(256),
+    created_by       INT          REFERENCES users(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_referral_partners_code ON referral_partners (lower(code));
+
+-- Who brought this customer. SET NULL, not CASCADE: a partner account going away
+-- must not take its customers with it.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by INT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users (referred_by) WHERE referred_by IS NOT NULL;
+
+-- The partner whose discount the checkout considered (NULL = none).
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS referrer_id INT REFERENCES users(id) ON DELETE SET NULL;
+
+-- One row per paid period / purchase of a referred customer. `source` is the
+-- idempotency key ("payment:<id>" for a one-time buy, "subscription:<id>:<period
+-- end date>" for a recurring period), so a replayed webhook never pays twice.
+-- A refund or chargeback marks the purchase's latest reward 'reversed'.
+CREATE TABLE IF NOT EXISTS referral_rewards (
+    id               SERIAL PRIMARY KEY,
+    partner_id       INT          NOT NULL REFERENCES referral_partners(user_id) ON DELETE CASCADE,
+    referred_user_id INT          REFERENCES users(id) ON DELETE SET NULL,
+    subscription_id  INT          REFERENCES subscriptions(id) ON DELETE SET NULL,
+    payment_id       INT          REFERENCES payments(id) ON DELETE SET NULL,
+    source           VARCHAR(160) NOT NULL UNIQUE,
+    paid_amount      INT          NOT NULL,      -- what the customer paid, whole rubles
+    percent          SMALLINT     NOT NULL,      -- the partner's share at the time
+    amount           INT          NOT NULL,      -- the partner's reward, whole rubles (rounded down)
+    status           VARCHAR(16)  NOT NULL DEFAULT 'accrued',   -- 'accrued' | 'reversed'
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    reversed_at      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_partner ON referral_rewards (partner_id);
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_subscription ON referral_rewards (subscription_id);
+
+-- Money actually handed to a partner, recorded by an admin.
+CREATE TABLE IF NOT EXISTS referral_payouts (
+    id          SERIAL PRIMARY KEY,
+    partner_id  INT          NOT NULL REFERENCES referral_partners(user_id) ON DELETE CASCADE,
+    amount      INT          NOT NULL CHECK (amount > 0),
+    note        VARCHAR(256),
+    created_by  INT          REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_referral_payouts_partner ON referral_payouts (partner_id);
+
+-- ============================================================================
+--  traffic_usage  (see Services/TrafficService.cs)
+--
+--  Each user's traffic per calendar month (UTC), counted against their monthly
+--  allowances: total_bytes is everything, whitelist_bypass_bytes the part that
+--  went round mobile whitelists (its own, smaller allowance: that transport is
+--  what costs a node CPU).
+--  Kept HERE, per user, and not on the nodes, so a month's allowance follows the
+--  user from server to server: nodes report it as it grows (/node/events, and the
+--  answer to DELETE /users/{uuid}), and POST /users hands it to the next node,
+--  which restores it into xray before the user's first byte there.
+--
+--  Reports are absolute month-to-date figures and are merged with GREATEST, so a
+--  retried, repeated or late report can never add anything twice.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS traffic_usage (
+    user_id                INT         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    month                  DATE        NOT NULL,          -- first day of the month, UTC
+    total_bytes            BIGINT      NOT NULL DEFAULT 0 CHECK (total_bytes >= 0),
+    whitelist_bypass_bytes BIGINT      NOT NULL DEFAULT 0 CHECK (whitelist_bypass_bytes >= 0),
+    server_id              INT         REFERENCES vpn_servers(id) ON DELETE SET NULL,   -- who reported last
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, month)
+);
+
+-- ============================================================================
 --  First-run
 --  1) POST /auth/register  {"username":"admin","password":"…","email":"…"}
 --  2) UPDATE users SET is_admin = TRUE WHERE username = 'admin';

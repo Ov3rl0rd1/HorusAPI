@@ -1,4 +1,4 @@
-import { whoAmI, serverCandidates, logoutOthers } from './endpoints.js';
+import { whoAmI, serverCandidates, logoutOthers, referralMe } from './endpoints.js';
 import { requireSession, clearSession } from './session.js';
 import { byId, plural } from './util.js';
 
@@ -139,6 +139,40 @@ function renderCurrentServer(me, list) {
   note.textContent = found ? found.host : 'Подробности — на странице подключения.';
 }
 
+// ── Реферальная программа ─────────────────────────────────────────────────
+const rub = (n) => (Number(n) || 0).toLocaleString('ru-RU') + ' ₽';
+
+function renderReferral(ref) {
+  // Приглашённому — строка о его скидке под подпиской.
+  if (ref && ref.invited && ref.invited.active && ref.invited.discount_percent > 0) {
+    byId('sub-note').textContent += ' · скидка ' + ref.invited.discount_percent + '% по приглашению';
+  }
+
+  const tile = byId('partner');
+  const p = ref && ref.partner;
+  tile.hidden = !p;
+  if (!p) return;
+
+  const values = {
+    balance: rub(p.balance), code: p.code, discount: p.discount_percent + '%', reward: p.reward_percent + '%',
+    invited: p.invited, paying: p.paying, earned: rub(p.earned), paidOut: rub(p.paid_out), link: p.link
+  };
+  tile.querySelectorAll('[data-slot]').forEach(function (el) { el.textContent = values[el.dataset.slot]; });
+  tile.querySelectorAll('[data-when="off"]').forEach(function (el) { el.hidden = p.is_active; });
+  byId('partner-copy').dataset.link = p.link;
+}
+
+byId('partner-copy').addEventListener('click', async function () {
+  const msg = byId('partner-msg');
+  try {
+    await navigator.clipboard.writeText(this.dataset.link);
+    msg.textContent = 'Ссылка скопирована.';
+  } catch (e) {
+    msg.textContent = 'Скопируйте ссылку вручную: она под кнопкой.';
+  }
+  msg.className = 'msg msg--ok is-shown';
+});
+
 // ── Закрыть другие сессии ─────────────────────────────────────────────────
 const others = byId('logout-others');
 others.addEventListener('click', async function () {
@@ -170,6 +204,8 @@ async function start() {
     renderAccount(me);
     renderServers(list, me.currentServerId);
     renderCurrentServer(me, list);
+    // Не критично, как и список серверов.
+    renderReferral(await referralMe().catch(function () { return null; }));
     show('ready');
   } catch (err) {
     if (err.isAuth) { clearSession(); location.replace('/login'); return; }

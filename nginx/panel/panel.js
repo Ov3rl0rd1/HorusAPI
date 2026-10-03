@@ -9,6 +9,7 @@ import { $, $$, fill, notify, report, whenAuthLost } from './bind.js';
 import * as servers from './servers.js';
 import * as users from './users.js';
 import * as plans from './plans.js';
+import * as referrals from './referrals.js';
 import { loadPayments, loadPromos } from './billing.js';
 
 const views = {
@@ -16,7 +17,8 @@ const views = {
   users: users.load,
   plans: plans.load,
   payments: loadPayments,
-  promos: loadPromos
+  promos: loadPromos,
+  referrals: referrals.load
 };
 
 async function show(name, params) {

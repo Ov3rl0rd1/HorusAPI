@@ -80,7 +80,7 @@ public sealed record PromoUpsertBody(
 
 // ── Result unions for the service layer ────────────────────────────────────────
 
-public enum CheckoutStatus { Ok, PlanNotFound, PromoInvalid, PromoNotApplicable, NoCapacity, ProviderError }
+public enum CheckoutStatus { Ok, PlanNotFound, PromoInvalid, PromoNotApplicable, ReferralNotApplicable, NoCapacity, ProviderError }
 public sealed record CheckoutResult(CheckoutStatus Status, CheckoutView? View = null, string? Detail = null);
 
 public enum CancelStatus { Ok, NotFound, ProviderError }

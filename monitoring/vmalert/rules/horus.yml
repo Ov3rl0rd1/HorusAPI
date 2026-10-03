@@ -60,6 +60,49 @@ groups:
           summary: "{{ $labels.server }}: есть онлайн, но нет трафика"
           description: "Пользователи числятся онлайн полчаса, а счётчики downlink не растут. Проверь блокировки, маршруты и шейпер."
 
+  # Per-user limits (xray TariffService, pushed by the agent). Both failure modes
+  # are silent on every other metric: an unshaped node looks HEALTHIER than a
+  # shaped one, right up to the moment one user's torrent takes the CPU.
+  - name: limits
+    interval: 60s
+    rules:
+
+      - alert: LimitsNotApplied
+        expr: horus_tariff_enabled == 1 and horus_tariff_synced == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: лимиты не применены"
+          description: "Агенту не удаётся отправить лимиты пользователей в xray 15 минут — ни скорость, ни месячный трафик сейчас не ограничены. Причина — в GET /status (поле limits.error) и в логах node-agent."
+
+      - alert: LimitsUnsupportedByXray
+        expr: horus_tariff_unsupported == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: xray без TariffService"
+          description: "Активный профиль не включает TariffService в api.services или образ xray старый. Нода работает без ограничений скорости и трафика."
+
+      - alert: ServerMonthlyTrafficHigh
+        expr: horus_tariff_server_limit_bytes > 0 and horus_tariff_server_used_bytes / horus_tariff_server_limit_bytes > 0.8
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.server }}: израсходовано {{ $value | humanizePercentage }} месячного трафика сервера"
+          description: "Счётчик сбрасывается 1-го числа (UTC). Варианты: перенести часть пользователей (evacuate по одному), поднять TARIFF_SERVER_MONTHLY_TB, если тариф хостера позволяет, или задать TARIFF_SERVER_OVER_QUOTA_MBIT."
+
+      - alert: ServerMonthlyTrafficExceeded
+        expr: horus_tariff_server_exceeded == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.server }}: месячный трафик сервера исчерпан"
+          description: "Нода перешла лимит TARIFF_SERVER_MONTHLY_TB. Если TARIFF_SERVER_OVER_QUOTA_MBIT не задан, пользователи не замедлены, а хостер может начать тарифицировать или резать канал."
+
   - name: olcrtc
     interval: 30s
     rules:

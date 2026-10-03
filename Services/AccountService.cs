@@ -416,6 +416,7 @@ public class AccountService(
               AND NOT EXISTS (SELECT 1 FROM slot_holds           h WHERE h.user_id = u.id)
               AND NOT EXISTS (SELECT 1 FROM plan_grants          g WHERE g.user_id = u.id)
               AND NOT EXISTS (SELECT 1 FROM promo_redemptions    r WHERE r.user_id = u.id)
+              AND NOT EXISTS (SELECT 1 FROM referral_partners   rp WHERE rp.user_id = u.id)
             """;
 
         await using var conn = Connect();

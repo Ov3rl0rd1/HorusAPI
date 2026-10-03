@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using HorusAPI.Models;
 using HorusAPI.Services;
+using HorusAPI.Services.Billing;
 using System.Net.Mail;
 using System.Text.RegularExpressions;
 using HorusAPI.Services.Auth_Handler;
@@ -88,6 +89,7 @@ public static class AuthEndpoints
             [FromBody] RegisterRequest req,
             IUserService         userSvc,
             IAccountService      accounts,
+            IReferralService     referrals,
             IEmailSender         mail,
             IAccountRateLimiter  quota,
             ILogger<Program>     log) =>
@@ -136,6 +138,23 @@ public static class AuthEndpoints
 
             log.LogInformation("New user registered (unverified): {Username}", username);
 
+            // A partner's ?ref= link. Never a reason to refuse the sign-up: the account exists
+            // already, and an unknown code is reported so the page can say so.
+            string? referral = null;
+            if (!string.IsNullOrWhiteSpace(req.referral_code))
+            {
+                try
+                {
+                    referral = await referrals.AttachAsync(created.userId, req.referral_code.Trim()) == ReferralAttach.Bound
+                        ? "applied" : "invalid";
+                }
+                catch (Exception ex)
+                {
+                    log.LogError(ex, "Could not apply referral code for {Username}", username);
+                    referral = "invalid";
+                }
+            }
+
             // A ticket straight away, so the confirmation screen can offer "wrong address?"
             // at the moment a typo is most likely to be noticed — right after typing it.
             // Safe here and nowhere else: this caller just created the account.
@@ -145,7 +164,7 @@ public static class AuthEndpoints
 
             return Results.Json(
                 new RegisterResponse("unverified", email, (int)AccountService.CodeLifetime.TotalSeconds,
-                    (int)AccountService.ResendCooldown.TotalSeconds, ticket),
+                    (int)AccountService.ResendCooldown.TotalSeconds, ticket, referral),
                 statusCode: 202);
         })
         .AllowAnonymous()

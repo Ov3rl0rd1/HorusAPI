@@ -75,8 +75,12 @@ async function select(u) {
 
   // Ноды — для выбора «куда перенести», тарифы — для «открыть закрытый».
   // Грузятся вместе с карточкой, чтобы список не устаревал между открытиями.
-  const [servers, plans] = await Promise.all([api.servers(), api.plans(), loadGrants()]);
+  const [servers, plans, traffic] = await Promise.all([
+    api.servers(), api.plans(), api.userTraffic(u.username).catch(() => []), loadGrants()
+  ]);
   if (selected !== u) return;   // пока грузилось, открыли другого
+
+  fill(card, { traffic: trafficText(traffic) });
 
   options(card, 'move-targets', moveTargets(servers, u.current_server_id));
 
@@ -86,6 +90,18 @@ async function select(u) {
     label: `${p.title} (${p.code}) — ${p.amount} ₽ / ${period(p.interval_unit, p.interval_count)}`
   })));
   fill(card, {}, { closedPlans: closed.length > 0 });
+}
+
+// Трафик за текущий месяц (UTC) — то, против чего считается месячный лимит. Хранится
+// в API по пользователю, поэтому не обнуляется при смене сервера.
+const gb = (bytes) => (bytes / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' ГБ';
+
+function trafficText(months) {
+  const now = new Date().toISOString().slice(0, 7);
+  const m = (months || []).find((x) => String(x.month).slice(0, 7) === now);
+  if (!m) return 'нет данных';
+  return gb(m.total_bytes) + (m.whitelist_bypass_bytes ? ', из них в обход белых списков ' + gb(m.whitelist_bypass_bytes) : '') +
+    (m.server_name ? ' · последний отчёт: ' + m.server_name : '');
 }
 
 async function loadGrants() {
@@ -124,6 +140,7 @@ onForm('user-search', (v) => search(v.q || ''));
 onAction('pick-user', ({ item }) => select(item));
 onAction('close-user', () => select(null));
 onAction('user-payments', () => go('payments', { user: selected.username }));
+onAction('user-referral', () => go('referrals', { username: selected.username }));
 
 onForm('comp', async function (v) {
   await api.grantComp(selected.username, endOfDay(v.until));

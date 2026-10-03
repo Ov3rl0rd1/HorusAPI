@@ -102,6 +102,28 @@
       </div>
     </div>
 
+    <!-- Только для партнёров: назначает админ, самостоятельной записи нет. -->
+    <div class="acc-grid" id="partner" hidden>
+      <div class="card tile tile__wide">
+        <div class="tile__kind">ПАРТНЁРСКАЯ ПРОГРАММА</div>
+        <div class="tile__value tile__value--accent"><span data-slot="balance"></span> к выплате</div>
+        <div class="tile__note">
+          Ваш код <b data-slot="code"></b>: приглашённые получают скидку <span data-slot="discount"></span>
+          на все покупки, вам — <span data-slot="reward"></span> с каждой их оплаты.
+        </div>
+        <div class="tile__note">
+          Пригласили: <span data-slot="invited"></span>, платили: <span data-slot="paying"></span>.
+          Начислено <span data-slot="earned"></span>, выплачено <span data-slot="paidOut"></span>.
+        </div>
+        <div class="tile__note" data-when="off">Программа для вас сейчас приостановлена — новые оплаты не начисляются.</div>
+        <div class="acc-actions">
+          <button class="btn btn--quiet" id="partner-copy" type="button" data-label="Скопировать ссылку">Скопировать ссылку</button>
+        </div>
+        <p class="tile__note" style="word-break:break-all" data-slot="link"></p>
+        <p class="msg msg--ok" id="partner-msg" role="status"></p>
+      </div>
+    </div>
+
     <div class="acc-grid">
       <div class="card tile tile__wide">
         <div class="tile__kind">БЕЗОПАСНОСТЬ</div>
